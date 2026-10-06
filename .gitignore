@@ -1,0 +1,33 @@
+# dependencies and build output
+node_modules/
+dist/
+build/
+target/
+*.tsbuildinfo
+
+# secrets and local data (never commit)
+.env
+.env.*
+!.env.example
+data/*
+!data/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+backups/
+*.log
+
+# generated Tauri artifacts
+src-tauri/gen/
+src-tauri/binaries/
+src-tauri/resources/
+
+# throwaway Phase 0 experiment
+spike/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json

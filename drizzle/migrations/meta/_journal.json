@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791180679970,
+      "tag": "0000_medical_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791182391220,
+      "tag": "0001_lovely_adam_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791193693102,
+      "tag": "0002_panoramic_donald_blake",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791195446551,
+      "tag": "0003_powerful_steel_serpent",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791200869643,
+      "tag": "0004_curvy_invaders",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791204711137,
+      "tag": "0005_investments",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791248290290,
+      "tag": "0006_multi_dashboards",
+      "breakpoints": true
+    }
+  ]
+}
