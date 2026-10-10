@@ -29,6 +29,7 @@ import {
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { AllocationEditor } from "./AllocationEditor";
 import { buttonClass, inputClass, primaryClass } from "./styles";
+import { RetirementProjection } from "./RetirementProjection";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -56,7 +57,16 @@ function Section({
  * Everything specific to a Thrift Savings Plan kept by hand: how new money is split, the recurring
  * contributions that buy units at each day's price, and the fund prices that depend on.
  */
-export function TspPanel({ accountId, onChanged }: { accountId: number; onChanged: () => void }) {
+export function TspPanel({
+  accountId,
+  balanceMinor,
+  onChanged,
+}: {
+  accountId: number;
+  /** The account's current balance, for the retirement projection. */
+  balanceMinor: number;
+  onChanged: () => void;
+}) {
   const settings = useApi<TspSettings>(`/accounts/${accountId}/tsp`);
   const funds = useApi<TspFund[]>("/tsp/funds");
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -227,6 +237,10 @@ export function TspPanel({ accountId, onChanged }: { accountId: number; onChange
 
       <Section title="Past activity">
         <ActivitySection accountId={accountId} busy={busy} run={run} />
+      </Section>
+
+      <Section title="Retirement projection">
+        <RetirementProjection balanceMinor={balanceMinor} contributions={data.contributions} />
       </Section>
 
       {data.recent.length > 0 && (

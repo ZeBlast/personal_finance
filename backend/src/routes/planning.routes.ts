@@ -11,6 +11,8 @@ import {
 import { clearBillSettings, listBills, setBillSettings } from "../services/bills.service.js";
 import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthReport } from "../services/report.service.js";
+import { detectPaychecks } from "../services/paycheck.service.js";
+import { createGoal, deleteGoal, listGoals, updateGoal } from "../services/goal.service.js";
 import {
   dismissDuplicate,
   listDuplicates,
@@ -47,6 +49,40 @@ const subscriptionBody = z
 /** Planning and tidying: forecast, card bills, subscriptions, the month report, files, review. */
 export function planningRoutes(db: AppDb): Router {
   const router = Router();
+
+  const goalBody = z
+    .object({
+      name: z.string().trim().min(1).max(80),
+      targetMinor: z.number().int().min(1).max(100_000_000_000),
+      targetDate: day.nullable().optional(),
+      savedMinor: z.number().int().min(0).max(100_000_000_000).optional(),
+      accountIds: z.array(z.number().int().positive()).max(20).optional(),
+      color: z.string().max(20).nullable().optional(),
+    })
+    .strict();
+
+  /** Savings goals, with progress and what a month it takes. */
+  router.get("/goals", (_req, res) => {
+    res.json(listGoals(db));
+  });
+  router.post("/goals", (req, res) => {
+    res.status(201).json(createGoal(db, goalBody.parse(req.body)));
+  });
+  router.put("/goals/:id", (req, res) => {
+    res.json(updateGoal(db, idParam.parse(req.params["id"]), goalBody.parse(req.body)));
+  });
+  router.delete("/goals/:id", (req, res) => {
+    deleteGoal(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+
+  /** Regular pay found in the income, with the year's projection. */
+  router.get("/paychecks", (req, res) => {
+    const q = z
+      .object({ year: z.coerce.number().int().min(2000).max(2100).optional() })
+      .parse(req.query);
+    res.json(detectPaychecks(db, { year: q.year }));
+  });
 
   router.get("/forecast", (req, res) => {
     const q = z

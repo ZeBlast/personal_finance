@@ -43,7 +43,9 @@ export interface SyncRunSummary {
 export interface SyncSkip {
   itemId: number;
   institutionName: string;
-  reason: "cooldown" | "interval" | "needs_signin" | "borrowed";
+  reason: "cooldown" | "interval" | "needs_signin" | "borrowed" | "too_soon";
+  /** For `too_soon`: when it may sync again. */
+  nextAllowedAt?: string;
 }
 
 export interface SyncAllResult {
@@ -63,6 +65,11 @@ interface Deps {
 const MAX_RESTARTS = 3;
 /** Never retry a failing connection more often than this on the automatic interval. */
 const MIN_RETRY_MINUTES = 5;
+/**
+ * No connection syncs more often than this, however the sync is started (the button included):
+ * each sync is a request to the bank, and the data rarely changes faster.
+ */
+export const MIN_SYNC_GAP_MINUTES = 5;
 
 type ItemRow = typeof plaidItems.$inferSelect;
 const MINUTE = 60_000;
@@ -395,6 +402,22 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
     }
   }
 
+  /**
+   * When a connection may next sync, or null when it may now: `MIN_SYNC_GAP_MINUTES` after the
+   * last sync of it started (successful or not; the record survives the app restarting).
+   */
+  function nextAllowedAt(itemId: number): string | null {
+    const last = db
+      .select({ startedAt: syncRuns.startedAt })
+      .from(syncRuns)
+      .where(eq(syncRuns.plaidItemId, itemId))
+      .orderBy(desc(syncRuns.id))
+      .get();
+    if (!last) return null;
+    const next = Date.parse(last.startedAt) + MIN_SYNC_GAP_MINUTES * MINUTE;
+    return next > now().getTime() ? new Date(next).toISOString() : null;
+  }
+
   /** Syncs one connection, or joins the sync already running for it. */
   function syncItem(itemId: number, trigger: SyncTrigger): Promise<SyncRunSummary> {
     const running = inFlight.get(itemId);
@@ -438,6 +461,17 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
   }): Promise<SyncAllResult> {
     const result: SyncAllResult = { runs: [], skipped: [] };
     for (const item of itemsForActiveEnvironment()) {
+      // The minimum gap applies to every sync, the button's too (a running one is joined instead).
+      const notBefore = inFlight.has(item.id) ? null : nextAllowedAt(item.id);
+      if (notBefore) {
+        result.skipped.push({
+          itemId: item.id,
+          institutionName: item.institutionName,
+          reason: "too_soon",
+          nextAllowedAt: notBefore,
+        });
+        continue;
+      }
       if (!options.force) {
         // A borrowed connection belongs to the real app: read from it only when asked.
         if (item.borrowed && options.trigger !== "manual") {
@@ -474,6 +508,7 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
   return {
     syncItem,
     syncAll,
+    nextAllowedAt,
 
     /** Runs when the app starts. Respects the cooldown, and cleans up after an interrupted run. */
     runLaunchSync(): Promise<SyncAllResult> {
@@ -517,6 +552,8 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
           nextAutoSyncAt:
             settings.autoSyncIntervalMinutes > 0 ? after(settings.autoSyncIntervalMinutes) : null,
           syncing: inFlight.has(item.id),
+          /** When it may sync again (each connection syncs at most every few minutes). */
+          nextAllowedAt: nextAllowedAt(item.id),
           lastRun: lastRun ? summarize(lastRun.id) : null,
         };
       });
@@ -524,6 +561,7 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
         environment: settings.plaidEnvironment,
         syncing: inFlight.size > 0,
         cooldownMinutes: settings.syncCooldownMinutes,
+        minGapMinutes: MIN_SYNC_GAP_MINUTES,
         intervalMinutes: settings.autoSyncIntervalMinutes,
         items,
       };

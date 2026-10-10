@@ -8,6 +8,7 @@ import {
   ensureDiningSplit,
   ensureStarterAdditions,
   ensureTransferSubcategories,
+  ensureCategoryPack,
   seedDefaults,
 } from "./services/category.service.js";
 import { detectInternalTransfers } from "./services/transfer.service.js";
@@ -56,6 +57,13 @@ async function main(): Promise<void> {
   const diningMoved = ensureDiningSplit(db);
   // Transfers > Credit (taxable income) and Transfers > Refund (not income).
   if (ensureTransferSubcategories(db)) console.log("added Credit and Refund under Transfers");
+  // Insurance, Taxes, Subscriptions, Gifts & Donations, and subcategories, once.
+  const pack = ensureCategoryPack(db);
+  if (pack) {
+    console.log(
+      `added ${pack.categoriesCreated} categories (${pack.recategorized} past transactions sorted)`,
+    );
+  }
   if (diningMoved !== null) {
     console.log(
       `split Food & Drink into online and Dining Out (${diningMoved} transactions moved)`,

@@ -652,12 +652,13 @@ describe("launch sync and the editable cooldown", () => {
   it("a cooldown of zero syncs on every launch", async () => {
     await h.setSetting({ syncCooldownMinutes: 0 });
     await h.sync.runLaunchSync();
+    h.advanceMinutes(5); // the minimum gap between any two syncs
     expect((await h.sync.runLaunchSync()).runs).toHaveLength(1);
   });
 
   it("the Sync button ignores the cooldown", async () => {
     await h.sync.runLaunchSync();
-    h.advanceMinutes(1);
+    h.advanceMinutes(5); // past the minimum gap, well inside the 30-minute cooldown
     const res = await h.ctx.call("post", "/api/sync").send({}).expect(200);
     expect(res.body.runs).toHaveLength(1);
     expect(res.body.runs[0]).toMatchObject({ trigger: "manual", status: "success" });
@@ -670,7 +671,8 @@ describe("launch sync and the editable cooldown", () => {
     const failed = await h.sync.runLaunchSync();
     expect(failed.runs[0]!.status).toBe("offline");
     h.gateway.failWith = null;
-    const retried = await h.sync.runLaunchSync(); // still due: the last SUCCESS is 40 minutes old
+    h.advanceMinutes(5); // the minimum gap since the failed attempt
+    const retried = await h.sync.runLaunchSync(); // still due: the last SUCCESS is 45 minutes old
     expect(retried.runs).toHaveLength(1);
     expect(retried.runs[0]!.status).toBe("success");
   });
@@ -680,6 +682,7 @@ describe("launch sync and the editable cooldown", () => {
     h.gateway.simulateLoginRequired(h.item(itemId).plaidItemId);
     h.advanceMinutes(60);
     expect((await h.sync.runLaunchSync()).runs[0]!.errorCode).toBe("ITEM_LOGIN_REQUIRED");
+    h.advanceMinutes(5);
     const again = await h.sync.runLaunchSync();
     expect(again.runs).toHaveLength(0);
     expect(again.skipped[0]!.reason).toBe("needs_signin");
@@ -750,13 +753,45 @@ describe("the editable sync interval while the app is open", () => {
   it("never retries more often than every 5 minutes, whatever the interval", async () => {
     await h.sync.runLaunchSync();
     await h.setSetting({ autoSyncIntervalMinutes: 1 });
-    h.advanceMinutes(2);
+    h.advanceMinutes(5);
     h.gateway.failWith = new PlaidGatewayError("NETWORK_ERROR", "NETWORK", "offline");
     expect((await h.sync.runIntervalTick()).runs).toHaveLength(1);
     h.advanceMinutes(2);
     expect((await h.sync.runIntervalTick()).runs).toHaveLength(0);
     h.advanceMinutes(4);
     expect((await h.sync.runIntervalTick()).runs).toHaveLength(1);
+  });
+});
+
+describe("the minimum gap between syncs", () => {
+  it("applies to the Sync button too, and says when it can sync again", async () => {
+    await h.sync.runLaunchSync();
+    h.advanceMinutes(2);
+    const soon = await h.ctx.call("post", "/api/sync").send({}).expect(200);
+    expect(soon.body.runs).toHaveLength(0);
+    expect(soon.body.skipped).toEqual([
+      {
+        itemId,
+        institutionName: "First Platypus Bank",
+        reason: "too_soon",
+        nextAllowedAt: "2026-09-01T12:05:00.000Z",
+      },
+    ]);
+    expect(h.sync.status().items[0]!.nextAllowedAt).toBe("2026-09-01T12:05:00.000Z");
+    h.advanceMinutes(3);
+    expect((await h.ctx.call("post", "/api/sync").send({}).expect(200)).body.runs).toHaveLength(1);
+    expect(h.sync.status().items[0]!.nextAllowedAt).toBe("2026-09-01T12:10:00.000Z");
+  });
+
+  it("refuses syncing one connection again too soon, and counts failed attempts", async () => {
+    h.gateway.failWith = new PlaidGatewayError("NETWORK_ERROR", "NETWORK", "offline");
+    await h.ctx.call("post", "/api/sync").send({ itemId }).expect(200);
+    h.gateway.failWith = null;
+    h.advanceMinutes(1);
+    const res = await h.ctx.call("post", "/api/sync").send({ itemId }).expect(429);
+    expect(res.body.error).toBe("sync_too_soon");
+    h.advanceMinutes(4);
+    await h.ctx.call("post", "/api/sync").send({ itemId }).expect(200);
   });
 });
 

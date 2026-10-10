@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
 import { IS_INCOME, NOT_TRANSFER } from "./analytics.service.js";
+import { detectPaychecks } from "./paycheck.service.js";
 import { deleteSetting } from "./settings.service.js";
 import { appSettings } from "../../../drizzle/schema.js";
 import { eq } from "drizzle-orm";
@@ -37,6 +38,14 @@ export interface TaxIncomeSource {
   lastDate: string;
   /** Any of its money looks like a paycheck, so FICA likely applies. */
   wages: boolean;
+  /** Regular pay found for this source: its schedule and what it adds up to for the year. */
+  paycheck: {
+    cadence: string;
+    typicalMinor: number;
+    nextExpected: string;
+    paydaysLeft: number;
+    projectedYearMinor: number;
+  } | null;
 }
 
 export interface TaxIncome {
@@ -53,6 +62,8 @@ interface Row {
   account_name: string;
   category_name: string | null;
   treatment: string | null;
+  /** The category's main category, when it is a subcategory. */
+  parent_name: string | null;
   source: string;
   pending: number;
   wages: number;
@@ -65,7 +76,7 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
     select t.id, coalesce(t.authorized_date, t.date) as date,
       coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name) as merchant,
       -t.amount_minor as amount_minor, a.name as account_name, c.name as category_name,
-      c.income_treatment as treatment, t.pending,
+      c.income_treatment as treatment, pc.name as parent_name, t.pending,
       (coalesce(t.plaid_category_detailed, '') = 'INCOME_WAGES'
         or lower(t.name) like '%payroll%' or lower(t.name) like '%direct dep%'
         or lower(t.name) like '%salary%') as wages,
@@ -75,6 +86,7 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
       join accounts a on a.id = t.account_id
       left join plaid_items p on p.id = a.plaid_item_id
       left join categories c on c.id = t.category_id
+      left join categories pc on pc.id = c.parent_id
     where coalesce(t.authorized_date, t.date) between ${from} and ${to}
       and (p.environment = ${environment} or a.plaid_item_id is null)
       and ${countedAccount()} and t.amount_minor < 0
@@ -88,7 +100,13 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
     amountMinor: r.amount_minor,
     accountName: r.account_name,
     categoryName: r.category_name,
-    kind: r.treatment === "income" ? "credit" : "income",
+    // A credit is money counted as income by its category (Transfers > Credit), not pay or other
+    // income filed under Income (Paycheck, Interest & Dividends, ...).
+    kind:
+      r.treatment === "income" &&
+      (r.parent_name ?? r.category_name ?? "").trim().toLowerCase() !== "income"
+        ? "credit"
+        : "income",
     source: r.source,
     pending: r.pending === 1,
     wages: r.wages === 1,
@@ -106,6 +124,7 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
       firstDate: t.date,
       lastDate: t.date,
       wages: false,
+      paycheck: null,
     };
     s.totalMinor += t.amountMinor;
     s.count += 1;
@@ -113,6 +132,19 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
     if (t.date < s.firstDate) s.firstDate = t.date;
     if (t.date > s.lastDate) s.lastDate = t.date;
     bySource.set(key, s);
+  }
+  // Regular pay makes a source a paycheck, with a schedule to project the year from.
+  for (const p of detectPaychecks(db, { year })) {
+    const source = bySource.get(p.key);
+    if (!source) continue;
+    source.wages = true;
+    source.paycheck = {
+      cadence: p.cadence,
+      typicalMinor: p.typicalMinor,
+      nextExpected: p.nextExpected,
+      paydaysLeft: p.paydaysLeft,
+      projectedYearMinor: p.projectedYearMinor,
+    };
   }
   const sources = [...bySource.values()].sort((a, b) => b.totalMinor - a.totalMinor);
   return { year, transactions, sources };

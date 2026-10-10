@@ -251,6 +251,29 @@ export const categories = sqliteTable(
 );
 
 /**
+ * One transaction divided across categories (a store run that was part groceries, part home).
+ * The parts add up to the transaction's amount; totals and budgets count each part in its own
+ * category through the `transaction_lines` view (see the migration that adds it), and only while
+ * the parts still add up (a bank changing the amount makes the transaction count whole again).
+ */
+export const transactionSplits = sqliteTable(
+  "transaction_splits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id").references(() => categories.id, { onDelete: "set null" }),
+    /** Same sign as the transaction's amount: positive is money out. */
+    amountMinor: integer("amount_minor").notNull(),
+    note: text("note"),
+    position: integer("position").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("transaction_splits_transaction_idx").on(table.transactionId)],
+);
+
+/**
  * "If this field matches this text, use this category." Rules run in `priority` order (lowest
  * first, ties broken by ID) and the first enabled match wins. They never change a category the
  * user chose by hand.
@@ -806,3 +829,22 @@ export const sandboxSaves = sqliteTable(
   },
   (table) => [index("sandbox_saves_kind_idx").on(table.kind)],
 );
+
+/**
+ * A savings goal: a target amount, by a date or open-ended. Progress is the current balance of
+ * the accounts linked to it plus an amount the user keeps by hand (money set aside elsewhere).
+ */
+export const goals = sqliteTable("goals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  targetMinor: integer("target_minor").notNull(),
+  /** `YYYY-MM-DD`, or null for no deadline. */
+  targetDate: text("target_date"),
+  /** Saved toward it outside the linked accounts, entered by hand. */
+  savedMinor: integer("saved_minor").notNull().default(0),
+  /** The linked accounts' IDs, as a JSON array. */
+  accountIds: text("account_ids").notNull().default("[]"),
+  color: text("color"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

@@ -273,7 +273,12 @@ interface RawRow {
   n: number;
 }
 
-const fromTransactions = sql`from transactions t
+/**
+ * Transactions as totals count them: `transaction_lines` is each transaction, or each part of a
+ * split one in its own category (see transactionSplits). Counts use `count(distinct t.id)` so a
+ * split transaction is still one transaction.
+ */
+const fromTransactions = sql`from transaction_lines t
   join accounts a on a.id = t.account_id
   left join plaid_items p on p.id = a.plaid_item_id
   left join categories c on c.id = t.category_id`;
@@ -286,7 +291,7 @@ export function summarize(db: AppDb, q: SummaryQuery): Summary {
     select ${g.key} as key, max(${g.label}) as label, max(${g.color}) as color,
       sum(case when ${IS_INCOME} then 0 else t.amount_minor end) as spending,
       -sum(case when ${IS_INCOME} then t.amount_minor else 0 end) as income,
-      count(*) as n
+      count(distinct t.id) as n
     ${fromTransactions} ${g.extraJoin ?? sql``}
     where ${whereClauses(q)}
     group by ${g.key}
@@ -468,7 +473,8 @@ export function calendarMonth(
   const rows = db.all<CalendarRow>(sql`
     select ${dateOf(dateBasis)} as date, a.id as account_id, a.name as name, a.color as color,
       p.institution_name as institution, a.plaid_item_id as item_id, -sum(t.amount_minor) as change,
-      count(*) as n, sum(t.pending) as pending,
+      count(distinct t.id) as n,
+      count(distinct case when t.pending = 1 then t.id end) as pending,
       sum(case when t.amount_minor > 0 and ${DEBT_KIND} is null and t.is_transfer = 0 then t.amount_minor else 0 end) as outflow,
       -sum(case when t.amount_minor < 0 and ${DEBT_KIND} is null and t.is_transfer = 0 then t.amount_minor else 0 end) as inflow,
       ${debtPaidSum(accountId !== undefined)} as debt,

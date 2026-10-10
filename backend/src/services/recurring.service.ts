@@ -15,7 +15,7 @@ import { countedAccount } from "./account-scope.js";
  * many it found. Transfers and card payments are left out, as everywhere else.
  */
 
-export type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+export type Cadence = "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
 export type Direction = "out" | "in";
 
 interface CadenceRule {
@@ -31,6 +31,9 @@ interface CadenceRule {
 const RULES: CadenceRule[] = [
   { cadence: "weekly", days: 7, tolerance: 1, perMonth: 52 / 12, minOccurrences: 4 },
   { cadence: "biweekly", days: 14, tolerance: 2, perMonth: 26 / 12, minOccurrences: 4 },
+  // Twice a month (such as pay on the 1st and the 15th): gaps of 13 to 17 days. Listed after
+  // every-two-weeks, so a steady 14-day rhythm stays "every two weeks".
+  { cadence: "semimonthly", days: 365 / 24, tolerance: 3, perMonth: 2, minOccurrences: 4 },
   { cadence: "monthly", days: 30.4, tolerance: 4, perMonth: 1, minOccurrences: 3 },
   { cadence: "quarterly", days: 91, tolerance: 7, perMonth: 1 / 3, minOccurrences: 3 },
   { cadence: "yearly", days: 365, tolerance: 10, perMonth: 1 / 12, minOccurrences: 2 },
@@ -107,6 +110,8 @@ export function nextAfter(lastDate: string, cadence: Cadence): string {
       return addDays(lastDate, 7);
     case "biweekly":
       return addDays(lastDate, 14);
+    case "semimonthly":
+      return addDays(lastDate, 15);
     case "monthly":
       return addMonthsToDay(lastDate, 1);
     case "quarterly":

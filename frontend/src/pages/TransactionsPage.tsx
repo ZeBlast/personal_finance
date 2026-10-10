@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
 import { TransactionDetail } from "../components/transactions/TransactionDetail";
@@ -9,6 +10,8 @@ import { AmountCell, TransactionTags } from "../components/transactions/Transact
 import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import type { Account, Transaction, TransactionPage, TransactionSort } from "../types/api";
+import { CategorySelect } from "../components/common/CategorySelect";
+import { SplitDialog } from "../components/transactions/SplitDialog";
 
 const PAGE_SIZE = 50;
 
@@ -84,8 +87,41 @@ export function TransactionsPage() {
   const [selected, setSelected] = useState<Transaction | null>(null);
   /** Adding a transaction by hand ("new"), or editing one that was entered by hand. */
   const [manualDialog, setManualDialog] = useState<"new" | Transaction | null>(null);
+  /** The transaction whose split is being edited. */
+  const [splitting, setSplitting] = useState<Transaction | null>(null);
   const [reloads, setReloads] = useState(0);
   const synced = useSyncFinishedCount();
+  /** The row clicked last; double-clicking a row opens it. */
+  const [highlight, setHighlight] = useState<number | null>(null);
+  /** A row just brought into view from elsewhere (the network graph), which flashes for a moment. */
+  const [flash, setFlash] = useState<number | null>(null);
+  // Opening a transaction from elsewhere: `?focus=<id>&account=<id>`.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [focus, setFocus] = useState<{ id: number; accountId: string | null } | null>(() => {
+    const id = Number(searchParams.get("focus"));
+    return Number.isInteger(id) && id > 0 ? { id, accountId: searchParams.get("account") } : null;
+  });
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  // Links from elsewhere (search, the graph), also while already on this page:
+  // `?focus=<id>&account=<id>` opens a transaction; `?account=<id>` or `?category=<id>` filters.
+  useEffect(() => {
+    const focusId = Number(searchParams.get("focus"));
+    const account = searchParams.get("account");
+    const category = searchParams.get("category");
+    if (Number.isInteger(focusId) && focusId > 0) {
+      setFilters(NO_FILTERS);
+      setSearch("");
+      setFocus((f) => (f?.id === focusId ? f : { id: focusId, accountId: account }));
+      return;
+    }
+    if (account || category) {
+      setFilters({ ...NO_FILTERS, accountId: account ?? "", category: category ?? "" });
+      setSearch("");
+      setPage(1);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     api<Account[]>("/accounts")
@@ -93,10 +129,19 @@ export function TransactionsPage() {
       .catch(() => undefined);
   }, [synced]);
 
+  /** The search the list was last filtered by. */
+  const searchedFor = useRef("");
+  useEffect(() => {
+    searchedFor.current = filters.q;
+  }, [filters.q]);
+
   // Wait for a pause in typing before searching.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setFilters((f) => (f.q === search.trim() ? f : { ...f, q: search.trim() }));
+      const q = search.trim();
+      // Only a changed search goes back to the first page.
+      if (q === searchedFor.current) return;
+      setFilters((f) => ({ ...f, q }));
       setPage(1);
     }, 300);
     return () => window.clearTimeout(timer);
@@ -105,6 +150,7 @@ export function TransactionsPage() {
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), sort });
+    if (focus) params.set("focus", String(focus.id));
     if (filters.q) params.set("q", filters.q);
     if (filters.accountId) params.set("accountId", filters.accountId);
     if (filters.category) params.set("category", filters.category);
@@ -118,6 +164,24 @@ export function TransactionsPage() {
         if (cancelled) return;
         setData(result);
         setError(null);
+        if (focus) {
+          if (result.items.some((t) => t.id === focus.id)) {
+            // Found: stay on its page, and point it out.
+            setFocus(null);
+            setPage(result.page);
+            setHighlight(focus.id);
+            setFlash(focus.id);
+            setSearchParams({}, { replace: true });
+          } else if (focus.accountId && filters.accountId !== focus.accountId) {
+            // Not in the full list (a gift card or hidden account): look in its own account.
+            setFilters({ ...NO_FILTERS, accountId: focus.accountId });
+            setSearch("");
+          } else {
+            setFocus(null);
+            setSearchParams({}, { replace: true });
+            setNotice("That transaction is not in this list.");
+          }
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorMessage(e, "Could not load transactions."));
@@ -125,7 +189,22 @@ export function TransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, sort, filters, synced, reloads]);
+  }, [page, sort, filters, synced, reloads, focus, setSearchParams]);
+
+  // The flashed row scrolls into view, and stops flashing after a moment.
+  useEffect(() => {
+    if (flash === null) return;
+    tableRef.current
+      ?.querySelector(`[data-row="${flash}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const timer = window.setTimeout(() => setFlash(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [flash, data]);
+
+  const open = (t: Transaction) => (t.source === "manual" ? setManualDialog(t) : setSelected(t));
+  /** Clicking a row highlights it; double-clicking opens it (not on its own controls). */
+  const onControl = (e: MouseEvent) =>
+    (e.target as HTMLElement).closest("button, select, input, a, label") !== null;
 
   const options = useMemo(() => categoryOptions(categories ?? []), [categories]);
   const institutions = [
@@ -337,7 +416,10 @@ export function TransactionsPage() {
       )}
 
       {data && data.items.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+        <div
+          ref={tableRef}
+          className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700"
+        >
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase dark:bg-slate-800 dark:text-slate-400">
               <tr>
@@ -363,7 +445,10 @@ export function TransactionsPage() {
                   onSort={setSort}
                 />
                 <th className="px-2 py-2 font-medium">Category</th>
-                <th className="px-2 py-2 text-center font-medium">Online</th>
+                <th className="px-2 py-2 font-medium">Tags</th>
+                <th className="w-px px-1 py-2 text-center font-medium" title="Bought online">
+                  Online
+                </th>
                 <th className="px-2 py-2 font-medium">Account</th>
                 <th className="px-2 py-2 font-medium">Recipient / sender</th>
                 <SortHeader
@@ -374,12 +459,31 @@ export function TransactionsPage() {
                   onSort={setSort}
                   align="right"
                 />
-                <th className="px-2 py-2 font-medium">Tags</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {data.items.map((t) => (
-                <tr key={t.id}>
+                <tr
+                  key={t.id}
+                  data-row={t.id}
+                  aria-selected={highlight === t.id}
+                  onClick={(e) => {
+                    if (!onControl(e)) setHighlight(t.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    if (onControl(e)) return;
+                    setHighlight(t.id);
+                    open(t);
+                  }}
+                  title="Click to select, double-click to edit"
+                  className={`cursor-default transition-colors duration-700 ${
+                    flash === t.id
+                      ? "bg-amber-200 dark:bg-amber-700/50"
+                      : highlight === t.id
+                        ? "bg-blue-50 dark:bg-blue-950/50"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  }`}
+                >
                   <td className="px-2 py-2 whitespace-nowrap">
                     {formatDay(t.authorizedDate ?? t.date)}
                   </td>
@@ -389,7 +493,10 @@ export function TransactionsPage() {
                   <td className="max-w-56 min-w-32 px-2 py-2">
                     <button
                       type="button"
-                      onClick={() => (t.source === "manual" ? setManualDialog(t) : setSelected(t))}
+                      onClick={() => {
+                        setHighlight(t.id);
+                        open(t);
+                      }}
                       title="Open details and edit"
                       className="text-left font-medium hover:underline"
                     >
@@ -406,41 +513,70 @@ export function TransactionsPage() {
                     )}
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">
-                    <span
-                      aria-hidden="true"
-                      className="mr-1 inline-block h-2.5 w-2.5 rounded-full"
-                      style={{
-                        backgroundColor: t.category?.color ?? "transparent",
-                        border: t.category?.color ? undefined : "1px solid #94a3b8",
-                      }}
-                    />
-                    <select
-                      aria-label={`Category for ${t.merchant}`}
-                      value={t.category ? String(t.category.id) : ""}
-                      title={
-                        t.category
-                          ? t.category.source === "manual"
-                            ? "Chosen by you"
-                            : `Set by rule: ${t.category.ruleName ?? ""}`
-                          : "No category"
-                      }
-                      onChange={(e) => void quickCategory(t, e.target.value)}
-                      className="max-w-36 rounded border border-transparent bg-transparent py-1 text-sm hover:border-slate-300 dark:hover:border-slate-600"
-                    >
-                      <option value="">Uncategorized</option>
-                      {/* Keep an archived category visible so the row still reads correctly. */}
-                      {t.category && !options.some((o) => o.id === t.category!.id) && (
-                        <option value={t.category.id}>{t.category.name} (archived)</option>
-                      )}
-                      {options.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                    {t.splits.length > 0 && t.splitValid ? (
+                      <button
+                        type="button"
+                        onClick={() => setSplitting(t)}
+                        title="Split across categories. Click to change it."
+                        className="flex max-w-40 flex-col items-start gap-0.5 rounded px-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        {t.splits.map((p) => (
+                          <span key={p.id} className="flex items-center gap-1 text-xs">
+                            <span
+                              aria-hidden="true"
+                              className="inline-block h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: p.categoryColor ?? "#94a3b8" }}
+                            />
+                            <span className="truncate">{p.categoryName ?? "Uncategorized"}</span>
+                            <span className="text-slate-400 tabular-nums">
+                              {(Math.abs(p.amountMinor) / 100).toFixed(2)}
+                            </span>
+                          </span>
+                        ))}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <span
+                          aria-hidden="true"
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor: t.category?.color ?? "transparent",
+                            border: t.category?.color ? undefined : "1px solid #94a3b8",
+                          }}
+                        />
+                        <CategorySelect
+                          shown={t.category?.name ?? "Uncategorized"}
+                          aria-label={`Category for ${t.merchant}`}
+                          value={t.category ? String(t.category.id) : ""}
+                          title={
+                            t.category
+                              ? t.category.source === "manual"
+                                ? "Chosen by you"
+                                : `Set by rule: ${t.category.ruleName ?? ""}`
+                              : "No category"
+                          }
+                          onChange={(e) => void quickCategory(t, e.target.value)}
+                          className="w-36 rounded border border-transparent bg-transparent py-1 pr-6 pl-2 text-sm hover:border-slate-300 dark:hover:border-slate-600"
+                        >
+                          <option value="">Uncategorized</option>
+                          {/* Keep an archived category visible so the row still reads correctly. */}
+                          {t.category && !options.some((o) => o.id === t.category!.id) && (
+                            <option value={t.category.id}>{t.category.name} (archived)</option>
+                          )}
+                          {options.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </CategorySelect>
+                      </span>
+                    )}
                   </td>
-                  <td className="px-2 py-2 text-center">
-                    {/* The pencil sits beside the box without moving it. */}
+                  <td className="w-44 min-w-36 px-2 py-2">
+                    <TransactionTags t={t} />
+                  </td>
+                  <td className="w-px px-1 py-2 text-center">
+                    {/* The pencil sits on the box's corner without widening the column. */}
                     <span className="relative inline-block align-middle">
                       <input
                         type="checkbox"
@@ -456,7 +592,7 @@ export function TransactionsPage() {
                       />
                       {t.onlineEdited && (
                         <span
-                          className="absolute top-1/2 left-full ml-1 -translate-y-1/2 text-xs text-slate-400"
+                          className="absolute -top-2 -right-2 text-[10px] text-slate-400"
                           title={`Changed by you (the bank says ${t.providerOnline ? "online" : "not online"})`}
                         >
                           ✎
@@ -477,9 +613,6 @@ export function TransactionsPage() {
                   </td>
                   <td className="min-w-28 px-2 py-2 text-right whitespace-nowrap">
                     <AmountCell t={t} />
-                  </td>
-                  <td className="w-44 min-w-36 px-2 py-2">
-                    <TransactionTags t={t} />
                   </td>
                 </tr>
               ))}
@@ -524,6 +657,31 @@ export function TransactionsPage() {
             announceDataChanged();
           }}
           onClose={() => setManualDialog(null)}
+          onSplit={
+            manualDialog === "new"
+              ? undefined
+              : () => {
+                  setSplitting(manualDialog);
+                  setManualDialog(null);
+                }
+          }
+        />
+      )}
+      {splitting && (
+        <SplitDialog
+          transaction={splitting}
+          categories={categories ?? []}
+          onClose={() => setSplitting(null)}
+          onSaved={(updated) => {
+            replaceRow(updated);
+            setSplitting(null);
+            setNotice(
+              updated.splits.length > 0
+                ? `${updated.merchant} is split across ${updated.splits.length} categories.`
+                : `${updated.merchant} is no longer split.`,
+            );
+            announceDataChanged();
+          }}
         />
       )}
       {selected && (
@@ -531,6 +689,10 @@ export function TransactionsPage() {
           transaction={selected}
           categories={categories ?? []}
           onClose={() => setSelected(null)}
+          onSplit={() => {
+            setSplitting(selected);
+            setSelected(null);
+          }}
           onSaved={(updated, rule) => {
             replaceRow(updated);
             setSelected(null);

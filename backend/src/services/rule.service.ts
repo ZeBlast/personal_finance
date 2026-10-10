@@ -6,6 +6,7 @@ import {
   transactions,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
+import { syncCategoryTransfers } from "./transfer.service.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { merchantKey } from "../utils/merchant.js";
 
@@ -247,6 +248,7 @@ export function applyRules(db: Writer, ids?: number[]): ApplyResult {
       .run();
     changed += 1;
   }
+  syncCategoryTransfers(db);
   return { examined: rows.length, changed };
 }
 

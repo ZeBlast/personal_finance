@@ -62,6 +62,18 @@ async function reveal(file: string): Promise<void> {
   if (insideTauri) await revealItemInDir(file);
 }
 
+/** Opens one of the app's folders in File Explorer (works in the app window and a browser tab). */
+async function openFolder(
+  folder: "data" | "backups" | "exports",
+  onNotice: (n: Notice) => void,
+): Promise<void> {
+  try {
+    await api("/data/open-folder", { method: "POST", body: JSON.stringify({ folder }) });
+  } catch (e) {
+    onNotice({ kind: "error", text: errorMessage(e, "The folder could not be opened.") });
+  }
+}
+
 function Panel({
   title,
   intro,
@@ -185,6 +197,13 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
           }
         >
           {busy ? "Working..." : "Back up now"}
+        </button>
+        <button
+          type="button"
+          className={buttonClass}
+          onClick={() => void openFolder("backups", onNotice)}
+        >
+          Open backups folder
         </button>
         {settings.data && (
           <>
@@ -392,6 +411,26 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
   const { data, error, reload } = useApi<Diagnostics>("/diagnostics");
   const [full, setFull] = useState<IntegrityReport | null>(null);
   const [checking, setChecking] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  async function clear(): Promise<void> {
+    try {
+      const r = await api<{ cleared: number }>("/diagnostics/problems", { method: "DELETE" });
+      setFull(null);
+      reload();
+      onNotice({
+        kind: "info",
+        text:
+          r.cleared > 0
+            ? `Cleared ${r.cleared} recorded sync problem${r.cleared === 1 ? "" : "s"}.`
+            : "Diagnostics cleared.",
+      });
+    } catch (e) {
+      onNotice({ kind: "error", text: errorMessage(e, "Diagnostics could not be cleared.") });
+    } finally {
+      setClearing(false);
+    }
+  }
 
   const runFull = useCallback(async () => {
     setChecking(true);
@@ -476,10 +515,38 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
               </div>
             ))}
           </dl>
-          <p className="text-xs break-all text-slate-500">Data folder: {data.dataDir}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs break-all text-slate-500">
+              Data folder (the database and its backups): {data.dataDir}
+            </p>
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => void openFolder("data", onNotice)}
+            >
+              Open data folder
+            </button>
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => void openFolder("backups", onNotice)}
+            >
+              Open backups folder
+            </button>
+          </div>
 
           <div>
-            <h3 className="text-sm font-medium">Recent sync problems</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">Recent sync problems</h3>
+              <button
+                type="button"
+                className={buttonClass}
+                disabled={data.recentProblems.length === 0 && full === null}
+                onClick={() => setClearing(true)}
+              >
+                Clear diagnostics
+              </button>
+            </div>
             {data.recentProblems.length === 0 ? (
               <p className="mt-1 text-sm text-slate-500">None. Recent syncs all worked.</p>
             ) : (
@@ -534,6 +601,15 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
             </button>
           </div>
         </>
+      )}
+      {clearing && (
+        <ConfirmDialog
+          title="Clear diagnostics?"
+          message="The list of recent sync problems and the last full check are cleared. Your data, successful syncs, and each connection's status (such as needing to sign in again) stay as they are."
+          confirmLabel="Clear"
+          onConfirm={() => void clear()}
+          onCancel={() => setClearing(false)}
+        />
       )}
     </Panel>
   );

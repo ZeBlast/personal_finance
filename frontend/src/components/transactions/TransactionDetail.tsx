@@ -8,7 +8,9 @@ import { formatMinor } from "../../lib/money";
 import { categoryLabel, formatDay } from "../../lib/time";
 import type { Category, Rule, RulePreview, Transaction } from "../../types/api";
 import { Modal } from "../common/Modal";
+import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
+import { CategorySelect } from "../common/CategorySelect";
 
 type TransferChoice = "auto" | "yes" | "no";
 type OnlineChoice = "auto" | "yes" | "no";
@@ -26,6 +28,8 @@ interface Props {
   onClose: () => void;
   /** Called with the saved transaction, and with how many others a new rule recategorized. */
   onSaved: (updated: Transaction, rule?: { name: string; changed: number }) => void;
+  /** Offered when set: closes this and opens the split editor. */
+  onSplit?: (() => void) | undefined;
 }
 
 const inputClass =
@@ -47,7 +51,14 @@ function categorySourceText(t: Transaction): string {
   return `Set by the rule “${t.category.ruleName ?? "unknown"}”.`;
 }
 
-export function TransactionDetail({ transaction: t, categories, onClose, onSaved }: Props) {
+export function TransactionDetail({
+  transaction: t,
+  categories,
+  onClose,
+  onSaved,
+  onSplit,
+}: Props) {
+  const transaction = t;
   const id = useId();
   const [merchant, setMerchant] = useState(t.merchantEdited ? t.merchant : "");
   // The other party is a recipient when money went out and a sender when it came in.
@@ -71,7 +82,16 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
   const options = categoryOptions(categories);
   const shownMerchant = merchant.trim() || t.providerMerchant;
   const categoryChanged = categoryId !== (t.category ? String(t.category.id) : "");
-  const chosenName = options.find((o) => String(o.id) === categoryId)?.label;
+  const chosenName = options.find((o) => String(o.id) === categoryId)?.name;
+  const dirty =
+    merchant !== (t.merchantEdited ? t.merchant : "") ||
+    person !== (personWasEdited ? personOnRecord : "") ||
+    notes !== (t.notes ?? "") ||
+    transfer !== initialTransfer ||
+    online !== initialOnline ||
+    categoryChanged ||
+    makeRule;
+  const { requestClose, confirm } = useUnsavedGuard(dirty && !saving, onClose);
 
   // When "always categorize this merchant" is ticked, show how many transactions it would affect.
   useEffect(() => {
@@ -148,7 +168,8 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
   }
 
   return (
-    <Modal title="Transaction" onClose={onClose} wide>
+    <Modal title="Transaction" onClose={requestClose} wide dismissible>
+      {confirm}
       <form onSubmit={(e) => void save(e)} className="space-y-4">
         <dl className="space-y-1">
           <Field label="Date">
@@ -232,7 +253,8 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
           <label htmlFor={`${id}-category`} className="block text-sm font-medium">
             Category
           </label>
-          <select
+          <CategorySelect
+            shown={chosenName ?? "Uncategorized (let the rules decide)"}
             id={`${id}-category`}
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
@@ -245,7 +267,18 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
                 {o.label}
               </option>
             ))}
-          </select>
+          </CategorySelect>
+          {onSplit && (
+            <button
+              type="button"
+              className="mt-1 text-xs text-blue-700 underline dark:text-blue-400"
+              onClick={() =>
+                dirty ? setError("Save or cancel your changes first, then split it.") : onSplit()
+              }
+            >
+              {transaction.splits.length > 0 ? "Change the split..." : "Split across categories..."}
+            </button>
+          )}
           <p id={`${id}-category-help`} className="mt-1 text-xs text-slate-500">
             {categoryChanged && categoryId !== ""
               ? "Saving will mark this category as chosen by you."
@@ -368,7 +401,7 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={saving}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"
           >

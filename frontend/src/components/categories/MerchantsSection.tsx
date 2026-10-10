@@ -94,7 +94,7 @@ export function MerchantsSection({
           ...(override ? { overrideManual: true } : {}),
         }),
       });
-      const name = options.find((o) => String(o.id) === value)?.label;
+      const name = options.find((o) => String(o.id) === value)?.name;
       setNotice({
         kind: "info",
         text:
@@ -148,7 +148,7 @@ export function MerchantsSection({
           <option value="assigned">Assigned to a category</option>
           {options.map((o) => (
             <option key={o.id} value={o.id}>
-              Assigned to {o.label}
+              Assigned to {o.name}
             </option>
           ))}
         </select>

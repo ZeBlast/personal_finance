@@ -334,7 +334,11 @@ export function InvestmentsPage() {
           )}
 
           {manualSelected && manualSelected.subtype === TSP_SUBTYPE && (
-            <TspPanel accountId={manualSelected.id} onChanged={reloadAll} />
+            <TspPanel
+              accountId={manualSelected.id}
+              balanceMinor={manualSelected.valueMinor}
+              onChanged={reloadAll}
+            />
           )}
 
           {overview && (

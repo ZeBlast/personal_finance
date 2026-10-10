@@ -9,6 +9,21 @@ type Message = { kind: "info" | "warning" | "error"; text: string };
 /** Turns the outcome of a sync into one plain sentence for the user. */
 function describe(result: SyncResult): Message {
   const { runs } = result;
+  // Each connection syncs at most every 5 minutes.
+  const waits = result.skipped
+    .map((s) => s.nextAllowedAt)
+    .filter((t): t is string => t !== undefined)
+    .sort();
+  if (runs.length === 0 && waits.length > 0) {
+    const at = new Date(waits[waits.length - 1]!).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    return {
+      kind: "info",
+      text: `Synced a moment ago. To keep requests to your bank down, syncing again is possible from ${at}.`,
+    };
+  }
   if (runs.length === 0) {
     return { kind: "info", text: "Nothing to sync yet. Connect an account first." };
   }

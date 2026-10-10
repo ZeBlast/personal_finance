@@ -14,9 +14,11 @@ import {
 } from "../services/backup.service.js";
 import {
   checkIntegrity,
+  clearSyncProblems,
   diagnostics,
   recentSyncProblems,
 } from "../services/diagnostics.service.js";
+import { openFolder } from "../utils/open-folder.js";
 import { EXPORT_KINDS, exportDir, runExport } from "../services/export.service.js";
 import { netWorthHistory } from "../services/networth-history.service.js";
 import { GRANULARITIES, netWorthSeries } from "../services/networth-series.service.js";
@@ -136,6 +138,27 @@ export function dataRoutes(options: {
 
   router.get("/diagnostics", (_req, res) => {
     res.json(diagnostics(db, { dataDir, version }));
+  });
+
+  /** Clears the recorded sync problems shown in diagnostics. */
+  router.delete("/diagnostics/problems", (_req, res) => {
+    res.json({ cleared: clearSyncProblems(db) });
+  });
+
+  /** Opens one of the app's own folders in the file manager (never a path from the request). */
+  router.post("/data/open-folder", (req, res) => {
+    const { folder } = z
+      .object({ folder: z.enum(["data", "backups", "exports"]) })
+      .strict()
+      .parse(req.body);
+    const dir =
+      folder === "backups"
+        ? backupDir(dataDir)
+        : folder === "exports"
+          ? exportDir(dataDir)
+          : dataDir;
+    openFolder(dir);
+    res.json({ folder, path: dir });
   });
 
   /** The thorough check (verifies every index too). */

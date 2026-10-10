@@ -47,6 +47,18 @@ export function TransactionTags({ t }: { t: Transaction }) {
       title: "Money moved between your own accounts. It is left out of income and spending.",
     });
   }
+  if (t.splits.length > 0) {
+    tags.push({
+      text: t.splitValid ? `Split ${t.splits.length} ways` : "Split (no longer adds up)",
+      className: t.splitValid ? "bg-violet-100 text-violet-900" : "bg-amber-100 text-amber-900",
+      title: t.splits
+        .map(
+          (s) =>
+            `${s.categoryName ?? "Uncategorized"}: ${(Math.abs(s.amountMinor) / 100).toFixed(2)}`,
+        )
+        .join(", "),
+    });
+  }
   if (t.source === "manual") {
     tags.push({
       text: "Entered by hand",

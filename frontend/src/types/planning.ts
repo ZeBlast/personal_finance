@@ -68,9 +68,38 @@ export interface Subscription {
   chargedAfterCancel: boolean;
 }
 
+/** Something about a recurring charge worth a look. */
+export interface RecurringChange {
+  key: string;
+  merchant: string;
+  kind: "price_up" | "price_down" | "new" | "charged_after_cancel";
+  date: string;
+  fromMinor: number | null;
+  toMinor: number;
+  yearlyDeltaMinor: number;
+}
+
+/** Regular pay found in the income. */
+export interface Paycheck {
+  key: string;
+  source: string;
+  cadence: "weekly" | "biweekly" | "semimonthly" | "monthly";
+  typicalMinor: number;
+  lastDate: string;
+  lastAmountMinor: number;
+  nextExpected: string;
+  occurrences: number;
+  accountName: string;
+  receivedThisYearMinor: number;
+  paydaysLeft: number;
+  projectedYearMinor: number;
+  active: boolean;
+}
+
 export interface SubscriptionReview {
   currency: string;
   subscriptions: Subscription[];
+  changes: RecurringChange[];
   totals: { monthlyMinor: number; yearlyMinor: number; toCancelYearlyMinor: number };
 }
 

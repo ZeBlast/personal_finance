@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { notFound } from "../utils/errors.js";
@@ -16,7 +16,9 @@ import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
  *
  * The user always has the last word. A flag they set by hand (`transfer_source = 'manual'`) is
  * never changed here, and one the app set (`auto`) goes away when its match does (for example when
- * the other side is deleted), because every run starts by clearing the automatic flags.
+ * the other side is deleted), because every run starts by clearing the automatic flags. A flag from
+ * a category (`category`, see syncCategoryTransfers) is cleared too, so such a transaction can still
+ * be matched with its other side; only if it finds none is the category's flag put back.
  */
 
 /** How many days apart the two sides of a transfer can post. */
@@ -139,10 +141,11 @@ export function matchTransfers(candidates: Candidate[]): Array<[number, number]>
  */
 export function detectInternalTransfers(db: AppDb, now: string = new Date().toISOString()): number {
   return db.transaction((tx) => {
-    // Start from a clean slate for what the app decided; keep what the user and the system decided.
+    // Start from a clean slate for what the app decided (matches, and flags from a category);
+    // keep what the user and the system decided.
     tx.update(transactions)
       .set({ isTransfer: false, transferSource: null, transferPairId: null })
-      .where(eq(transactions.transferSource, "auto"))
+      .where(inArray(transactions.transferSource, ["auto", "category"]))
       .run();
 
     const rows = tx.all<{
@@ -203,8 +206,35 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
           .run();
       }
     }
+    // What found no match, but sits in a category that moves the user's own money, is a transfer.
+    syncCategoryTransfers(tx, now);
     return pairs.length;
   });
+}
+
+/**
+ * Keeps the transfer flag in line with categories that move the user's own money (a cash
+ * withdrawal, savings and investing: `income_treatment = 'transfer'`). A transaction in one is
+ * flagged (`transfer_source = 'category'`), so it counts as neither income nor spending anywhere;
+ * one moved out of such a category loses that flag. A match between two accounts, or the user's own
+ * choice, always wins.
+ */
+export function syncCategoryTransfers(
+  db: Pick<AppDb, "update">,
+  now: string = new Date().toISOString(),
+): void {
+  const moving = sql`(select id from categories where income_treatment = 'transfer')`;
+  db.update(transactions)
+    .set({ isTransfer: true, transferSource: "category", transferPairId: null, updatedAt: now })
+    .where(sql`${transactions.transferSource} is null and ${transactions.categoryId} in ${moving}`)
+    .run();
+  db.update(transactions)
+    .set({ isTransfer: false, transferSource: null, updatedAt: now })
+    .where(
+      sql`${transactions.transferSource} = 'category'
+        and (${transactions.categoryId} is null or ${transactions.categoryId} not in ${moving})`,
+    )
+    .run();
 }
 
 /**

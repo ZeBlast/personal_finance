@@ -48,6 +48,7 @@ describe("CADENCE_LABEL", () => {
       "biweekly",
       "monthly",
       "quarterly",
+      "semimonthly",
       "weekly",
       "yearly",
     ]);

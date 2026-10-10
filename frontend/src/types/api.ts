@@ -70,7 +70,13 @@ export interface SyncRun {
 
 export interface SyncResult {
   runs: SyncRun[];
-  skipped: Array<{ itemId: number; institutionName: string; reason: string }>;
+  skipped: Array<{
+    itemId: number;
+    institutionName: string;
+    reason: string;
+    /** For `too_soon`: when it may sync again (each connection syncs at most every 5 minutes). */
+    nextAllowedAt?: string;
+  }>;
 }
 
 export interface SyncStatus {
@@ -132,7 +138,19 @@ export interface Transaction {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | null;
+  /** The parts it is split into across categories (empty when not split). */
+  splits: Array<{
+    id: number;
+    categoryId: number | null;
+    categoryName: string | null;
+    categoryColor: string | null;
+    /** Same sign as the transaction: positive is money out. */
+    amountMinor: number;
+    note: string | null;
+  }>;
+  /** False when the parts no longer add up to the amount (it then counts whole). */
+  splitValid: boolean;
   /** For an automatic match, the other side of the transfer. */
   transferWith: {
     id: number;
@@ -173,7 +191,7 @@ export interface Category {
   color: string | null;
   active: boolean;
   /** How money coming in under it counts: taxable income, a refund, or the usual rules (null). */
-  incomeTreatment: "income" | "refund" | null;
+  incomeTreatment: "income" | "refund" | "transfer" | null;
   transactionCount: number;
   ruleCount: number;
 }

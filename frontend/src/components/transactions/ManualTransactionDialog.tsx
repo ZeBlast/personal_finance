@@ -4,6 +4,7 @@ import { categoryOptions } from "../../hooks/useCategories";
 import { today } from "../../lib/period";
 import type { Account, Category, Transaction } from "../../types/api";
 import { ConfirmDialog, Modal } from "../common/Modal";
+import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import {
   buildManualPayload,
@@ -12,6 +13,7 @@ import {
   REPEAT_OPTIONS,
   type ManualDraft,
 } from "./manualTransaction";
+import { CategorySelect } from "../common/CategorySelect";
 
 /**
  * Adds a transaction by hand to an account the user keeps by hand (cash, for example), or edits
@@ -26,6 +28,7 @@ export function ManualTransactionDialog({
   defaultDate,
   onSaved,
   onClose,
+  onSplit,
 }: {
   /** Accounts that accept hand-entered transactions. */
   accounts: Account[];
@@ -37,10 +40,13 @@ export function ManualTransactionDialog({
   defaultDate?: string | undefined;
   onSaved: (message: string) => void;
   onClose: () => void;
+  /** Offered when set (editing): closes this and opens the split editor. */
+  onSplit?: (() => void) | undefined;
 }) {
   const id = useId();
   const editing = transaction !== undefined;
-  const [draft, setDraft] = useState<ManualDraft>(() =>
+  // What the form started with, to tell whether anything was changed.
+  const [initial] = useState<ManualDraft>(() =>
     transaction
       ? draftFromTransaction(transaction)
       : emptyManualDraft(
@@ -48,12 +54,17 @@ export function ManualTransactionDialog({
           String(defaultAccountId ?? (accounts.length === 1 ? accounts[0]!.id : "")),
         ),
   );
+  const [draft, setDraft] = useState<ManualDraft>(initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const set = (change: Partial<ManualDraft>): void => setDraft((d) => ({ ...d, ...change }));
   const options = categoryOptions(categories);
   const out = draft.direction === "out";
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
+  const { requestClose, confirm } = useUnsavedGuard(dirty && !busy, onClose);
+  // Escape or a click outside while the delete question is up only closes that question.
+  const close = () => (confirmDelete ? setConfirmDelete(false) : requestClose());
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -95,7 +106,13 @@ export function ManualTransactionDialog({
   }
 
   return (
-    <Modal title={editing ? "Edit transaction" : "Add a transaction"} onClose={onClose} wide>
+    <Modal
+      title={editing ? "Edit transaction" : "Add a transaction"}
+      onClose={close}
+      wide
+      dismissible
+    >
+      {confirm}
       <form onSubmit={(e) => void submit(e)} className="space-y-3 text-sm">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
@@ -183,7 +200,11 @@ export function ManualTransactionDialog({
             <label htmlFor={`${id}-category`} className="block font-medium">
               Category
             </label>
-            <select
+            <CategorySelect
+              shown={
+                options.find((o) => String(o.id) === draft.categoryId)?.name ??
+                "Uncategorized (let the rules decide)"
+              }
               id={`${id}-category`}
               value={draft.categoryId}
               onChange={(e) => set({ categoryId: e.target.value })}
@@ -195,7 +216,20 @@ export function ManualTransactionDialog({
                   {o.label}
                 </option>
               ))}
-            </select>
+            </CategorySelect>
+            {onSplit && transaction && (
+              <button
+                type="button"
+                className="mt-1 text-xs text-blue-700 underline dark:text-blue-400"
+                onClick={() =>
+                  dirty ? setError("Save or cancel your changes first, then split it.") : onSplit()
+                }
+              >
+                {transaction.splits.length > 0
+                  ? "Change the split..."
+                  : "Split across categories..."}
+              </button>
+            )}
           </div>
           <div>
             <label htmlFor={`${id}-person`} className="block font-medium">
@@ -302,7 +336,7 @@ export function ManualTransactionDialog({
             )}
           </div>
           <div className="flex gap-2">
-            <button type="button" className={buttonClass} disabled={busy} onClick={onClose}>
+            <button type="button" className={buttonClass} disabled={busy} onClick={requestClose}>
               Cancel
             </button>
             <button type="submit" className={primaryClass} disabled={busy}>

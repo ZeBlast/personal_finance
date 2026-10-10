@@ -9,6 +9,8 @@ import {
   updateAnyTransaction,
 } from "../services/manual-transaction.service.js";
 import { transactionCashback } from "../services/cashback.service.js";
+import { transactionGraph } from "../services/graph.service.js";
+import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -17,6 +19,7 @@ const idParam = z.coerce.number().int().positive();
 const listQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  focus: z.coerce.number().int().positive().optional(),
   accountId: z.coerce.number().int().positive().optional(),
   from: date.optional(),
   to: date.optional(),
@@ -86,6 +89,14 @@ export function transactionsRoutes(db: AppDb): Router {
     };
   };
 
+  /** Institutions, accounts, and transactions for the network graph. */
+  router.get("/graph/transactions", (req, res) => {
+    const q = z
+      .object({ from: z.string().min(10).max(10), to: z.string().min(10).max(10) })
+      .parse(req.query);
+    res.json(transactionGraph(db, q.from, q.to));
+  });
+
   router.get("/transactions", (req, res) => {
     const parsed = listQuery.parse(req.query);
     res.json(
@@ -98,6 +109,28 @@ export function transactionsRoutes(db: AppDb): Router {
         }),
       ),
     );
+  });
+
+  /** Splits a transaction across categories (an empty list un-splits it). */
+  router.put("/transactions/:id/splits", (req, res) => {
+    const id = idParam.parse(req.params["id"]);
+    const body = z
+      .object({
+        parts: z
+          .array(
+            z
+              .object({
+                categoryId: z.number().int().positive().nullable(),
+                amountMinor: z.number().int().min(-100_000_000_000).max(100_000_000_000),
+                note: z.string().max(200).nullable().optional(),
+              })
+              .strict(),
+          )
+          .max(MAX_SPLITS),
+      })
+      .strict()
+      .parse(req.body);
+    res.json(setSplits(db, id, body.parts));
   });
 
   router.get("/transactions/:id", (req, res) => {

@@ -9,6 +9,7 @@ import {
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { applyRules, DINING_SPLIT_KEY } from "./rule.service.js";
+import { syncCategoryTransfers } from "./transfer.service.js";
 
 export const NAME_MAX = 60;
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -25,10 +26,15 @@ export interface CategoryDto {
   ruleCount: number;
 }
 
-export const INCOME_TREATMENTS = ["income", "refund"] as const;
+/**
+ * How money under a category counts: `income` (taxable income), `refund` (lowers spending, never
+ * income), or `transfer` (moving the user's own money, such as a cash withdrawal or savings: never
+ * income or spending).
+ */
+export const INCOME_TREATMENTS = ["income", "refund", "transfer"] as const;
 export type IncomeTreatment = (typeof INCOME_TREATMENTS)[number];
 const treatmentOf = (v: string | null): IncomeTreatment | null =>
-  v === "income" || v === "refund" ? v : null;
+  v === "income" || v === "refund" || v === "transfer" ? v : null;
 
 type CategoryRow = typeof categories.$inferSelect;
 
@@ -229,6 +235,8 @@ export function updateCategory(
       tx.update(categories).set({ active: false }).where(eq(categories.parentId, id)).run();
     }
   });
+  // A category may now (or no longer) move the user's own money.
+  syncCategoryTransfers(db);
   return getCategory(db, id);
 }
 
@@ -311,6 +319,7 @@ export function deleteCategory(
     };
   }
   db.delete(categories).where(eq(categories.id, id)).run();
+  syncCategoryTransfers(db);
   return { outcome: "deleted", transactionCount: 0, ruleCount: 0 };
 }
 
@@ -676,4 +685,237 @@ export function ensureTransferSubcategories(db: AppDb): boolean {
       .run();
   });
   return true;
+}
+
+const CATEGORY_PACK_DONE = "defaults_category_pack_v1";
+
+interface PackCategory {
+  name: string;
+  color: string;
+  /** The top-level category it goes under, or null for a top-level one. */
+  parent: string | null;
+  treatment?: IncomeTreatment;
+  /** Bank (Plaid) categories that file into it. */
+  plaid?: string[];
+}
+
+/** In order: a parent always comes before its subcategories. */
+const CATEGORY_PACK: PackCategory[] = [
+  { name: "Insurance", color: "#0f766e", parent: null, plaid: ["GENERAL_SERVICES_INSURANCE"] },
+  { name: "Auto Insurance", color: "#0d9488", parent: "Insurance" },
+  { name: "Home & Renters Insurance", color: "#14b8a6", parent: "Insurance" },
+  { name: "Life Insurance", color: "#2dd4bf", parent: "Insurance" },
+  { name: "Health Insurance", color: "#5eead4", parent: "Insurance" },
+  {
+    name: "Taxes",
+    color: "#991b1b",
+    parent: null,
+    plaid: ["GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT"],
+  },
+  {
+    name: "Tax Refund",
+    color: "#a3a3a3",
+    parent: "Taxes",
+    treatment: "refund",
+    plaid: ["INCOME_TAX_REFUND"],
+  },
+  {
+    name: "Phone & Internet",
+    color: "#3b82f6",
+    parent: "Rent & Utilities",
+    plaid: ["RENT_AND_UTILITIES_TELEPHONE", "RENT_AND_UTILITIES_INTERNET_AND_CABLE"],
+  },
+  { name: "Subscriptions", color: "#7c3aed", parent: null },
+  // Streaming already exists for most; it moves under Subscriptions.
+  { name: "Streaming", color: "#8b5cf6", parent: "Subscriptions" },
+  {
+    name: "Gifts & Donations",
+    color: "#e11d48",
+    parent: null,
+    plaid: ["GOVERNMENT_AND_NON_PROFIT_DONATIONS", "GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES"],
+  },
+  // Gas was added on its own earlier; it moves under Transportation with the rest.
+  { name: "Gas", color: "#d97706", parent: "Transportation" },
+  {
+    name: "Parking & Tolls",
+    color: "#0e7490",
+    parent: "Transportation",
+    plaid: ["TRANSPORTATION_PARKING", "TRANSPORTATION_TOLLS"],
+  },
+  {
+    name: "Public Transit",
+    color: "#06b6d4",
+    parent: "Transportation",
+    plaid: ["TRANSPORTATION_PUBLIC_TRANSIT"],
+  },
+  {
+    name: "Rideshare",
+    color: "#22d3ee",
+    parent: "Transportation",
+    plaid: ["TRANSPORTATION_TAXIS_AND_RIDE_SHARES"],
+  },
+  {
+    name: "Car Maintenance",
+    color: "#155e75",
+    parent: "Transportation",
+    plaid: ["GENERAL_SERVICES_AUTOMOTIVE"],
+  },
+  {
+    name: "Car Payment",
+    color: "#164e63",
+    parent: "Transportation",
+    plaid: ["LOAN_PAYMENTS_CAR_PAYMENT"],
+  },
+  {
+    name: "Paycheck",
+    color: "#16a34a",
+    parent: "Income",
+    treatment: "income",
+    plaid: ["INCOME_WAGES"],
+  },
+  {
+    name: "Interest & Dividends",
+    color: "#22c55e",
+    parent: "Income",
+    treatment: "income",
+    plaid: ["INCOME_INTEREST_EARNED", "INCOME_DIVIDENDS"],
+  },
+  { name: "Side Income", color: "#4ade80", parent: "Income", treatment: "income" },
+  // Money paid back for something bought: it lowers spending rather than being income.
+  { name: "Reimbursements", color: "#86efac", parent: "Income", treatment: "refund" },
+  {
+    name: "Cash Withdrawals",
+    color: "#94a3b8",
+    parent: "Transfers",
+    treatment: "transfer",
+    plaid: ["TRANSFER_OUT_WITHDRAWAL"],
+  },
+  {
+    name: "Savings & Investing",
+    color: "#475569",
+    parent: "Transfers",
+    treatment: "transfer",
+    plaid: ["TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS", "TRANSFER_OUT_SAVINGS"],
+  },
+];
+
+export interface CategoryPackResult {
+  categoriesCreated: number;
+  categoriesMoved: number;
+  rulesCreated: number;
+  recategorized: number;
+}
+
+/**
+ * Adds the second set of starter categories, once: Insurance, Taxes (with Tax Refund), Phone &
+ * Internet, Subscriptions (with Streaming moved under it), Gifts & Donations, Transportation and
+ * Income subcategories, and Cash Withdrawals and Savings & Investing under Transfers (which count
+ * as moving the user's own money, not spending). A category already there by the same name is
+ * reused (and moved under its parent when it has no subcategories of its own). Rules from the
+ * bank's categories file new transactions; past ones the user did not categorize by hand are
+ * sorted again. Deleting any of these later does not bring them back.
+ */
+export function ensureCategoryPack(db: AppDb): CategoryPackResult | null {
+  if (db.select().from(appSettings).where(eq(appSettings.key, CATEGORY_PACK_DONE)).get()) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const result: CategoryPackResult = {
+    categoriesCreated: 0,
+    categoriesMoved: 0,
+    rulesCreated: 0,
+    recategorized: 0,
+  };
+  db.transaction((tx) => {
+    const byName = (name: string) =>
+      tx
+        .select({
+          id: categories.id,
+          parentId: categories.parentId,
+          incomeTreatment: categories.incomeTreatment,
+        })
+        .from(categories)
+        .where(sql`lower(${categories.name}) = ${name.toLowerCase()}`)
+        .get();
+    // Rules from the bank's categories go ahead of the broad default rules, so they win.
+    const first = tx
+      .select({ priority: transactionRules.priority })
+      .from(transactionRules)
+      .orderBy(asc(transactionRules.priority))
+      .get();
+    let priority = (first?.priority ?? 1000) - 200;
+
+    for (const item of CATEGORY_PACK) {
+      const parent = item.parent === null ? null : byName(item.parent);
+      // A parent the user deleted leaves its subcategories at the top level.
+      const parentId = parent && parent.parentId === null ? parent.id : null;
+      let category = byName(item.name);
+      if (!category) {
+        category = tx
+          .insert(categories)
+          .values({
+            name: item.name,
+            color: item.color,
+            parentId,
+            active: true,
+            incomeTreatment: item.treatment ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({
+            id: categories.id,
+            parentId: categories.parentId,
+            incomeTreatment: categories.incomeTreatment,
+          })
+          .get();
+        result.categoriesCreated += 1;
+      } else {
+        const changes: Partial<typeof categories.$inferInsert> = {};
+        if (
+          parentId !== null &&
+          category.parentId !== parentId &&
+          category.id !== parentId &&
+          childIds(tx, category.id).length === 0
+        ) {
+          changes.parentId = parentId;
+          result.categoriesMoved += 1;
+        }
+        if (item.treatment && category.incomeTreatment === null) {
+          changes.incomeTreatment = item.treatment;
+        }
+        if (Object.keys(changes).length > 0) {
+          tx.update(categories)
+            .set({ ...changes, updatedAt: now })
+            .where(eq(categories.id, category.id))
+            .run();
+        }
+      }
+      for (const code of item.plaid ?? []) {
+        const name = `Bank category ${code} → ${item.name}`;
+        const exists = tx
+          .select({ id: transactionRules.id })
+          .from(transactionRules)
+          .where(eq(transactionRules.name, name))
+          .get();
+        if (exists) continue;
+        tx.insert(transactionRules)
+          .values({
+            name,
+            field: "plaid_category",
+            operator: "equals",
+            matchValue: code,
+            categoryId: category.id,
+            priority: priority++,
+            enabled: true,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        result.rulesCreated += 1;
+      }
+    }
+    result.recategorized = applyRules(tx).changed;
+    tx.insert(appSettings).values({ key: CATEGORY_PACK_DONE, value: "true", updatedAt: now }).run();
+  });
+  return result;
 }

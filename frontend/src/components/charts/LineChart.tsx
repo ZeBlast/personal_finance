@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type PointerEvent } from "react";
 import { fraction, paddedRange, segmentsOf } from "./math";
 
 export interface LinePoint {
@@ -20,27 +20,199 @@ const LEFT = 52;
 const RIGHT = 12;
 const TOP = 10;
 const BOTTOM = 24;
+const PLOT_W = WIDTH - LEFT - RIGHT;
+const PLOT_H = HEIGHT - TOP - BOTTOM;
 
 const dayMs = (date: string): number => Date.parse(`${date}T12:00:00Z`);
 
-function shortDate(date: string): string {
-  return new Date(dayMs(date)).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "2-digit",
-    timeZone: "UTC",
-  });
+// One formatter for every date label (making one per call is slow).
+const SHORT_DATE = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "2-digit",
+  timeZone: "UTC",
+});
+const shortDate = (date: string): string => SHORT_DATE.format(dayMs(date));
+
+/** The index in a sorted list of times closest to `t` (binary search). */
+function nearestIndex(times: number[], t: number): number {
+  let lo = 0;
+  let hi = times.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid]! < t) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo > 0 && Math.abs(times[lo - 1]! - t) <= Math.abs(times[lo]! - t)) return lo - 1;
+  return lo;
 }
 
 /** The point of a series on a day, or else its closest one. */
 export function pointNear(points: LinePoint[], date: string): LinePoint | undefined {
-  const t = dayMs(date);
-  let best: LinePoint | undefined;
-  for (const p of points) {
-    if (!best || Math.abs(dayMs(p.date) - t) < Math.abs(dayMs(best.date) - t)) best = p;
-  }
-  return best;
+  if (points.length === 0) return undefined;
+  const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  return sorted[
+    nearestIndex(
+      sorted.map((p) => dayMs(p.date)),
+      dayMs(date),
+    )
+  ];
 }
+
+interface Layout {
+  firstTime: number;
+  lastTime: number;
+  low: number;
+  high: number;
+  x: (time: number) => number;
+  y: (value: number) => number;
+  /** Every day with a point, sorted, with its x position. */
+  dates: string[];
+  dateX: number[];
+  /** Per series: its points sorted by day, and their times, for finding the nearest quickly. */
+  lookup: Map<string, { points: LinePoint[]; times: number[] }>;
+}
+
+function layoutOf(shown: LineSeries[]): Layout | null {
+  let firstTime = Infinity;
+  let lastTime = -Infinity;
+  let min = Infinity;
+  let max = -Infinity;
+  const days = new Set<string>();
+  const lookup: Layout["lookup"] = new Map();
+  for (const s of shown) {
+    const points = [...s.points].sort((a, b) => a.date.localeCompare(b.date));
+    const times = points.map((p) => dayMs(p.date));
+    lookup.set(s.key, { points, times });
+    for (let i = 0; i < points.length; i++) {
+      const t = times[i]!;
+      const v = points[i]!.value;
+      if (t < firstTime) firstTime = t;
+      if (t > lastTime) lastTime = t;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      days.add(points[i]!.date);
+    }
+  }
+  if (days.size === 0) return null;
+  const { low, high } = paddedRange(min, max);
+  const x = (time: number) => LEFT + fraction(time, firstTime, lastTime) * PLOT_W;
+  const y = (value: number) => TOP + (1 - fraction(value, low, high)) * PLOT_H;
+  const dates = [...days].sort();
+  return {
+    firstTime,
+    lastTime,
+    low,
+    high,
+    x,
+    y,
+    dates,
+    dateX: dates.map((d) => x(dayMs(d))),
+    lookup,
+  };
+}
+
+/**
+ * The parts that do not change while hovering: the grid, the axis labels, and the lines (one path
+ * per line, with dashed parts for gaps, rather than one element per segment).
+ */
+const ChartBody = memo(function ChartBody({
+  shown,
+  layout,
+  axis,
+  gapDays,
+  showDots,
+}: {
+  shown: LineSeries[];
+  layout: Layout;
+  axis: (value: number) => string;
+  gapDays: number | undefined;
+  showDots: boolean;
+}) {
+  const { x, y, low, high, firstTime, lastTime } = layout;
+  const gridValues = [0, 1, 2, 3].map((i) => low + ((high - low) * i) / 3);
+  return (
+    <>
+      {gridValues.map((value) => (
+        <g key={value}>
+          <line
+            x1={LEFT}
+            x2={WIDTH - RIGHT}
+            y1={y(value)}
+            y2={y(value)}
+            className="stroke-slate-200 dark:stroke-slate-700"
+            strokeWidth="1"
+          />
+          <text
+            x={LEFT - 6}
+            y={y(value) + 3}
+            textAnchor="end"
+            className="fill-slate-500 text-[9px]"
+          >
+            {axis(value)}
+          </text>
+        </g>
+      ))}
+      {shown.map((s) => {
+        const points = layout.lookup.get(s.key)?.points ?? [];
+        let solid = "";
+        let dashed = "";
+        for (const seg of segmentsOf(points, gapDays)) {
+          const part = `M${x(dayMs(seg.from.date)).toFixed(1)},${y(seg.from.value).toFixed(1)}L${x(dayMs(seg.to.date)).toFixed(1)},${y(seg.to.value).toFixed(1)}`;
+          if (seg.gap) dashed += part;
+          else solid += part;
+        }
+        return (
+          <g key={s.key}>
+            {solid && (
+              <path
+                d={solid}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+            {dashed && (
+              <path
+                d={dashed}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray="3 5"
+                opacity={0.6}
+              />
+            )}
+            {showDots &&
+              points.map((p) => (
+                <circle key={p.date} cx={x(dayMs(p.date))} cy={y(p.value)} r="3.5" fill={s.color} />
+              ))}
+          </g>
+        );
+      })}
+      <text
+        x={firstTime === lastTime ? LEFT + PLOT_W / 2 : LEFT}
+        y={HEIGHT - 8}
+        textAnchor={firstTime === lastTime ? "middle" : "start"}
+        className="fill-slate-500 text-[9px]"
+      >
+        {SHORT_DATE.format(firstTime)}
+      </text>
+      {firstTime !== lastTime && (
+        <text
+          x={WIDTH - RIGHT}
+          y={HEIGHT - 8}
+          textAnchor="end"
+          className="fill-slate-500 text-[9px]"
+        >
+          {SHORT_DATE.format(lastTime)}
+        </text>
+      )}
+    </>
+  );
+});
 
 /**
  * A line chart of values observed on particular days. Every observation is drawn as a dot, so
@@ -48,7 +220,8 @@ export function pointNear(points: LinePoint[], date: string): LinePoint | undefi
  * connects the dots. The vertical axis does not have to start at zero.
  *
  * Hovering (or the arrow keys, once focused) shows each line's exact figure on the nearest day;
- * clicking a legend entry hides or shows that line.
+ * clicking a legend entry hides or shows that line. Hovering only redraws the guide line and the
+ * readout; the lines themselves are drawn once.
  */
 export function LineChart({
   series,
@@ -66,11 +239,50 @@ export function LineChart({
   formatAxis?: (value: number) => string;
 }) {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [hover, setHover] = useState<string | null>(null);
-  const shown = series.filter((s) => !hidden.has(s.key));
-  const points = shown.flatMap((s) => s.points);
+  /** The index (in `layout.dates`) of the day under the pointer. */
+  const [hover, setHover] = useState<number | null>(null);
+  const frame = useRef(0);
+
+  const shown = useMemo(() => series.filter((s) => !hidden.has(s.key)), [series, hidden]);
+  const layout = useMemo(() => layoutOf(shown), [shown]);
   const showDots = dots ?? shown.every((s) => s.points.length <= 40);
-  if (points.length === 0) return <p className="text-sm text-slate-500">No data yet.</p>;
+  const axis = formatAxis ?? format;
+
+  // A short description for screen readers: each line's range, not every point.
+  const summary = useMemo(() => {
+    if (!layout) return "";
+    return shown
+      .map((s) => {
+        const pts = layout.lookup.get(s.key)?.points ?? [];
+        if (pts.length === 0) return `${s.label}: no data`;
+        const first = pts[0]!;
+        const last = pts[pts.length - 1]!;
+        return `${s.label}: ${format(first.value)} on ${shortDate(first.date)} to ${format(last.value)} on ${shortDate(last.date)}`;
+      })
+      .join("; ");
+  }, [layout, shown, format]);
+
+  // The day under the pointer, at most once a frame.
+  const onMove = useCallback(
+    (e: PointerEvent<SVGSVGElement>) => {
+      if (!layout) return;
+      const box = e.currentTarget.getBoundingClientRect();
+      if (box.width === 0) return;
+      const vx = ((e.clientX - box.left) / box.width) * WIDTH;
+      cancelAnimationFrame(frame.current);
+      frame.current = requestAnimationFrame(() => {
+        const i = nearestIndex(layout.dateX, vx);
+        setHover((prev) => (prev === i ? prev : i));
+      });
+    },
+    [layout],
+  );
+  const leave = useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    setHover(null);
+  }, []);
+
+  if (!layout) return <p className="text-sm text-slate-500">No data yet.</p>;
 
   const toggle = (key: string) =>
     setHidden((h) => {
@@ -79,57 +291,24 @@ export function LineChart({
       else if (series.length - next.size > 1) next.add(key); // always keep one line
       return next;
     });
-
-  const times = points.map((p) => dayMs(p.date));
-  const firstTime = Math.min(...times);
-  const lastTime = Math.max(...times);
-  const { low, high } = paddedRange(
-    Math.min(...points.map((p) => p.value)),
-    Math.max(...points.map((p) => p.value)),
-  );
-
-  const plotW = WIDTH - LEFT - RIGHT;
-  const plotH = HEIGHT - TOP - BOTTOM;
-  const x = (date: string): number => LEFT + fraction(dayMs(date), firstTime, lastTime) * plotW;
-  const y = (value: number): number => TOP + (1 - fraction(value, low, high)) * plotH;
-  const axis = formatAxis ?? format;
-  const gridValues = [0, 1, 2, 3].map((i) => low + ((high - low) * i) / 3);
-  const firstDate = new Date(firstTime).toISOString().slice(0, 10);
-  const lastDate = new Date(lastTime).toISOString().slice(0, 10);
-  const dates = [...new Set(points.map((p) => p.date))].sort();
-
-  // The day under the pointer: the nearest one with a point.
-  const onMove = (e: PointerEvent<SVGSVGElement>) => {
-    const box = e.currentTarget.getBoundingClientRect();
-    if (box.width === 0) return;
-    const vx = ((e.clientX - box.left) / box.width) * WIDTH;
-    let best: string | null = null;
-    for (const d of dates) {
-      if (best === null || Math.abs(x(d) - vx) < Math.abs(x(best) - vx)) best = d;
-    }
-    setHover(best);
-  };
   const step = (by: number) => {
-    const at = hover === null ? -1 : dates.indexOf(hover);
-    const i = at === -1 ? (by > 0 ? 0 : dates.length - 1) : at + by;
-    const next = dates[Math.min(dates.length - 1, Math.max(0, i))];
-    if (next) setHover(next);
+    const last = layout.dates.length - 1;
+    const i = hover === null ? (by > 0 ? 0 : last) : Math.min(last, Math.max(0, hover + by));
+    setHover(i);
   };
-  const readout =
-    hover === null
-      ? []
-      : shown
-          .map((s) => ({ s, p: pointNear(s.points, hover) }))
-          .filter((r): r is { s: LineSeries; p: LinePoint } => r.p !== undefined);
-  const hoverX = hover === null ? 0 : x(hover);
-  const share = hoverX / WIDTH;
 
-  const summary = shown
-    .map(
-      (s) =>
-        `${s.label}: ${s.points.map((p) => `${shortDate(p.date)} ${format(p.value)}`).join(", ")}`,
-    )
-    .join("; ");
+  const hoverDate =
+    hover === null ? null : (layout.dates[Math.min(hover, layout.dates.length - 1)] ?? null);
+  const readout =
+    hoverDate === null
+      ? []
+      : shown.flatMap((s) => {
+          const l = layout.lookup.get(s.key);
+          if (!l || l.points.length === 0) return [];
+          return [{ s, p: l.points[nearestIndex(l.times, dayMs(hoverDate))]! }];
+        });
+  const hoverX = hoverDate === null ? 0 : layout.x(dayMs(hoverDate));
+  const share = hoverX / WIDTH;
 
   return (
     <div>
@@ -142,63 +321,29 @@ export function LineChart({
           className="h-auto w-full cursor-crosshair touch-none rounded outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           onPointerMove={onMove}
           onPointerDown={onMove}
-          onPointerLeave={() => setHover(null)}
-          onBlur={() => setHover(null)}
+          onPointerLeave={leave}
+          onBlur={leave}
           onKeyDown={(e) => {
             if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
               e.preventDefault();
               step(e.key === "ArrowLeft" ? -1 : 1);
-            } else if (e.key === "Escape") setHover(null);
+            } else if (e.key === "Escape") leave();
           }}
         >
-          {gridValues.map((value) => (
-            <g key={value}>
-              <line
-                x1={LEFT}
-                x2={WIDTH - RIGHT}
-                y1={y(value)}
-                y2={y(value)}
-                className="stroke-slate-200 dark:stroke-slate-700"
-                strokeWidth="1"
-              />
-              <text
-                x={LEFT - 6}
-                y={y(value) + 3}
-                textAnchor="end"
-                className="fill-slate-500 text-[9px]"
-              >
-                {axis(value)}
-              </text>
-            </g>
-          ))}
-          {shown.map((s) => (
-            <g key={s.key}>
-              {segmentsOf(s.points, gapDays).map((seg) => (
-                <line
-                  key={seg.from.date}
-                  x1={x(seg.from.date)}
-                  y1={y(seg.from.value)}
-                  x2={x(seg.to.date)}
-                  y2={y(seg.to.value)}
-                  stroke={s.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeDasharray={seg.gap ? "3 5" : undefined}
-                  opacity={seg.gap ? 0.6 : 1}
-                />
-              ))}
-              {(showDots ? s.points : []).map((p) => (
-                <circle key={p.date} cx={x(p.date)} cy={y(p.value)} r="3.5" fill={s.color} />
-              ))}
-            </g>
-          ))}
-          {hover !== null && (
+          <ChartBody
+            shown={shown}
+            layout={layout}
+            axis={axis}
+            gapDays={gapDays}
+            showDots={showDots}
+          />
+          {hoverDate !== null && (
             <g pointerEvents="none">
               <line
                 x1={hoverX}
                 x2={hoverX}
                 y1={TOP}
-                y2={TOP + plotH}
+                y2={TOP + PLOT_H}
                 className="stroke-slate-400 dark:stroke-slate-500"
                 strokeWidth="1"
                 strokeDasharray="3 3"
@@ -206,8 +351,8 @@ export function LineChart({
               {readout.map(({ s, p }) => (
                 <circle
                   key={s.key}
-                  cx={x(p.date)}
-                  cy={y(p.value)}
+                  cx={layout.x(dayMs(p.date))}
+                  cy={layout.y(p.value)}
                   r="4.5"
                   fill={s.color}
                   className="stroke-white dark:stroke-slate-900"
@@ -216,26 +361,8 @@ export function LineChart({
               ))}
             </g>
           )}
-          <text
-            x={firstTime === lastTime ? LEFT + plotW / 2 : LEFT}
-            y={HEIGHT - 8}
-            textAnchor={firstTime === lastTime ? "middle" : "start"}
-            className="fill-slate-500 text-[9px]"
-          >
-            {shortDate(firstDate)}
-          </text>
-          {firstTime !== lastTime && (
-            <text
-              x={WIDTH - RIGHT}
-              y={HEIGHT - 8}
-              textAnchor="end"
-              className="fill-slate-500 text-[9px]"
-            >
-              {shortDate(lastDate)}
-            </text>
-          )}
         </svg>
-        {hover !== null && readout.length > 0 && (
+        {hoverDate !== null && readout.length > 0 && (
           <div
             role="status"
             className="pointer-events-none absolute top-1 z-10 min-w-40 rounded-md border border-slate-200 bg-white/95 px-2.5 py-1.5 text-xs shadow-md dark:border-slate-600 dark:bg-slate-800/95"
@@ -244,7 +371,7 @@ export function LineChart({
               share > 0.6 ? { right: `${(1 - share) * 100 + 2}%` } : { left: `${share * 100 + 2}%` }
             }
           >
-            <div className="mb-0.5 font-medium">{shortDate(hover)}</div>
+            <div className="mb-0.5 font-medium">{shortDate(hoverDate)}</div>
             {readout.map(({ s, p }) => (
               <div key={s.key} className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1">
@@ -254,7 +381,7 @@ export function LineChart({
                     style={{ backgroundColor: s.color }}
                   />
                   {s.label}
-                  {p.date !== hover && (
+                  {p.date !== hoverDate && (
                     <span className="text-slate-400">({shortDate(p.date)})</span>
                   )}
                 </span>

@@ -19,6 +19,7 @@ import {
   plaidItems,
   transactionRules,
   transactions,
+  transactionSplits,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
@@ -27,7 +28,7 @@ import { AppError, notFound } from "../utils/errors.js";
 import { toMinorUnits } from "../utils/money.js";
 import { extractRecipient } from "./recipient.js";
 import { applyRules, getDiningSplit, isOnline, splitCategory } from "./rule.service.js";
-import { setTransferFlag } from "./transfer.service.js";
+import { setTransferFlag, syncCategoryTransfers } from "./transfer.service.js";
 
 type Db = Pick<AppDb, "select" | "insert" | "update" | "delete">;
 
@@ -159,6 +160,11 @@ export type Sort = (typeof SORTS)[number];
 export interface TransactionQuery {
   page: number;
   pageSize: number;
+  /**
+   * Show the page that holds this transaction (with the same filters and sort) instead of `page`,
+   * when it is in the list at all.
+   */
+  focus?: number | undefined;
   accountId?: number | undefined;
   from?: string | undefined;
   to?: string | undefined;
@@ -179,6 +185,16 @@ export interface TransactionQuery {
   sort?: Sort | undefined;
   /** Only transactions of connections in this environment (manual accounts always included). */
   environment: string;
+}
+
+export interface SplitDto {
+  id: number;
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  /** Same sign as the transaction: positive is money out. */
+  amountMinor: number;
+  note: string | null;
 }
 
 export interface TransactionDto {
@@ -222,7 +238,13 @@ export interface TransactionDto {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | null;
+  /**
+   * The parts it is split into across categories (empty when it is not split). `valid` is false when
+   * they no longer add up to the amount (the bank changed it), and the transaction counts whole.
+   */
+  splits: SplitDto[];
+  splitValid: boolean;
   /** For an automatic match, the other side of the transfer. */
   transferWith: {
     id: number;
@@ -414,6 +436,8 @@ function toDto(r: Row): TransactionDto {
     isTransfer: r.isTransfer,
     transferSource: r.transferSource as TransactionDto["transferSource"],
     transferWith: null,
+    splits: [],
+    splitValid: true,
     paymentChannel: r.paymentChannel,
     online: r.onlineUser ?? providerOnline === true,
     onlineEdited: r.onlineUser !== null,
@@ -502,6 +526,16 @@ function orderBy(sort: Sort): SQL[] {
   }
 }
 
+/** A search that reads as an amount ("54.11", "$1,200", "12"), in cents, or null. */
+export function amountQuery(q: string | undefined): number | null {
+  const text = (q ?? "")
+    .trim()
+    .replace(/^[-+]?\$?/, "")
+    .replace(/,/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  return Math.round(Number(text) * 100);
+}
+
 export function listTransactions(
   db: AppDb,
   query: TransactionQuery,
@@ -540,7 +574,17 @@ export function listTransactions(
         .all()
         .map((row) => row.id),
     ];
-    conditions.push(inArray(transactions.categoryId, ids));
+    // A split transaction matches when any of its parts is in the category.
+    conditions.push(
+      or(
+        inArray(transactions.categoryId, ids),
+        sql`exists (select 1 from transaction_splits s where s.transaction_id = ${transactions.id}
+          and s.category_id in (${sql.join(
+            ids.map((id) => sql`${id}`),
+            sql`, `,
+          )}))`,
+      )!,
+    );
   }
   if (query.q?.trim()) {
     const pattern = `%${escapeLike(query.q.trim())}%`;
@@ -556,6 +600,10 @@ export function listTransactions(
         matches(transactions.senderUser),
         matches(transactions.notesUser),
         matches(categories.name),
+        // A search that is an amount ("54.11", "$1,200") also finds that amount, either way.
+        ...(amountQuery(query.q) === null
+          ? []
+          : [sql`abs(${transactions.amountMinor}) = ${amountQuery(query.q)}`]),
       )!,
     );
   }
@@ -571,17 +619,32 @@ export function listTransactions(
       .where(where)
       .get()?.n ?? 0;
 
+  let page = query.page;
+  if (query.focus !== undefined) {
+    const order = db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .leftJoin(plaidItems, eq(accounts.plaidItemId, plaidItems.id))
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(where)
+      .orderBy(...orderBy(query.sort ?? "txdate_desc"))
+      .all();
+    const at = order.findIndex((r) => r.id === query.focus);
+    if (at >= 0) page = Math.floor(at / query.pageSize) + 1;
+  }
+
   const rows = selectTransactions(db)
     .where(where)
     .orderBy(...orderBy(query.sort ?? "txdate_desc"))
     .limit(query.pageSize)
-    .offset((query.page - 1) * query.pageSize)
+    .offset((page - 1) * query.pageSize)
     .all();
 
   return {
     items: withTransferPartners(db, rows),
     total,
-    page: query.page,
+    page,
     pageSize: query.pageSize,
   };
 }
@@ -593,6 +656,33 @@ export function getTransaction(db: AppDb, id: number): TransactionDto {
 }
 
 /** Turns rows into DTOs, naming the other side of each automatically matched transfer. */
+/** The split parts of these transactions, in order. */
+function splitsFor(db: AppDb, ids: number[]): Map<number, SplitDto[]> {
+  const out = new Map<number, SplitDto[]>();
+  if (ids.length === 0) return out;
+  const rows = db
+    .select({
+      id: transactionSplits.id,
+      transactionId: transactionSplits.transactionId,
+      categoryId: transactionSplits.categoryId,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      amountMinor: transactionSplits.amountMinor,
+      note: transactionSplits.note,
+    })
+    .from(transactionSplits)
+    .leftJoin(categories, eq(categories.id, transactionSplits.categoryId))
+    .where(inArray(transactionSplits.transactionId, ids))
+    .orderBy(asc(transactionSplits.position), asc(transactionSplits.id))
+    .all();
+  for (const { transactionId, ...split } of rows) {
+    const list = out.get(transactionId);
+    if (list) list.push(split);
+    else out.set(transactionId, [split]);
+  }
+  return out;
+}
+
 function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
   const ids = [
     ...new Set(rows.map((r) => r.transferPairId).filter((id): id is number => id !== null)),
@@ -611,9 +701,17 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       });
     }
   }
+  const splits = splitsFor(
+    db,
+    rows.map((r) => r.id),
+  );
   return rows.map((r) => {
     const dto = toDto(r);
     dto.transferWith = r.transferPairId === null ? null : (partners.get(r.transferPairId) ?? null);
+    dto.splits = splits.get(r.id) ?? [];
+    dto.splitValid =
+      dto.splits.length === 0 ||
+      dto.splits.reduce((n, s) => n + s.amountMinor, 0) === r.amountMinor;
     return dto;
   });
 }
@@ -715,6 +813,8 @@ export function updateTransaction(db: AppDb, id: number, patch: TransactionPatch
     // The merchant or recipient may now match a different rule, unless the category is the user's.
     if (source !== "manual") applyRules(tx, [id]);
   });
+  // A new category may move the user's own money; the user's own transfer choice comes after.
+  syncCategoryTransfers(db);
   if (patch.isTransfer !== undefined) setTransferFlag(db, id, patch.isTransfer);
   return getTransaction(db, id);
 }

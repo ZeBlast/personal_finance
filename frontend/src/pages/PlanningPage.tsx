@@ -8,21 +8,26 @@ import { useApi } from "../hooks/useApi";
 import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
+import { CADENCE_LABEL } from "../lib/insights";
+import type { Cadence } from "../types/insights";
 import type {
   BillStatus,
   CardBill,
   Forecast,
+  Paycheck,
+  RecurringChange,
   Subscription,
   SubscriptionReview,
   SubscriptionStatus,
 } from "../types/planning";
 
-type Tab = "forecast" | "bills" | "subscriptions";
+type Tab = "forecast" | "bills" | "subscriptions" | "paychecks";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "forecast", label: "Cash-flow forecast" },
   { id: "bills", label: "Card bills" },
   { id: "subscriptions", label: "Subscriptions" },
+  { id: "paychecks", label: "Paychecks" },
 ];
 
 /** Looking ahead: the cash forecast, card bills, and recurring charges to review. */
@@ -58,6 +63,7 @@ export function PlanningPage() {
       {tab === "forecast" && <ForecastTab />}
       {tab === "bills" && <BillsTab />}
       {tab === "subscriptions" && <SubscriptionsTab />}
+      {tab === "paychecks" && <PaychecksTab />}
     </section>
   );
 }
@@ -491,6 +497,7 @@ function SubscriptionsTab() {
           {error}
         </p>
       )}
+      <RecentChanges changes={data.changes} money={money} />
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -528,7 +535,7 @@ function SubscriptionsTab() {
                   </div>
                 )}
               </td>
-              <td className="py-1.5 capitalize">{s.cadence}</td>
+              <td className="py-1.5">{CADENCE_LABEL[s.cadence as Cadence] ?? s.cadence}</td>
               <td className="py-1.5 text-right tabular-nums">
                 {money(s.typicalAmountMinor)}
                 {s.amountVaries && <span className="text-xs text-slate-400"> varies</span>}
@@ -561,6 +568,162 @@ function SubscriptionsTab() {
             <tr>
               <td colSpan={6} className="py-3 text-slate-500">
                 No recurring charges found yet. They show up after a few months of history.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const CHANGE_TEXT: Record<RecurringChange["kind"], string> = {
+  price_up: "Price went up",
+  price_down: "Price went down",
+  new: "New recurring charge",
+  charged_after_cancel: "Still charged after you cancelled it",
+};
+
+/** Recent price changes, new recurring charges, and charges after cancelling, newest first. */
+function RecentChanges({
+  changes,
+  money,
+}: {
+  changes: RecurringChange[];
+  money: (n: number) => string;
+}) {
+  return (
+    <section
+      aria-label="What changed recently"
+      className="rounded-md border border-slate-200 p-3 dark:border-slate-700"
+    >
+      <h2 className="text-sm font-semibold">What changed recently</h2>
+      {changes.length === 0 ? (
+        <p className="mt-1 text-sm text-slate-500">
+          No price changes or new recurring charges in the last few months.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1.5 text-sm">
+          {changes.map((c) => {
+            const bad = c.kind === "price_up" || c.kind === "charged_after_cancel";
+            return (
+              <li
+                key={`${c.key}-${c.kind}`}
+                className="flex flex-wrap items-baseline justify-between gap-2"
+              >
+                <span>
+                  <span
+                    className={`mr-2 rounded-xl px-2 py-0.5 text-xs font-medium ${
+                      bad
+                        ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                        : c.kind === "price_down"
+                          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
+                          : "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+                    }`}
+                  >
+                    {CHANGE_TEXT[c.kind]}
+                  </span>
+                  <span className="font-medium">{c.merchant}</span>
+                  <span className="text-slate-500">
+                    {" "}
+                    {c.fromMinor !== null
+                      ? `${money(c.fromMinor)} → ${money(c.toMinor)}`
+                      : money(c.toMinor)}
+                    {" · "}
+                    {c.kind === "new" ? "since" : "on"} {formatDay(c.date)}
+                  </span>
+                </span>
+                <span
+                  className={`tabular-nums ${c.yearlyDeltaMinor > 0 ? "text-red-600" : "text-green-700 dark:text-green-400"}`}
+                >
+                  {c.yearlyDeltaMinor > 0 ? "+" : "−"}
+                  {money(Math.abs(c.yearlyDeltaMinor))} a year
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---- Paychecks ---------------------------------------------------------------------------------
+
+/** Regular pay found in the income, with what it adds up to this year. */
+function PaychecksTab() {
+  const pay = useApi<Paycheck[]>("/paychecks");
+  if (pay.error)
+    return (
+      <p role="alert" className="text-sm text-red-600">
+        {pay.error}
+      </p>
+    );
+  if (!pay.data) return <p className="text-sm text-slate-500">Loading...</p>;
+  const money = (n: number) => formatMinor(n, "USD");
+  const active = pay.data.filter((p) => p.active);
+  const year = new Date().getFullYear();
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-500">
+        Income that arrives on a schedule from the same source for about the same amount. The Taxes
+        page uses these to estimate the year&apos;s pay.
+      </p>
+      {active.length > 0 && (
+        <dl className="grid grid-cols-3 gap-3 text-sm">
+          <Stat
+            label={`Received in ${year}`}
+            value={money(active.reduce((n, p) => n + p.receivedThisYearMinor, 0))}
+          />
+          <Stat
+            label="Paydays left this year"
+            value={String(active.reduce((n, p) => n + p.paydaysLeft, 0))}
+          />
+          <Stat
+            label={`Expected for ${year}`}
+            value={money(active.reduce((n, p) => n + p.projectedYearMinor, 0))}
+          />
+        </dl>
+      )}
+      <table className="w-full text-sm">
+        <thead className="text-left text-xs text-slate-500">
+          <tr>
+            <th className="py-1 font-medium">From</th>
+            <th className="py-1 font-medium">How often</th>
+            <th className="py-1 text-right font-medium">Usual</th>
+            <th className="py-1 font-medium">Last / next</th>
+            <th className="py-1 text-right font-medium">This year</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pay.data.map((p) => (
+            <tr key={p.key} className="border-t border-slate-100 align-top dark:border-slate-800">
+              <td className="py-1.5">
+                <div className="font-medium">{p.source}</div>
+                <div className="text-xs text-slate-500">
+                  {p.accountName} · {p.occurrences} paychecks seen
+                </div>
+              </td>
+              <td className="py-1.5">{CADENCE_LABEL[p.cadence]}</td>
+              <td className="py-1.5 text-right tabular-nums">{money(p.typicalMinor)}</td>
+              <td className="py-1.5 text-xs text-slate-500">
+                {formatDay(p.lastDate)}
+                <br />
+                {p.active ? `next ${formatDay(p.nextExpected)}` : "seems to have stopped"}
+              </td>
+              <td className="py-1.5 text-right tabular-nums">
+                <div className="font-medium">{money(p.projectedYearMinor)}</div>
+                <div className="text-xs text-slate-500">
+                  {money(p.receivedThisYearMinor)} so far
+                  {p.paydaysLeft > 0 ? ` + ${p.paydaysLeft} more` : ""}
+                </div>
+              </td>
+            </tr>
+          ))}
+          {pay.data.length === 0 && (
+            <tr>
+              <td colSpan={5} className="py-3 text-slate-500">
+                No regular pay found yet. It shows up after a few paychecks from the same source.
               </td>
             </tr>
           )}

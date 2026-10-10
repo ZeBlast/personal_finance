@@ -24,6 +24,7 @@ import {
   TEST_DB_KEY,
 } from "./test-helpers.js";
 import { toCsv } from "./utils/csv-write.js";
+import { openedFolders } from "./utils/open-folder.js";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -633,5 +634,44 @@ describe("backup settings", () => {
     await t.call("patch", "/api/settings").send({ backupsToKeep: 0 }).expect(400);
     await t.call("patch", "/api/settings").send({ backupsToKeep: 51 }).expect(400);
     await t.call("patch", "/api/settings").send({ autoBackupEnabled: "yes" }).expect(400);
+  });
+});
+
+describe("opening folders and clearing diagnostics", () => {
+  it("opens only the app's own folders", async () => {
+    const t = app();
+    const res = await t
+      .call("post", "/api/data/open-folder")
+      .send({ folder: "backups" })
+      .expect(200);
+    expect(res.body.path).toBe(path.join(t.dir, "backups"));
+    expect(openedFolders.at(-1)).toBe(path.join(t.dir, "backups"));
+    expect(fs.existsSync(path.join(t.dir, "backups"))).toBe(true);
+    await t.call("post", "/api/data/open-folder").send({ folder: "data" }).expect(200);
+    expect(openedFolders.at(-1)).toBe(t.dir);
+    await t.call("post", "/api/data/open-folder").send({ folder: "windows" }).expect(400);
+    await t
+      .call("post", "/api/data/open-folder")
+      .send({ folder: "data", path: "/etc" })
+      .expect(400);
+  });
+
+  it("clears recorded sync problems, keeping successful syncs", async () => {
+    const h = harness();
+    const { item } = await linkDemoBank(h.call);
+    await h.sync.syncItem(item.id, "manual");
+    // A failed attempt, as a network failure records it.
+    h.sqlite
+      .prepare(
+        "INSERT INTO sync_runs (plaid_item_id, trigger, status, started_at, finished_at, error_code, error_message) VALUES (?, 'manual', 'offline', '2026-09-01T12:01:00Z', '2026-09-01T12:01:01Z', 'NETWORK_ERROR', 'offline')",
+      )
+      .run(item.id);
+    const before = (await h.call("get", "/api/diagnostics").expect(200)).body;
+    expect(before.recentProblems).toHaveLength(1);
+    const cleared = await h.call("delete", "/api/diagnostics/problems").expect(200);
+    expect(cleared.body.cleared).toBe(1);
+    const after = (await h.call("get", "/api/diagnostics").expect(200)).body;
+    expect(after.recentProblems).toHaveLength(0);
+    expect(after.connections[0].lastSuccessfulSyncAt).not.toBeNull();
   });
 });

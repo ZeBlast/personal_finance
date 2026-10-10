@@ -141,7 +141,7 @@ function CategoryForm({
         </div>
         <div>
           <label htmlFor={`${id}-treatment`} className="block text-sm font-medium">
-            Money coming in here counts as
+            Money here counts as
           </label>
           <select
             id={`${id}-treatment`}
@@ -154,10 +154,14 @@ function CategoryForm({
             </option>
             <option value="income">Income (taxable), such as a credit you earned</option>
             <option value="refund">A refund: lowers spending, never income or taxable</option>
+            <option value="transfer">
+              Moving my own money (cash withdrawals, savings): never income or spending
+            </option>
           </select>
           <p className="mt-1 text-xs text-slate-500">
             Income counts toward income totals, the month report, and the sandbox&apos;s income
-            figures; a refund only takes money off spending.
+            figures; a refund only takes money off spending; moving your own money counts as
+            neither, like a transfer between your accounts.
           </p>
         </div>
         {error && (
@@ -253,10 +257,16 @@ function CategoriesSection({ onChanged }: { onChanged: () => void }) {
             title={
               c.incomeTreatment === "income"
                 ? "Money coming in here counts as taxable income"
-                : "Money coming in here is a refund: it lowers spending and is never income"
+                : c.incomeTreatment === "refund"
+                  ? "Money coming in here is a refund: it lowers spending and is never income"
+                  : "Moving your own money: never income or spending, like a transfer"
             }
           >
-            {c.incomeTreatment === "income" ? "counts as income" : "refund"}
+            {c.incomeTreatment === "income"
+              ? "counts as income"
+              : c.incomeTreatment === "refund"
+                ? "refund"
+                : "moves your money"}
           </span>
         )}
         <span className="text-xs text-slate-500">

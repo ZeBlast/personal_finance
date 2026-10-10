@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, notInArray } from "drizzle-orm";
 import type Database from "better-sqlite3";
 import { plaidItems, syncRuns } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
@@ -150,4 +150,16 @@ export function diagnostics(db: AppDb, options: { dataDir: string; version: stri
       .filter((r) => r.status !== "success")
       .slice(0, 15),
   };
+}
+
+/**
+ * Clears the recorded sync problems (failed and interrupted sync attempts), so the list starts
+ * fresh. Successful syncs, and a sync still running, are kept; so is each connection's own status,
+ * so a connection that needs signing in again still says so. Returns how many were cleared.
+ */
+export function clearSyncProblems(db: AppDb): number {
+  return db
+    .delete(syncRuns)
+    .where(notInArray(syncRuns.status, ["success", "running"]))
+    .run().changes;
 }

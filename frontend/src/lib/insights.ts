@@ -4,6 +4,7 @@ import type { Cadence } from "../types/insights";
 export const CADENCE_LABEL: Record<Cadence, string> = {
   weekly: "Every week",
   biweekly: "Every 2 weeks",
+  semimonthly: "Twice a month",
   monthly: "Every month",
   quarterly: "Every 3 months",
   yearly: "Every year",

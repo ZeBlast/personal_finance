@@ -35,6 +35,14 @@ interface IncomeSource {
   firstDate: string;
   lastDate: string;
   wages: boolean;
+  /** Regular pay found for this source, with the year's projection. */
+  paycheck: {
+    cadence: string;
+    typicalMinor: number;
+    nextExpected: string;
+    paydaysLeft: number;
+    projectedYearMinor: number;
+  } | null;
 }
 
 type SavedSource = Omit<SourceInput, "suggested" | "kind">;
@@ -56,6 +64,13 @@ const DEFAULT_PROFILE: Profile = {
   federalWithheld: null,
   stateWithheld: null,
   sources: [],
+};
+
+const PAY_CADENCE: Record<string, string> = {
+  weekly: "every week",
+  biweekly: "every 2 weeks",
+  semimonthly: "twice a month",
+  monthly: "every month",
 };
 
 const usd = (dollars: number): string => formatMinor(Math.round(dollars * 100), "USD");
@@ -143,7 +158,10 @@ function TaxWorkspace({ data }: { data: TaxData }) {
         key: s.key,
         label: s.label,
         kind: s.kind,
-        suggested: suggestAnnual(s, data.year, today),
+        // A paycheck's schedule gives the best estimate: paid so far, plus the paydays left.
+        suggested: s.paycheck
+          ? s.paycheck.projectedYearMinor / 100
+          : suggestAnnual(s, data.year, today),
         annualIncome: answer?.annualIncome ?? null,
         // Only pay has FICA taken out; credits, interest, and money from people do not.
         ficaExempt: answer?.ficaExempt ?? !(s.kind === "income" && s.wages),
@@ -453,6 +471,15 @@ function SourceRow({
           >
             {s.kind === "credit" ? "Credit" : s.kind === "manual" ? "Added by hand" : "Income"}
           </span>
+          {found?.paycheck && (
+            <p className="mt-0.5 text-xs text-green-700 dark:text-green-400">
+              Paycheck: {PAY_CADENCE[found.paycheck.cadence] ?? found.paycheck.cadence}, usually{" "}
+              {formatMinor(found.paycheck.typicalMinor, "USD")}
+              {found.paycheck.paydaysLeft > 0
+                ? ` · ${found.paycheck.paydaysLeft} more payday${found.paycheck.paydaysLeft === 1 ? "" : "s"} this year, next ${formatDay(found.paycheck.nextExpected)}`
+                : ""}
+            </p>
+          )}
           {found && (
             <p className="mt-0.5 text-xs text-slate-500">
               {formatMinor(found.totalMinor, "USD")} so far in {year} from {found.count} transaction
@@ -495,7 +522,8 @@ function SourceRow({
           />
           {s.annualIncome === null && s.suggested > 0 && (
             <span className="mt-0.5 block text-xs text-slate-500">
-              Using {usd(s.suggested)} (from the transactions)
+              Using {usd(s.suggested)}{" "}
+              {found?.paycheck ? "(paid so far plus the paydays left)" : "(from the transactions)"}
             </span>
           )}
         </label>

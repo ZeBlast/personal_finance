@@ -28,6 +28,8 @@ import {
   securities,
   transactionRules,
   transactions,
+  transactionSplits,
+  goals,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { toCsv, type CsvCell } from "../utils/csv-write.js";
@@ -234,6 +236,8 @@ function everythingJson(db: AppDb, now: Date): { text: string; rows: number } {
       .all(),
     accounts: db.select().from(accounts).all(),
     transactions: db.select().from(transactions).all(),
+    transactionSplits: db.select().from(transactionSplits).all(),
+    goals: db.select().from(goals).all(),
     categories: db.select().from(categories).all(),
     rules: db.select().from(transactionRules).all(),
     budgets: db.select().from(budgets).all(),

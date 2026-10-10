@@ -1,5 +1,9 @@
+import {
+  ensureCategoryPack,
+  ensureTransferSubcategories,
+  seedDefaults,
+} from "./services/category.service.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureTransferSubcategories } from "./services/category.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -113,5 +117,45 @@ describe("taxes", () => {
       .expect(400);
     await t.call("delete", "/api/taxes/2026/profile").expect(204);
     expect((await t.call("get", "/api/taxes/2026").expect(200)).body.profile).toBeNull();
+  });
+});
+
+describe("pay filed under Income", () => {
+  it("stays income on the Taxes page, while Transfers > Credit is a credit", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    seedDefaults(t.db);
+    ensureTransferSubcategories(t.db);
+    ensureCategoryPack(t.db);
+    const cats = (await t.call("get", "/api/categories").expect(200)).body as Array<{
+      id: number;
+      name: string;
+    }>;
+    const cat = (name: string) => cats.find((c) => c.name === name)!.id;
+    const account = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Checking", kind: "checking" })
+        .expect(201)
+    ).body.id as number;
+    const add = (merchant: string, categoryId: number) =>
+      t
+        .call("post", "/api/transactions")
+        .send({
+          accountId: account,
+          date: "2026-03-05",
+          merchant,
+          amountMinor: 100_000,
+          direction: "in",
+          categoryId,
+        })
+        .expect(201);
+    await add("ACME PAYROLL", cat("Paycheck"));
+    await add("Bonus credit", cat("Credit"));
+    const body = (await t.call("get", "/api/taxes/2026").expect(200)).body;
+    const kinds = Object.fromEntries(
+      body.sources.map((s: { label: string; kind: string }) => [s.label, s.kind]),
+    );
+    expect(kinds).toEqual({ "ACME PAYROLL": "income", Credits: "credit" });
   });
 });

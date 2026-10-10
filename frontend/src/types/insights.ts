@@ -1,6 +1,6 @@
 /** Shapes returned by the /api/insights endpoints. Money is whole minor units (cents). */
 
-export type Cadence = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+export type Cadence = "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
 export type Direction = "out" | "in";
 
 export interface RecurringSeries {
