@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { addCredits, useCredits } from "../services/store-credit.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { accounts } from "../../../drizzle/schema.js";
@@ -46,6 +47,28 @@ const manualAccountBody = z
   })
   .strict();
 
+const day = effectiveDate;
+const cents = z.number().int().min(1).max(100_000_000_000);
+const addCreditsBody = z
+  .object({
+    date: day,
+    amountMinor: cents,
+    description: z.string().max(200).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .strict();
+const useCreditsBody = z
+  .object({
+    date: day,
+    merchant: z.string().max(200).nullable().optional(),
+    totalMinor: cents,
+    creditMinor: cents,
+    categoryId: z.number().int().positive().nullable().optional(),
+    restAccountId: z.number().int().positive().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .strict();
+
 export function accountsRoutes(db: AppDb): Router {
   const router = Router();
 
@@ -71,6 +94,22 @@ export function accountsRoutes(db: AppDb): Router {
     const body = manualAccountBody.parse(req.body);
     const id = createManualBankAccount(db, body, new Date().toISOString());
     res.status(201).json({ id });
+  });
+
+  /** Adds credits to a store credit (gift card) account. */
+  router.post("/accounts/:id/credits/add", (req, res) => {
+    const id = idParam.parse(req.params["id"]);
+    res
+      .status(201)
+      .json(addCredits(db, id, addCreditsBody.parse(req.body), new Date().toISOString()));
+  });
+
+  /** A purchase paid with store credit, alone or with real money for the rest. */
+  router.post("/accounts/:id/credits/use", (req, res) => {
+    const id = idParam.parse(req.params["id"]);
+    res
+      .status(201)
+      .json(useCredits(db, id, useCreditsBody.parse(req.body), new Date().toISOString()));
   });
 
   router.delete("/accounts/manual/:id", (req, res) => {

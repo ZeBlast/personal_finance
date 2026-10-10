@@ -8,6 +8,7 @@ import { periodSummary } from "./calendar.service.js";
 import { cashbackSummary } from "./cashback.service.js";
 import { netWorthHistory } from "./networth-history.service.js";
 import { getSettings } from "./settings.service.js";
+import { countedAccount } from "./account-scope.js";
 
 /**
  * The month-end report: one page on how a month went, compared with the month before. Spending and
@@ -100,7 +101,7 @@ export function monthReport(db: AppDb, month: string): MonthReport {
     from transactions t
       join accounts a on a.id = t.account_id
       left join plaid_items p on p.id = a.plaid_item_id
-    where t.date >= ${from} and t.date <= ${to} and t.amount_minor > 0 and a.hidden = 0
+    where t.date >= ${from} and t.date <= ${to} and t.amount_minor > 0 and ${countedAccount()}
       and (p.environment = ${environment} or a.plaid_item_id is null)
       and a.type <> 'investment'
       and ${NOT_TRANSFER}

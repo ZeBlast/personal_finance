@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { notFound } from "../utils/errors.js";
+import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
 
 /**
  * Transfers between the user's own accounts.
@@ -160,7 +161,8 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
         coalesce(t.plaid_category_detailed, '') || ' ' || t.name as name,
         a.type as account_type, coalesce(t.authorized_date, t.date) as transaction_date
       from transactions t join accounts a on a.id = t.account_id
-      where t.transfer_source is null and t.amount_minor <> 0`);
+      where t.transfer_source is null and t.amount_minor <> 0
+        and coalesce(a.subtype, '') <> ${STORE_CREDIT_SUBTYPE}`);
     const toCandidate = (r: (typeof rows)[number], useTransactionDate = false): Candidate => ({
       id: r.id,
       accountId: r.account_id,

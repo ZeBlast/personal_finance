@@ -63,7 +63,9 @@ export function cashForecast(
   const settings = getSettings(db);
 
   const all = listAccounts(db).filter(
-    (a) => a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment,
+    (a) =>
+      a.countsInTotals &&
+      (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
   );
   const cash = all.filter(
     (a) =>

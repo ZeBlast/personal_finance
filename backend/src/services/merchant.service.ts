@@ -5,6 +5,7 @@ import { AppError } from "../utils/errors.js";
 import { merchantKey } from "../utils/merchant.js";
 import { applyRules, createRule, deleteRule, listRules } from "./rule.service.js";
 import { getSettings } from "./settings.service.js";
+import { countedAccount } from "./account-scope.js";
 
 /**
  * Merchants as a way to organize categories: every merchant that appears in the transactions,
@@ -53,7 +54,7 @@ function variants(db: AppDb): Variant[] {
     FROM transactions t
     JOIN accounts a ON a.id = t.account_id
     LEFT JOIN plaid_items p ON p.id = a.plaid_item_id
-    WHERE (p.environment = ${environment} OR a.plaid_item_id IS NULL) AND a.hidden = 0
+    WHERE (p.environment = ${environment} OR a.plaid_item_id IS NULL) AND ${countedAccount()}
     GROUP BY ${MERCHANT}, t.category_id
   `);
 }

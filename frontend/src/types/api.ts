@@ -47,6 +47,8 @@ export interface Account {
   isManual: boolean;
   /** Left out of balances, totals, charts, and lists by the user's choice. */
   hidden: boolean;
+  /** Its money counts toward totals: false when hidden, and for store credit (gift card) accounts. */
+  countsInTotals: boolean;
   color: string | null;
   creditLimitMinor: number | null;
 }

@@ -1,6 +1,7 @@
 import { asc, inArray, sql } from "drizzle-orm";
 import { balanceSnapshots } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
+import { countsInNetWorth } from "./account-scope.js";
 import { addDays, addMonths, isRealDate, lastOfMonth, mondayOf, monthOf } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
@@ -116,6 +117,7 @@ export function netWorthSeries(
   const settings = getSettings(db);
   const counted = listAccounts(db).filter(
     (a) =>
+      countsInNetWorth(a) &&
       (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment) &&
       a.currency === settings.currency,
   );

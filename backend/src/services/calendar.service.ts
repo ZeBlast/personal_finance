@@ -30,6 +30,7 @@ import {
 import { createManualTransaction } from "./manual-transaction.service.js";
 import type { TransactionDto } from "./transaction.service.js";
 import { getSettings } from "./settings.service.js";
+import { accountScope } from "./account-scope.js";
 
 /**
  * The calendar: a note for any day, transactions the user expects (once or on a schedule), and for
@@ -613,7 +614,8 @@ export function periodSummary(
       (a.itemId === null || a.connectionEnvironment === environment) &&
       (a.type === "depository" || a.type === "credit") &&
       a.currency === currency &&
-      (accountId === undefined || a.id === accountId),
+      // All accounts that count toward totals, or the one asked for (a gift card's own balance).
+      (accountId === undefined ? a.countsInTotals : a.id === accountId),
   );
   const counted = candidates.filter((a) => a.currentBalanceMinor !== null);
   const withoutBalance = candidates.length - counted.length;
@@ -694,7 +696,7 @@ export function periodSummary(
     from transactions t
       join accounts a on a.id = t.account_id
       left join plaid_items p on p.id = a.plaid_item_id
-    where ${dateOf(dateBasis)} >= ${from} and ${dateOf(dateBasis)} <= ${to} and a.hidden = 0
+    where ${dateOf(dateBasis)} >= ${from} and ${dateOf(dateBasis)} <= ${to} and ${accountScope(accountId)}
       and (p.environment = ${environment} or a.plaid_item_id is null)
       ${accountId !== undefined ? sql`and t.account_id = ${accountId}` : sql``}`);
 

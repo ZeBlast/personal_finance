@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { accounts, balanceSnapshots, plaidItems } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
+import { countsInTotals } from "./account-scope.js";
 import type { GatewayAccount } from "../plaid/gateway.js";
 import { notFound } from "../utils/errors.js";
 import { toMinorUnits } from "../utils/money.js";
@@ -54,6 +55,11 @@ export interface AccountSummary {
   isManual: boolean;
   /** Kept out of balances, totals, charts, and lists by the user's choice. */
   hidden: boolean;
+  /**
+   * Whether its money counts toward totals (net worth, income, spending, ...). False when hidden,
+   * and for store credit (gift card) accounts, whose credits only count in the account itself.
+   */
+  countsInTotals: boolean;
   color: string | null;
   /** Current credit limit for credit accounts, from the limit history; null otherwise. */
   creditLimitMinor: number | null;
@@ -102,6 +108,7 @@ export function listAccounts(
     .filter((row) => includeHidden || !row.hidden)
     .map((row) => ({
       ...row,
+      countsInTotals: countsInTotals(row),
       creditLimitMinor:
         row.type === "credit" ? (currentCreditLimit(db, row.id, today)?.limitMinor ?? null) : null,
     }));

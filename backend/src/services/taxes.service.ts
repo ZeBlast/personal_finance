@@ -5,6 +5,7 @@ import { IS_INCOME, NOT_TRANSFER } from "./analytics.service.js";
 import { deleteSetting } from "./settings.service.js";
 import { appSettings } from "../../../drizzle/schema.js";
 import { eq } from "drizzle-orm";
+import { countedAccount } from "./account-scope.js";
 
 /**
  * The Taxes page: the year's income and credit transactions (by the same rule the charts use for
@@ -76,7 +77,7 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
       left join categories c on c.id = t.category_id
     where coalesce(t.authorized_date, t.date) between ${from} and ${to}
       and (p.environment = ${environment} or a.plaid_item_id is null)
-      and a.hidden = 0 and t.amount_minor < 0
+      and ${countedAccount()} and t.amount_minor < 0
       and ${NOT_TRANSFER} and ${IS_INCOME}
     order by date desc, t.id desc
   `);

@@ -6,6 +6,7 @@ import { merchantKey } from "../utils/merchant.js";
 import { AppError } from "../utils/errors.js";
 import { NOT_TRANSFER } from "./analytics.service.js";
 import { getSettings } from "./settings.service.js";
+import { countedAccount } from "./account-scope.js";
 
 /**
  * Finds charges and deposits that repeat on a schedule (subscriptions, rent, bills, paychecks),
@@ -265,7 +266,7 @@ export function recurringReport(
     JOIN accounts a ON a.id = t.account_id
     LEFT JOIN plaid_items p ON p.id = a.plaid_item_id
     WHERE (p.environment = ${settings.plaidEnvironment} OR a.plaid_item_id IS NULL)
-      AND a.hidden = 0
+      AND ${countedAccount()}
       AND t.currency = ${settings.currency}
       AND t.date >= ${since} AND t.date <= ${today}
       AND ${NOT_TRANSFER}

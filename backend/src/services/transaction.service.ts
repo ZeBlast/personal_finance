@@ -21,6 +21,7 @@ import {
   transactions,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
+import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
 import type { GatewayTransaction } from "../plaid/gateway.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { toMinorUnits } from "../utils/money.js";
@@ -508,9 +509,11 @@ export function listTransactions(
   const conditions: SQL[] = [
     or(eq(plaidItems.environment, query.environment), sql`${accounts.plaidItemId} IS NULL`)!,
   ];
-  // Hidden accounts stay out of the list, unless one is asked for by name.
-  if (query.accountId === undefined) conditions.push(eq(accounts.hidden, false));
-  else conditions.push(eq(transactions.accountId, query.accountId));
+  // Hidden and store credit accounts stay out of the list, unless one is asked for by name.
+  if (query.accountId === undefined) {
+    conditions.push(eq(accounts.hidden, false));
+    conditions.push(sql`coalesce(${accounts.subtype}, '') <> ${STORE_CREDIT_SUBTYPE}`);
+  } else conditions.push(eq(transactions.accountId, query.accountId));
   // From/to use the transaction date, unless the posted date is asked for.
   const day: SQL<string> =
     query.dateBasis === "posted" ? sql<string>`${transactions.date}` : transactionDate;

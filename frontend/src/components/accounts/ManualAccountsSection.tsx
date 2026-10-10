@@ -10,8 +10,9 @@ import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { CashbackSection } from "./CashbackSection";
 import { HiddenBadge, HideToggle } from "./HideToggle";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
+import { AddCreditsDialog, isStoreCredit, UseCreditsDialog } from "./StoreCreditDialogs";
 
-type Kind = "cash" | "checking" | "savings" | "credit_card";
+type Kind = "cash" | "checking" | "savings" | "credit_card" | "store_credit";
 
 const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: string }> = [
   {
@@ -37,6 +38,12 @@ const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: str
     label: "Credit card",
     balanceLabel: "Amount owed right now",
     help: "Purchases raise what you owe; payments lower it.",
+  },
+  {
+    value: "store_credit",
+    label: "Gift card / store credit",
+    balanceLabel: "Credit on it right now",
+    help: "Dollar credits with one business, such as a Dunkin gift card. Add credits, then record purchases paid with them, alone or with real money. Credits only count in this account: never in income, spending, or net worth.",
   },
 ];
 
@@ -123,7 +130,9 @@ function NewAccountDialog({
             maxLength={80}
             autoFocus
             onChange={(e) => setName(e.target.value)}
-            placeholder={kind === "cash" ? "Wallet" : "My account"}
+            placeholder={
+              kind === "cash" ? "Wallet" : kind === "store_credit" ? "Dunkin" : "My account"
+            }
             className={inputClass}
           />
         </div>
@@ -183,6 +192,7 @@ export function ManualAccountsSection() {
   const [dialog, setDialog] = useState<"new" | null>(null);
   const [adding, setAdding] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
+  const [credits, setCredits] = useState<{ account: Account; action: "add" | "use" } | null>(null);
   const [notice, setNotice] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -191,6 +201,7 @@ export function ManualAccountsSection() {
   function changed(text: string): void {
     setDialog(null);
     setAdding(null);
+    setCredits(null);
     setNotice({ kind: "info", text });
     accounts.reload();
     announceDataChanged();
@@ -216,8 +227,8 @@ export function ManualAccountsSection() {
         <div>
           <h2 className="text-lg font-semibold">Accounts you keep by hand</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Cash, or an account at a bank that cannot be connected. You enter the transactions; the
-            balance is worked out from them.
+            Cash, gift cards and store credit, or an account at a bank that cannot be connected. You
+            enter the transactions; the balance is worked out from them.
           </p>
         </div>
         <button type="button" className={primaryClass} onClick={() => setDialog("new")}>
@@ -261,6 +272,7 @@ export function ManualAccountsSection() {
                   <div className="text-xs text-slate-500">
                     {a.subtype ?? a.type}
                     {a.type === "credit" ? " · amount owed" : ""}
+                    {isStoreCredit(a) ? " · credit left" : ""}
                     {a.creditLimitMinor
                       ? ` · limit ${formatMinor(a.creditLimitMinor, a.currency)}`
                       : ""}
@@ -276,9 +288,28 @@ export function ManualAccountsSection() {
                   onChanged={() => accounts.reload()}
                   onError={(text) => setNotice({ kind: "error", text })}
                 />
-                <button type="button" className={buttonClass} onClick={() => setAdding(a)}>
-                  Add transaction
-                </button>
+                {isStoreCredit(a) ? (
+                  <>
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      onClick={() => setCredits({ account: a, action: "add" })}
+                    >
+                      Add credits
+                    </button>
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      onClick={() => setCredits({ account: a, action: "use" })}
+                    >
+                      Use credits
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className={buttonClass} onClick={() => setAdding(a)}>
+                    Add transaction
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`${buttonClass} text-red-700 dark:text-red-400`}
@@ -306,6 +337,22 @@ export function ManualAccountsSection() {
           defaultAccountId={adding.id}
           onSaved={changed}
           onClose={() => setAdding(null)}
+        />
+      )}
+      {credits?.action === "add" && (
+        <AddCreditsDialog
+          account={credits.account}
+          onSaved={changed}
+          onClose={() => setCredits(null)}
+        />
+      )}
+      {credits?.action === "use" && (
+        <UseCreditsDialog
+          account={credits.account}
+          accounts={mine.filter((a) => !a.hidden)}
+          categories={categories ?? []}
+          onSaved={changed}
+          onClose={() => setCredits(null)}
         />
       )}
       {deleting && (

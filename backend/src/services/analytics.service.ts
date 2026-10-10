@@ -13,6 +13,7 @@ import {
 import { listAccounts } from "./account.service.js";
 import { creditLimitHistoryFor } from "./credit-limit.service.js";
 import { getSettings } from "./settings.service.js";
+import { accountScope, countsInNetWorth, STORE_CREDIT_SUBTYPE } from "./account-scope.js";
 
 /**
  * What "spending" and "income" mean in every chart and budget (one definition, used everywhere):
@@ -251,7 +252,7 @@ function whereClauses(
     sql`${day} >= ${q.from}`,
     sql`${day} <= ${q.to}`,
     sql`(p.environment = ${q.environment} or a.plaid_item_id is null)`,
-    sql`a.hidden = 0`,
+    accountScope(q.accountId),
   ];
   if (q.accountId !== undefined) parts.push(sql`t.account_id = ${q.accountId}`);
   if (q.category === "none") parts.push(sql`t.category_id is null`);
@@ -601,7 +602,9 @@ export function overview(db: AppDb): Overview {
   const settings = getSettings(db);
   const currency = settings.currency;
   const all = listAccounts(db).filter(
-    (a) => a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment,
+    (a) =>
+      countsInNetWorth(a) &&
+      (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
   );
 
   const totals = { cash: 0, investments: 0, otherAssets: 0, credit: 0, loan: 0 };
@@ -622,6 +625,11 @@ export function overview(db: AppDb): Overview {
     counted += 1;
     if (account.lastBalanceUpdateAt) stamps.push(account.lastBalanceUpdateAt);
     const balance = account.currentBalanceMinor;
+    // Gift card credits are worth their dollars, but are not cash you can spend anywhere.
+    if (account.subtype === STORE_CREDIT_SUBTYPE) {
+      totals.otherAssets += balance;
+      continue;
+    }
     switch (account.type) {
       case "depository":
         totals.cash += balance;

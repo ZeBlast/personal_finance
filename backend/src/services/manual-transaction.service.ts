@@ -24,7 +24,17 @@ import {
  * the account (or, on a card, when a purchase raises what is owed).
  */
 
-export const MANUAL_ACCOUNT_KINDS = ["cash", "checking", "savings", "credit_card"] as const;
+import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
+export { STORE_CREDIT_SUBTYPE };
+
+/** `store_credit`: dollar credits held for one business or service (a Dunkin gift card, say). */
+export const MANUAL_ACCOUNT_KINDS = [
+  "cash",
+  "checking",
+  "savings",
+  "credit_card",
+  "store_credit",
+] as const;
 export type ManualAccountKind = (typeof MANUAL_ACCOUNT_KINDS)[number];
 
 const KIND: Record<ManualAccountKind, { type: "depository" | "credit"; subtype: string }> = {
@@ -32,6 +42,7 @@ const KIND: Record<ManualAccountKind, { type: "depository" | "credit"; subtype: 
   checking: { type: "depository", subtype: "checking" },
   savings: { type: "depository", subtype: "savings" },
   credit_card: { type: "credit", subtype: "credit card" },
+  store_credit: { type: "depository", subtype: STORE_CREDIT_SUBTYPE },
 };
 
 const MAX_AMOUNT = 100_000_000_000;
