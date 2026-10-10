@@ -128,8 +128,8 @@ function RecurringSection() {
           <h2 className="text-lg font-semibold">Recurring charges and deposits</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Found by looking for payments that repeat at steady intervals (at least three, two for
-            yearly). Transfers and card payments are left out. If something is not really a
-            subscription, mark it and it disappears.
+            yearly). Transfers between your own accounts and card payments are left out. If
+            something is not really a subscription, mark it and it disappears.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm">

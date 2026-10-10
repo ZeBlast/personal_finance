@@ -17,9 +17,33 @@ export interface NetWorthHistory {
   completeFrom: string | null;
 }
 
+export type Granularity = "day" | "week" | "month";
+
+export interface NetWorthSeriesPoint {
+  /** The last day of the period (or today, for one still going). */
+  date: string;
+  periodStart: string;
+  assetsMinor: number;
+  liabilitiesMinor: number;
+  netWorthMinor: number;
+  changeMinor: number | null;
+  /** How the accounts in this total were known: recorded that day, rebuilt from transactions, or carried. */
+  accounts: { recorded: number; rebuilt: number; carried: number };
+}
+
+export interface NetWorthSeries {
+  currency: string;
+  granularity: Granularity;
+  accountsTotal: number;
+  firstDay: string | null;
+  /** The first day a balance was actually recorded; earlier days are rebuilt from transactions. */
+  recordedFrom: string | null;
+  points: NetWorthSeriesPoint[];
+}
+
 export interface BackupInfo {
   name: string;
-  kind: "manual" | "auto" | "pre-restore";
+  kind: "manual" | "auto" | "pre-restore" | "pre-update";
   sizeBytes: number;
   createdAt: string;
 }

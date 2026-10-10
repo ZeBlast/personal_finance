@@ -20,6 +20,7 @@ import {
 } from "./investment.service.js";
 import { getSettings } from "./settings.service.js";
 import { applyRules } from "./rule.service.js";
+import { detectInternalTransfers } from "./transfer.service.js";
 import { removeTransactions, upsertTransaction } from "./transaction.service.js";
 
 export type SyncTrigger = "launch" | "manual" | "interval";
@@ -42,7 +43,7 @@ export interface SyncRunSummary {
 export interface SyncSkip {
   itemId: number;
   institutionName: string;
-  reason: "cooldown" | "interval" | "needs_signin";
+  reason: "cooldown" | "interval" | "needs_signin" | "borrowed";
 }
 
 export interface SyncAllResult {
@@ -324,6 +325,9 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
         }
       }
 
+      // New transactions may complete a transfer between two of the user's accounts.
+      store(() => detectInternalTransfers(db, iso()));
+
       if (hasInvestments) {
         const holdingsNow = await optionalInvestmentData(() =>
           gateway.getInvestmentHoldings(accessToken),
@@ -435,6 +439,15 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
     const result: SyncAllResult = { runs: [], skipped: [] };
     for (const item of itemsForActiveEnvironment()) {
       if (!options.force) {
+        // A borrowed connection belongs to the real app: read from it only when asked.
+        if (item.borrowed && options.trigger !== "manual") {
+          result.skipped.push({
+            itemId: item.id,
+            institutionName: item.institutionName,
+            reason: "borrowed",
+          });
+          continue;
+        }
         if (item.status === "login_required") {
           result.skipped.push({
             itemId: item.id,

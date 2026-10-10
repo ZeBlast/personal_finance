@@ -14,6 +14,15 @@ export interface HoldingDraft {
   price: string;
   value: string;
   cost: string;
+  // Optional details. For a retirement plan these are the vested part and the fund's identifiers.
+  vestedQuantity: string;
+  vestedValue: string;
+  priceAsOf: string;
+  isin: string;
+  cusip: string;
+  sector: string;
+  industry: string;
+  subtype: string;
 }
 
 export interface HoldingPayload {
@@ -24,6 +33,10 @@ export interface HoldingPayload {
   price?: number;
   valueMinor?: number;
   costBasisMinor?: number;
+  vestedQuantity?: number;
+  vestedValueMinor?: number;
+  priceAsOf?: string;
+  detail?: Record<string, string>;
 }
 
 let nextKey = 1;
@@ -39,6 +52,14 @@ export function emptyDraft(): HoldingDraft {
     price: "",
     value: "",
     cost: "",
+    vestedQuantity: "",
+    vestedValue: "",
+    priceAsOf: "",
+    isin: "",
+    cusip: "",
+    sector: "",
+    industry: "",
+    subtype: "",
   };
 }
 
@@ -48,7 +69,7 @@ const plain = (n: number, digits: number): string => String(Number(n.toFixed(dig
 export function draftFromHolding(holding: HoldingRow, presets: FundPresets): HoldingDraft {
   const preset = presets.funds.find((f) => f.symbol === holding.symbol);
   return {
-    key: nextKey++,
+    ...emptyDraft(),
     preset: preset?.symbol ?? "",
     symbol: preset ? "" : (holding.symbol ?? ""),
     name: preset ? "" : holding.name,
@@ -57,6 +78,11 @@ export function draftFromHolding(holding: HoldingRow, presets: FundPresets): Hol
     price: holding.price === null ? "" : plain(holding.price, 6),
     value: (holding.valueMinor / 100).toFixed(2),
     cost: holding.costBasisMinor === null ? "" : (holding.costBasisMinor / 100).toFixed(2),
+    // Saving replaces the holding, so what it already records must travel with the form.
+    vestedQuantity: holding.vestedQuantity === null ? "" : String(holding.vestedQuantity),
+    vestedValue:
+      holding.vestedValueMinor === null ? "" : (holding.vestedValueMinor / 100).toFixed(2),
+    priceAsOf: holding.priceAsOf ?? "",
   };
 }
 
@@ -98,6 +124,32 @@ export function buildPayload(drafts: HoldingDraft[], presets: FundPresets): Draf
         message: `${row}: enter the cost as dollars, or leave it blank if unknown.`,
       };
     }
+    const vestedQuantity = d.vestedQuantity.trim() === "" ? null : parseDecimal(d.vestedQuantity);
+    if (d.vestedQuantity.trim() !== "" && (vestedQuantity === null || vestedQuantity > quantity)) {
+      return {
+        ok: false,
+        message: `${row}: the vested shares must be a number no larger than the shares held.`,
+      };
+    }
+    const vestedValue =
+      d.vestedValue.trim() === ""
+        ? null
+        : parseMoneyToMinor(d.vestedValue, "USD", { allowZero: true });
+    if (d.vestedValue.trim() !== "" && vestedValue === null) {
+      return {
+        ok: false,
+        message: `${row}: enter the vested value as dollars, for example 2000.00.`,
+      };
+    }
+    if (d.priceAsOf.trim() !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(d.priceAsOf.trim())) {
+      return { ok: false, message: `${row}: enter the price date as YYYY-MM-DD.` };
+    }
+    const detail: Record<string, string> = {};
+    if (d.isin.trim()) detail["isin"] = d.isin.trim().toUpperCase();
+    if (d.cusip.trim()) detail["cusip"] = d.cusip.trim().toUpperCase();
+    if (d.sector.trim()) detail["sector"] = d.sector.trim();
+    if (d.industry.trim()) detail["industry"] = d.industry.trim();
+    if (d.subtype.trim()) detail["subtype"] = d.subtype.trim();
     payload.push({
       ...(preset
         ? { symbol: preset.symbol }
@@ -110,6 +162,10 @@ export function buildPayload(drafts: HoldingDraft[], presets: FundPresets): Draf
       ...(price !== null ? { price } : {}),
       ...(value !== null ? { valueMinor: value } : {}),
       ...(cost !== null ? { costBasisMinor: cost } : {}),
+      ...(vestedQuantity !== null ? { vestedQuantity } : {}),
+      ...(vestedValue !== null ? { vestedValueMinor: vestedValue } : {}),
+      ...(d.priceAsOf.trim() ? { priceAsOf: d.priceAsOf.trim() } : {}),
+      ...(Object.keys(detail).length > 0 ? { detail } : {}),
     });
   }
   return { ok: true, payload };

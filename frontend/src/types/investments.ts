@@ -7,6 +7,8 @@ export interface PortfolioAccount {
   institutionName: string | null;
   source: "plaid" | "manual" | string;
   isManual: boolean;
+  /** "thrift savings plan" for a TSP account kept by hand. */
+  subtype: string | null;
   color: string | null;
   connectionStatus: string | null;
   currency: string;
@@ -51,6 +53,9 @@ export interface HoldingRow {
   valueMinor: number;
   costBasisMinor: number | null;
   gainMinor: number | null;
+  vestedQuantity: number | null;
+  vestedValueMinor: number | null;
+  priceAsOf: string | null;
   asOf: string;
 }
 
@@ -82,7 +87,35 @@ export interface InvestmentTransactionRow {
   amountMinor: number;
   feesMinor: number | null;
   currency: string;
+  subtype: string | null;
+  transactionDatetime: string | null;
   source: "plaid" | "manual" | string;
+}
+
+/** Everything stored about one security, where it is held, and the provider's own record of it. */
+export interface SecurityDetail {
+  security: Record<string, string | number | boolean | null>;
+  raw: unknown;
+  positions: Array<{
+    holdingId: number;
+    accountId: number;
+    accountName: string;
+    quantity: number;
+    price: number | null;
+    valueMinor: number;
+    costBasisMinor: number | null;
+    vestedQuantity: number | null;
+    vestedValueMinor: number | null;
+    asOf: string;
+    priceAsOf: string | null;
+    priceDatetime: string | null;
+    raw: unknown;
+  }>;
+}
+
+export interface InvestmentTransactionDetail extends InvestmentTransactionRow {
+  cancelTransactionId: string | null;
+  raw: unknown;
 }
 
 export interface FundPresets {

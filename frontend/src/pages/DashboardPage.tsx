@@ -57,6 +57,8 @@ function WidgetGrid({
             handle: ".widget-drag-handle",
             bounded: false,
             threshold: 3,
+            // Pressing a button in a widget's title bar clicks it instead of starting a drag.
+            cancel: "button",
           }}
           resizeConfig={{ enabled: editing, handles: ["se"] }}
           onLayoutChange={onLayoutChange}
@@ -68,7 +70,7 @@ function WidgetGrid({
   );
 }
 
-/** One dashboard's widgets and the Customize controls. `switcher` is drawn beside the title. */
+/** One dashboard's widgets and the edit-mode controls. `switcher` is drawn beside the title. */
 function DashboardView({
   dashboardId,
   switcher,
@@ -130,8 +132,8 @@ function DashboardView({
         <div className="flex flex-wrap gap-2">
           {editing ? (
             <>
-              <button type="button" className={buttonClass} onClick={() => setAdding(true)}>
-                Add widget
+              <button type="button" className={primaryClass} onClick={() => setAdding(true)}>
+                + Add widget
               </button>
               <button
                 type="button"
@@ -160,7 +162,7 @@ function DashboardView({
             </>
           ) : (
             <button type="button" className={buttonClass} onClick={dashboard.startEditing}>
-              Customize
+              Edit dashboard
             </button>
           )}
         </div>
@@ -172,15 +174,20 @@ function DashboardView({
         </p>
       )}
       {editing && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Drag a widget by its title bar, resize it from the bottom-right corner, then press Done to
-          save.
-        </p>
+        <div
+          role="status"
+          className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100"
+        >
+          <strong>Editing your dashboard.</strong> Drag a widget by its title bar to move it, pull
+          its bottom-right corner to resize it, press <span aria-hidden="true">✕</span> to remove
+          it, or use <em>+ Add widget</em>. Press <strong>Done</strong> to save, or{" "}
+          <strong>Cancel</strong> to throw the changes away.
+        </div>
       )}
 
       {widgets.length === 0 && !editing && (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-600">
-          Your dashboard is empty. Choose Customize, then Add widget.
+          Your dashboard is empty. Choose Edit dashboard, then + Add widget.
         </div>
       )}
 

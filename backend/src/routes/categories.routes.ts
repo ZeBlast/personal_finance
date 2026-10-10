@@ -6,6 +6,7 @@ import {
   deleteCategory,
   listCategories,
   updateCategory,
+  INCOME_TREATMENTS,
 } from "../services/category.service.js";
 import {
   applyRules,
@@ -26,6 +27,7 @@ const createBody = z
     name: z.string().max(200),
     parentId: z.number().int().positive().nullable().optional(),
     color: z.string().max(20).nullable().optional(),
+    incomeTreatment: z.enum(INCOME_TREATMENTS).nullable().optional(),
   })
   .strict();
 
@@ -35,6 +37,7 @@ const patchBody = z
     parentId: z.number().int().positive().nullable().optional(),
     color: z.string().max(20).nullable().optional(),
     active: z.boolean().optional(),
+    incomeTreatment: z.enum(INCOME_TREATMENTS).nullable().optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." });

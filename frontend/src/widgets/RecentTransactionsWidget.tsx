@@ -18,7 +18,7 @@ export default defineWidget({
   defaultConfig: { count: 8, accountId: "" },
   configFields: [countField("count", "Transactions to show", 3, 25), accountField],
   Component: function RecentTransactions({ config }) {
-    const query = new URLSearchParams({ pageSize: String(config.count), sort: "date_desc" });
+    const query = new URLSearchParams({ pageSize: String(config.count), sort: "txdate_desc" });
     if (config.accountId) query.set("accountId", config.accountId);
     const { data, error, loading } = useApi<TransactionPage>(`/transactions?${query}`);
 

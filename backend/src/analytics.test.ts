@@ -489,10 +489,14 @@ describe("analytics summary on synced demo data", () => {
       const inMonth = rows.filter(
         (t) => t.date >= "2026-08-01" && t.date <= "2026-08-31" && !isTransfer(t),
       );
-      const income = inMonth.filter((t) => t.plaidCategoryPrimary === "INCOME");
+      // Income is money the bank calls income, or that another person sent.
+      const isIncome = (t: (typeof rows)[number]) =>
+        t.plaidCategoryPrimary === "INCOME" ||
+        (t.amountMinor < 0 && (t.plaidCategoryPrimary === "TRANSFER_IN" || !!t.sender));
+      const income = inMonth.filter(isIncome);
       const expectedIncome = -income.reduce((n, t) => n + t.amountMinor, 0);
       const expectedSpending = inMonth
-        .filter((t) => t.plaidCategoryPrimary !== "INCOME")
+        .filter((t) => !isIncome(t))
         .reduce((n, t) => n + t.amountMinor, 0);
 
       const s = (
@@ -552,6 +556,10 @@ describe("calendar", () => {
         count: 1,
         outflowMinor: 100000,
         inflowMinor: 0,
+        debtPaidMinor: 0,
+        changeMinor: -100000,
+        institutionName: null,
+        itemId: null,
       },
       {
         accountId: second,
@@ -560,8 +568,21 @@ describe("calendar", () => {
         count: 1,
         outflowMinor: 2500,
         inflowMinor: 0,
+        debtPaidMinor: 0,
+        changeMinor: -2500,
+        institutionName: null,
+        itemId: null,
       },
     ]);
+    // One dot per kind of transaction: here one categorized and one not.
+    expect(second2.categories).toHaveLength(2);
+    expect(second2.categories.reduce((n: number, c: { count: number }) => n + c.count, 0)).toBe(2);
+    expect(second2.categories).toContainEqual({
+      categoryId: null,
+      name: "Uncategorized",
+      color: null,
+      count: 1,
+    });
     expect(cal.days.find((d: { date: string }) => d.date === "2026-09-20")).toMatchObject({
       count: 1,
       pendingCount: 1,

@@ -296,15 +296,19 @@ describe("recipients", () => {
     expect(out).toMatchObject({
       recipient: "Jane Doe",
       recipientSource: "parsed",
-      isTransfer: true,
+      // A payment to another person is not a transfer between the user's own accounts.
+      isTransfer: false,
     });
     expect(out.amountMinor).toBeGreaterThan(0);
+    // Money coming in names its sender, not a recipient.
     expect(into).toMatchObject({
-      recipient: "Alex Smith",
-      recipientSource: "parsed",
-      isTransfer: true,
+      sender: "Alex Smith",
+      senderSource: "parsed",
+      recipient: null,
+      isTransfer: false,
     });
     expect(into.amountMinor).toBeLessThan(0);
+    expect(out.sender).toBeNull();
 
     const bill = (await h.ctx.call("get", "/api/transactions?pageSize=200&q=bill").expect(200)).body
       .items[0];

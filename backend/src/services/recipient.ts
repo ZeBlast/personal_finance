@@ -53,11 +53,3 @@ export function extractRecipient(input: RecipientInput): RecipientResult | null 
   }
   return null;
 }
-
-/** Whether a transaction is a transfer between people or accounts rather than a purchase. */
-export function looksLikeTransfer(
-  categoryPrimary: string | null,
-  recipient: RecipientResult | null,
-): boolean {
-  return (categoryPrimary?.startsWith("TRANSFER") ?? false) || recipient !== null;
-}

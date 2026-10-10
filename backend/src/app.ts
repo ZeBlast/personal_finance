@@ -13,6 +13,13 @@ import { dataRoutes } from "./routes/data.routes.js";
 import { healthRoutes } from "./routes/health.routes.js";
 import { insightsRoutes } from "./routes/insights.routes.js";
 import { investmentsRoutes } from "./routes/investments.routes.js";
+import { merchantsRoutes } from "./routes/merchants.routes.js";
+import { calendarRoutes } from "./routes/calendar.routes.js";
+import { sandboxRoutes } from "./routes/sandbox.routes.js";
+import { planningRoutes } from "./routes/planning.routes.js";
+import { cashbackRoutes } from "./routes/cashback.routes.js";
+import { tspRoutes } from "./routes/tsp.routes.js";
+import { taxesRoutes } from "./routes/taxes.routes.js";
 import { plaidRoutes } from "./routes/plaid.routes.js";
 import { settingsRoutes } from "./routes/settings.routes.js";
 import { syncRoutes } from "./routes/sync.routes.js";
@@ -29,6 +36,8 @@ export interface AppOptions {
   version: string;
   /** Encrypts Plaid access tokens and saved credentials. */
   cipher: TokenCipher;
+  /** The master key, offered to the user as their recovery key. Omit to leave that off. */
+  recoveryKey?: string | undefined;
   /** Chooses the Plaid gateway (demo, Sandbox, Production). Defaults to the settings-driven one. */
   getGateway?: GatewayProvider | undefined;
   /** The sync service. The server passes its own so it can also start launch and timed syncs. */
@@ -49,6 +58,7 @@ export function createApp({
   token,
   version,
   cipher,
+  recoveryKey,
   getGateway = createGatewayProvider(db, cipher),
   sync = createSyncService({ db, cipher, getGateway }),
   staticDir,
@@ -78,6 +88,13 @@ export function createApp({
   app.use("/api", dashboardRoutes(db));
   app.use("/api", investmentsRoutes(db));
   app.use("/api", insightsRoutes(db));
+  app.use("/api", merchantsRoutes(db));
+  app.use("/api", calendarRoutes(db));
+  app.use("/api", cashbackRoutes(db));
+  app.use("/api", planningRoutes(db));
+  app.use("/api", sandboxRoutes(db));
+  app.use("/api", tspRoutes(db));
+  app.use("/api", taxesRoutes(db));
   if (dataDir) {
     app.use(
       "/api",
@@ -86,6 +103,7 @@ export function createApp({
         dataDir,
         migrationsDir: migrationsDir ?? path.resolve(process.cwd(), "..", "drizzle", "migrations"),
         version,
+        recoveryKey,
       }),
     );
   }

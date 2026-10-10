@@ -21,6 +21,10 @@ export interface TransactionDraft {
   amount: string;
   fees: string;
   description: string;
+  /** A finer label, such as "employer match" (optional). */
+  subtype: string;
+  /** When it happened, if known (optional). */
+  datetime: string;
 }
 
 export interface TransactionPayload {
@@ -33,6 +37,8 @@ export interface TransactionPayload {
   price?: number;
   amountMinor?: number;
   feesMinor?: number;
+  subtype?: string;
+  datetime?: string;
 }
 
 export type TransactionResult =
@@ -81,6 +87,13 @@ export function buildTransactionPayload(draft: TransactionDraft): TransactionRes
     return { ok: false, message: "Enter fees in dollars, or leave the box empty." };
   }
 
+  if (
+    draft.datetime.trim() !== "" &&
+    !/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/.test(draft.datetime.trim())
+  ) {
+    return { ok: false, message: "Enter the time as YYYY-MM-DDTHH:MM, or leave it empty." };
+  }
+
   const fund = draft.fund.trim();
   const looksLikeSymbol = /^[A-Za-z0-9.-]{1,12}$/.test(fund);
   return {
@@ -90,6 +103,8 @@ export function buildTransactionPayload(draft: TransactionDraft): TransactionRes
       type: draft.type,
       ...(fund ? (looksLikeSymbol ? { symbol: fund } : { name: fund }) : {}),
       ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
+      ...(draft.subtype.trim() ? { subtype: draft.subtype.trim() } : {}),
+      ...(draft.datetime.trim() ? { datetime: draft.datetime.trim() } : {}),
       ...(quantity !== null ? { quantity } : {}),
       ...(price !== null ? { price } : {}),
       ...(amountMinor !== null ? { amountMinor } : {}),

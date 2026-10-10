@@ -1,0 +1,1 @@
+ALTER TABLE `categories` ADD `income_treatment` text;

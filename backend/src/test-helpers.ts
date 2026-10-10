@@ -1,17 +1,30 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3-multiple-ciphers";
 import request from "supertest";
 import { createApp, type AppOptions } from "./app.js";
 import { createDb, runMigrations, type AppDb } from "./db/client.js";
 import { FakePlaidGateway } from "./plaid/fake-gateway.js";
-import { createCipher, type TokenCipher } from "./services/crypto.js";
+import { createCipher, deriveDatabaseKey, type TokenCipher } from "./services/crypto.js";
 import { createSyncService, type SyncService } from "./services/sync.service.js";
 
 export const TEST_PORT = 47998;
 export const TEST_TOKEN = "helper-token-1234";
 export const TEST_KEY = "cd".repeat(32);
+/** The database key the test apps use. */
+export const TEST_DB_KEY = deriveDatabaseKey(TEST_KEY);
 const MIGRATIONS = path.resolve(import.meta.dirname, "../../drizzle/migrations");
+
+/** Opens any database file with the encrypting driver, with a key (the test key by default) or none. */
+export function openDatabaseFile(file: string, key: string | null = TEST_DB_KEY, readonly = false) {
+  const d = new Database(file, { readonly });
+  if (key !== null) {
+    d.pragma("cipher='sqlcipher'");
+    d.pragma(`key="x'${key}'"`);
+  }
+  return d;
+}
 
 type Method = "get" | "post" | "put" | "patch" | "delete";
 
@@ -25,7 +38,7 @@ type Overrides =
  */
 export function makeTestApp(overrides: Overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pf-test-"));
-  const { db, sqlite } = createDb({ dataDir: dir });
+  const { db, sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
   runMigrations(db, MIGRATIONS);
   const cipher = createCipher(TEST_KEY);
   const extra = typeof overrides === "function" ? overrides({ db, cipher }) : overrides;
@@ -35,6 +48,7 @@ export function makeTestApp(overrides: Overrides = {}) {
     token: TEST_TOKEN,
     version: "test",
     cipher,
+    recoveryKey: TEST_KEY,
     dataDir: dir,
     migrationsDir: MIGRATIONS,
     ...extra,
@@ -100,3 +114,23 @@ export async function linkDemoBank(
     duplicateOfItemId?: number;
   };
 }
+
+/**
+ * A copy of the migrations folder holding only the first `keep` migrations, as the app shipped at
+ * an earlier version. Returns the folder; delete it when done.
+ */
+export function truncatedMigrations(keep: number): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pf-mig-"));
+  fs.mkdirSync(path.join(dir, "meta"));
+  const journal = JSON.parse(
+    fs.readFileSync(path.join(MIGRATIONS, "meta", "_journal.json"), "utf8"),
+  );
+  journal.entries = journal.entries.slice(0, keep);
+  fs.writeFileSync(path.join(dir, "meta", "_journal.json"), JSON.stringify(journal));
+  for (const e of journal.entries) {
+    fs.copyFileSync(path.join(MIGRATIONS, `${e.tag}.sql`), path.join(dir, `${e.tag}.sql`));
+  }
+  return dir;
+}
+
+export { MIGRATIONS };

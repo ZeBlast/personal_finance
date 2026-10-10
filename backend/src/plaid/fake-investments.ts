@@ -21,6 +21,12 @@ interface DemoPosition {
   basePrice: number;
   /** Total cost, or null to leave cost basis unknown (as many institutions do). */
   costBasis: number | null;
+  /** Identifiers and classification, as a real institution would supply them. */
+  detail?: { isin: string; cusip: string; sector: string; industry: string; subtype: string };
+  /** The share of the position that has vested (for a plan with employer money). */
+  vestedShare?: number;
+  /** Purchase lots, as [share of the position, price paid per unit, purchase date]. */
+  lots?: Array<[number, number, string]>;
 }
 
 const POSITIONS: DemoPosition[] = [
@@ -32,6 +38,18 @@ const POSITIONS: DemoPosition[] = [
     quantity: 120.5,
     basePrice: 100,
     costBasis: 9800,
+    detail: {
+      isin: "US3141590001",
+      cusip: "314159000",
+      sector: "Multi-asset",
+      industry: "Index fund",
+      subtype: "index fund",
+    },
+    vestedShare: 0.8,
+    lots: [
+      [0.6, 78, "2024-02-01"],
+      [0.4, 88, "2025-03-04"],
+    ],
   },
   {
     key: "bond-index",
@@ -50,6 +68,13 @@ const POSITIONS: DemoPosition[] = [
     quantity: 15,
     basePrice: 190,
     costBasis: null,
+    detail: {
+      isin: "US0000000AAP",
+      cusip: "000000AAP",
+      sector: "Technology",
+      industry: "Consumer electronics",
+      subtype: "common stock",
+    },
   },
   {
     key: "cash",
@@ -80,12 +105,33 @@ function priceOn(position: DemoPosition, date: string): number {
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 function securityOf(position: DemoPosition): GatewaySecurity {
+  const d = position.detail;
   return {
     securityId: `sec-fake~${position.key}`,
     symbol: position.symbol,
     name: position.name,
     type: position.type,
     currency: "USD",
+    subtype: d?.subtype ?? null,
+    isin: d?.isin ?? null,
+    cusip: d?.cusip ?? null,
+    sector: d?.sector ?? null,
+    industry: d?.industry ?? null,
+    isCashEquivalent: position.type === "cash",
+    // The object a real provider would have sent, in its own field names.
+    raw: {
+      security_id: `sec-fake~${position.key}`,
+      ticker_symbol: position.symbol,
+      name: position.name,
+      type: position.type,
+      subtype: d?.subtype ?? null,
+      isin: d?.isin ?? null,
+      cusip: d?.cusip ?? null,
+      sector: d?.sector ?? null,
+      industry: d?.industry ?? null,
+      is_cash_equivalent: position.type === "cash",
+      iso_currency_code: "USD",
+    },
   };
 }
 
@@ -93,15 +139,38 @@ function securityOf(position: DemoPosition): GatewaySecurity {
 export function demoHoldings(accountId: string, date: string): HoldingsSnapshot {
   const holdings: GatewayHolding[] = POSITIONS.map((p) => {
     const price = priceOn(p, date);
+    const value = round2(p.quantity * price);
+    const vestedQuantity = p.vestedShare === undefined ? null : round2(p.quantity * p.vestedShare);
     return {
       accountId,
       securityId: `sec-fake~${p.key}`,
       quantity: p.quantity,
       price,
-      value: round2(p.quantity * price),
+      value,
       costBasis: p.costBasis,
       currency: "USD",
       asOf: date,
+      vestedQuantity,
+      vestedValue: vestedQuantity === null ? null : round2(vestedQuantity * price),
+      priceAsOf: date,
+      raw: {
+        security_id: `sec-fake~${p.key}`,
+        institution_price: price,
+        institution_price_as_of: date,
+        institution_value: value,
+        cost_basis: p.costBasis,
+        quantity: p.quantity,
+        vested_quantity: vestedQuantity,
+        iso_currency_code: "USD",
+        tax_lots: (p.lots ?? []).map(([share, paid, bought], i) => ({
+          institution_lot_id: `LOT-${i + 1}`,
+          original_purchase_datetime: `${bought}T00:00:00Z`,
+          quantity: round2(p.quantity * share),
+          purchase_price: paid,
+          cost_basis: round2(p.quantity * share * paid),
+          current_value: round2(p.quantity * share * price),
+        })),
+      },
     };
   });
   return { holdings, securities: POSITIONS.map(securityOf) };
@@ -138,6 +207,8 @@ export function demoInvestmentTransactions(
         securityId: null,
         name: "Payroll contribution",
         kind: "contribution",
+        subtype: day === 1 ? "employee contribution" : "employer match",
+        datetime: `${date}T14:30:00Z`,
         quantity: null,
         price: null,
         amount: -400,

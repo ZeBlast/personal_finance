@@ -5,6 +5,19 @@ import {
   appSettings,
   balanceSnapshots,
   budgets,
+  attachments,
+  cardBills,
+  cashbackRules,
+  duplicateDismissals,
+  sandboxSaves,
+  subscriptionReviews,
+  fundPrices,
+  tspAllocations,
+  tspContributionApplications,
+  tspContributions,
+  dayNotes,
+  plannedExceptions,
+  plannedTransactions,
   categories,
   creditLimitHistory,
   dashboardWidgets,
@@ -85,6 +98,7 @@ function transactionsCsv(db: AppDb): { text: string; rows: number } {
         t.pending,
         t.isTransfer,
         t.recipient ?? "",
+        t.sender ?? "",
         t.notes ?? "",
       ]);
     }
@@ -104,6 +118,7 @@ function transactionsCsv(db: AppDb): { text: string; rows: number } {
         "pending",
         "transfer",
         "recipient",
+        "sender",
         "notes",
       ],
       rows,
@@ -114,7 +129,7 @@ function transactionsCsv(db: AppDb): { text: string; rows: number } {
 
 function accountsCsv(db: AppDb): { text: string; rows: number } {
   const environment = getSettings(db).plaidEnvironment;
-  const list = listAccounts(db).filter(
+  const list = listAccounts(db, undefined, true).filter(
     (a) => a.itemId === null || a.connectionEnvironment === environment,
   );
   return {
@@ -222,6 +237,27 @@ function everythingJson(db: AppDb, now: Date): { text: string; rows: number } {
     categories: db.select().from(categories).all(),
     rules: db.select().from(transactionRules).all(),
     budgets: db.select().from(budgets).all(),
+    cashbackRules: db.select().from(cashbackRules).all(),
+    cardBills: db.select().from(cardBills).all(),
+    subscriptionReviews: db.select().from(subscriptionReviews).all(),
+    duplicateDismissals: db.select().from(duplicateDismissals).all(),
+    sandboxSaves: db.select().from(sandboxSaves).all(),
+    // The files themselves stay in the database (and its backups); the export lists them.
+    attachments: db
+      .select({
+        id: attachments.id,
+        transactionId: attachments.transactionId,
+        name: attachments.name,
+        mime: attachments.mime,
+        size: attachments.size,
+        createdAt: attachments.createdAt,
+      })
+      .from(attachments)
+      .all(),
+    fundPrices: db.select().from(fundPrices).all(),
+    tspAllocations: db.select().from(tspAllocations).all(),
+    tspContributions: db.select().from(tspContributions).all(),
+    tspContributionApplications: db.select().from(tspContributionApplications).all(),
     creditLimitHistory: db.select().from(creditLimitHistory).all(),
     balanceSnapshots: db.select().from(balanceSnapshots).all(),
     securities: db.select().from(securities).all(),
@@ -229,6 +265,9 @@ function everythingJson(db: AppDb, now: Date): { text: string; rows: number } {
     holdingSnapshots: db.select().from(holdingSnapshots).all(),
     investmentTransactions: db.select().from(investmentTransactions).all(),
     dashboardWidgets: db.select().from(dashboardWidgets).all(),
+    dayNotes: db.select().from(dayNotes).all(),
+    plannedTransactions: db.select().from(plannedTransactions).all(),
+    plannedExceptions: db.select().from(plannedExceptions).all(),
     settings: db.select().from(appSettings).all(),
   };
   const rows = Object.values(tables).reduce((sum, list) => sum + list.length, 0);

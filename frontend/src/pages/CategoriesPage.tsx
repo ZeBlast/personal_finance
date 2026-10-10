@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { api, ApiError, errorMessage } from "../api/client";
+import { MerchantsSection } from "../components/categories/MerchantsSection";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import type {
@@ -17,12 +18,14 @@ const FIELD_LABEL: Record<RuleField, string> = {
   merchant: "Merchant",
   name: "Bank description",
   recipient: "Recipient",
+  sender: "Sender",
   plaid_category: "Bank category",
 };
 const OPERATOR_LABEL: Record<RuleOperator, string> = {
   equals: "is exactly",
   contains: "contains",
   starts_with: "starts with",
+  same_merchant: "is the same merchant as",
 };
 
 const inputClass =
@@ -51,6 +54,7 @@ function CategoryForm({
   const [name, setName] = useState(category?.name ?? "");
   const [parentId, setParentId] = useState(category?.parentId ? String(category.parentId) : "");
   const [color, setColor] = useState(category?.color ?? "#2563eb");
+  const [treatment, setTreatment] = useState<string>(category?.incomeTreatment ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // A category that has subcategories stays at the top level, and only top-level, active ones can be parents.
@@ -63,7 +67,12 @@ function CategoryForm({
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const body = { name, parentId: parentId === "" ? null : Number(parentId), color };
+    const body = {
+      name,
+      parentId: parentId === "" ? null : Number(parentId),
+      color,
+      incomeTreatment: treatment === "" ? null : treatment,
+    };
     try {
       if (category) {
         await api(`/categories/${category.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -129,6 +138,27 @@ function CategoryForm({
             onChange={(e) => setColor(e.target.value)}
             className="mt-1 h-9 w-16 rounded border border-slate-300 dark:border-slate-600"
           />
+        </div>
+        <div>
+          <label htmlFor={`${id}-treatment`} className="block text-sm font-medium">
+            Money coming in here counts as
+          </label>
+          <select
+            id={`${id}-treatment`}
+            value={treatment}
+            onChange={(e) => setTreatment(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">
+              The usual rules (income if it looks like pay or comes from someone)
+            </option>
+            <option value="income">Income (taxable), such as a credit you earned</option>
+            <option value="refund">A refund: lowers spending, never income or taxable</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Income counts toward income totals, the month report, and the sandbox&apos;s income
+            figures; a refund only takes money off spending.
+          </p>
         </div>
         {error && (
           <p role="alert" className="text-sm text-red-600">
@@ -217,6 +247,18 @@ function CategoriesSection({ onChanged }: { onChanged: () => void }) {
         />
         <span className={c.active ? "font-medium" : "text-slate-400 line-through"}>{c.name}</span>
         {!c.active && <span className="text-xs text-slate-500">archived</span>}
+        {c.incomeTreatment && (
+          <span
+            className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+            title={
+              c.incomeTreatment === "income"
+                ? "Money coming in here counts as taxable income"
+                : "Money coming in here is a refund: it lowers spending and is never income"
+            }
+          >
+            {c.incomeTreatment === "income" ? "counts as income" : "refund"}
+          </span>
+        )}
         <span className="text-xs text-slate-500">
           {c.transactionCount} transaction{c.transactionCount === 1 ? "" : "s"}
           {c.ruleCount > 0 ? ` · ${c.ruleCount} rule${c.ruleCount === 1 ? "" : "s"}` : ""}
@@ -714,6 +756,8 @@ function RulesSection({ categories }: { categories: Category[] }) {
 
 export function CategoriesPage() {
   const { categories, reload } = useCategories(true);
+  // Assigning a merchant adds or changes a rule, so the rules list is rebuilt when it happens.
+  const [rulesVersion, setRulesVersion] = useState(0);
   return (
     <section className="max-w-4xl space-y-8">
       <div>
@@ -724,7 +768,11 @@ export function CategoriesPage() {
         </p>
       </div>
       <CategoriesSection onChanged={() => void reload()} />
-      <RulesSection categories={categories ?? []} />
+      <MerchantsSection
+        categories={(categories ?? []).filter((c) => c.active)}
+        onChanged={() => setRulesVersion((v) => v + 1)}
+      />
+      <RulesSection key={rulesVersion} categories={categories ?? []} />
     </section>
   );
 }

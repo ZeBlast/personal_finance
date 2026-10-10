@@ -182,13 +182,13 @@ describe("editing a transaction", () => {
 
   it("only allows the user-editable fields", async () => {
     const t = await firstTx("netflix");
-    for (const body of [
-      { amountMinor: 1 },
-      { date: "2020-01-01" },
-      { name: "x" },
-      { pending: true },
-      {},
-    ]) {
+    // Fields only a transaction entered by hand may change: refused, with a clear reason.
+    for (const body of [{ amountMinor: 1 }, { date: "2020-01-01" }, { pending: true }]) {
+      const res = await h.call("patch", `/api/transactions/${t.id}`).send(body).expect(409);
+      expect(res.body.error).toBe("bank_transaction");
+    }
+    // Anything else is simply not a field.
+    for (const body of [{ name: "x" }, {}]) {
       await h.call("patch", `/api/transactions/${t.id}`).send(body).expect(400);
     }
     expect((await h.call("get", `/api/transactions/${t.id}`).expect(200)).body).toMatchObject({

@@ -35,7 +35,9 @@ export function categoryOptions(categories: Category[]): Array<{ id: number; lab
   return categories
     .map((c) => {
       const parent = c.parentId === null ? undefined : byId.get(c.parentId);
-      return { id: c.id, label: parent ? `${parent.name} › ${c.name}` : c.name };
+      // A subcategory shows only its own name; it is listed right after its parent.
+      return { id: c.id, label: c.name, sortKey: parent ? `${parent.name}${c.name}` : c.name };
     })
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ id, label }) => ({ id, label }));
 }

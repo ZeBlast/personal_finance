@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev:borrow": "tsx --env-file-if-exists=../.env src/cli/borrow.ts",
     "dev": "tsx watch --env-file-if-exists=../.env src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "better-sqlite3-multiple-ciphers": "^13.0.3",
     "drizzle-orm": "^0.45.3",
     "express": "^5.1.0",
     "plaid": "^47.0.0",

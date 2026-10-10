@@ -17,16 +17,23 @@ import { getSettings } from "./settings.service.js";
 /**
  * What "spending" and "income" mean in every chart and budget (one definition, used everywhere):
  *
- * - Transfers are left out by default: anything marked as a transfer (money moving between your own
- *   accounts or to a person, such as Zelle) and credit-card payments, which would otherwise count
- *   the same money twice (once when it was spent on the card, again when the card was paid).
- * - **Income** is money in on transactions categorized as income (by the bank, or by a category named
- *   "Income"). Everything else is **spending**.
+ * - Only transfers between your OWN accounts are left out by default (see transfer.service.ts: they
+ *   are found by matching, or marked by the user), along with credit-card payments, which would
+ *   otherwise count the same money twice (once when spent on the card, again when the card was
+ *   paid). Money sent to or received from another person (a Zelle, rent to a landlord) counts.
+ * - **Income** is money in that is categorized as income (by the bank, or by a category named
+ *   "Income") or that another person sent (a transfer-in, or a transaction with a sender).
+ *   Everything else is **spending**.
  * - Refunds are negative spending: a refund reduces the spending of its category rather than
  *   counting as income, so a returned purchase nets out.
  * - Pending transactions are included unless asked otherwise.
  */
-const IS_INCOME = sql`(t.plaid_category_primary = 'INCOME' or lower(coalesce(c.name, '')) = 'income')`;
+export const IS_INCOME = sql`(coalesce(c.income_treatment, '') <> 'refund' and (
+  (c.income_treatment = 'income' and t.amount_minor < 0)
+  or t.plaid_category_primary = 'INCOME'
+  or lower(coalesce(c.name, '')) = 'income'
+  or (t.amount_minor < 0 and (t.plaid_category_primary = 'TRANSFER_IN'
+    or coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) is not null))))`;
 /**
  * Not money moving between accounts. Besides transfers and the bank's own "credit card payment"
  * category, this leaves out any loan payment that sits on a credit card account: that is a payment
@@ -36,6 +43,62 @@ const IS_INCOME = sql`(t.plaid_category_primary = 'INCOME' or lower(coalesce(c.n
 export const NOT_TRANSFER = sql`(t.is_transfer = 0
   and coalesce(t.plaid_category_detailed, '') <> 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
   and not (a.type = 'credit' and coalesce(t.plaid_category_primary, '') = 'LOAN_PAYMENTS'))`;
+/**
+ * Payments toward debt, which the calendar shows apart from spending: they lower what is owed.
+ *
+ * - `debt`: money arriving on a credit card or loan account that pays it down (not a refund: that
+ *   has to be flagged as a transfer, come with a loan-payment or transfer category, or read like a
+ *   payment).
+ * - `funding`: the matching money leaving the account that paid (it is the same payment, so it is
+ *   not counted again).
+ * - `funding_unpaired`: a card payment leaving an account when the card itself is not tracked.
+ */
+const DEBT_NAME = sql`((lower(t.name) like '%payment%' or lower(t.name) like '%autopay%'
+  or lower(t.name) like '%pmt%' or lower(t.name) like '%thank you%')
+  and not (lower(t.name) like '%cashback%' or lower(t.name) like '%cash back%'
+    or lower(t.name) like '%reward%' or lower(t.name) like '%refund%'
+    or lower(t.name) like '%promo%' or lower(t.name) like '%statement credit%'
+    or lower(t.name) like '%credit thank you%' or lower(t.name) like '%adjustment%'
+    or lower(t.name) like '%benefit%' or lower(t.name) like '%claim%'
+    or lower(t.name) like '%protection%'
+    or coalesce(t.plaid_category_primary, '') like 'INCOME%'))`;
+
+/** The other side of this transaction's transfer is a visible card or loan / another kind of account. */
+const PAIRED_WITH_DEBT = sql`exists (select 1 from transactions pt join accounts pa on pa.id = pt.account_id
+    where pt.id = t.transfer_pair_id and pa.type in ('credit', 'loan') and pa.hidden = 0)`;
+const PAIRED_WITH_CASH = sql`exists (select 1 from transactions pt join accounts pa on pa.id = pt.account_id
+    where pt.id = t.transfer_pair_id and pa.type not in ('credit', 'loan') and pa.hidden = 0)`;
+/**
+ * What a transaction is toward debt:
+ * - `debt`: a payment into a card or loan with no matched paying side (counted as debt paid here).
+ * - `debt_paired`: a payment into a card or loan matched with the money that paid it. Not counted
+ *   here: the paying side (`funding`) counts it, on the day that money left.
+ * - `funding`: money that left another account to pay a card or loan (counted as debt paid).
+ * - `funding_unpaired`: looks like a card payment, but no card is tracked to match it with.
+ */
+export const DEBT_KIND = sql`(case
+  when a.type in ('credit', 'loan') and t.amount_minor < 0 and (a.type = 'loan' or t.is_transfer = 1
+    or coalesce(t.plaid_category_primary, '') like 'LOAN_PAYMENTS%'
+    or coalesce(t.plaid_category_primary, '') = 'TRANSFER_IN' or ${DEBT_NAME})
+    then (case when ${PAIRED_WITH_CASH} then 'debt_paired' else 'debt' end)
+  when a.type not in ('credit', 'loan') and t.amount_minor > 0 and ${PAIRED_WITH_DEBT}
+    then 'funding'
+  when a.type not in ('credit', 'loan') and t.amount_minor > 0
+    and coalesce(t.plaid_category_detailed, '') = 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT'
+    then 'funding_unpaired'
+  end)`;
+
+/**
+ * Debt paid, summed. A matched card payment counts once, on the day the paying account's money left
+ * (`funding`). When only one account is in view, the other side is not there to count it, so the
+ * card's own side (`debt_paired`) counts instead.
+ */
+export function debtPaidSum(oneAccount: boolean): SQL {
+  return oneAccount
+    ? sql`sum(case when ${DEBT_KIND} in ('debt', 'debt_paired') then -t.amount_minor when ${DEBT_KIND} = 'funding' then t.amount_minor else 0 end)`
+    : sql`sum(case ${DEBT_KIND} when 'debt' then -t.amount_minor when 'funding' then t.amount_minor else 0 end)`;
+}
+
 const MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
 
 export const GROUPS = [
@@ -50,7 +113,21 @@ export const GROUPS = [
 ] as const;
 export type Group = (typeof GROUPS)[number];
 
+/**
+ * Which date a transaction is placed on: `transaction` is when it was made (the authorized date,
+ * or the posted date when the bank gives no other), `posted` is when it cleared.
+ */
+export type DateBasis = "transaction" | "posted";
+export const DATE_BASES = ["transaction", "posted"] as const;
+
+/** The SQL date of a transaction (alias `t`) on a basis; summaries default to the posted date. */
+export function dateOf(basis: DateBasis | undefined): SQL {
+  return basis === "transaction" ? sql`coalesce(t.authorized_date, t.date)` : sql`t.date`;
+}
+
 export interface SummaryQuery {
+  /** Which date places a transaction in the period (default: the posted date). */
+  dateBasis?: DateBasis | undefined;
   from: string;
   to: string;
   groupBy: Group;
@@ -159,13 +236,22 @@ export function validateRange(from: string, to: string, groupBy: Group): void {
 function whereClauses(
   q: Pick<
     SummaryQuery,
-    "from" | "to" | "accountId" | "category" | "includeTransfers" | "includePending" | "environment"
+    | "from"
+    | "to"
+    | "accountId"
+    | "category"
+    | "includeTransfers"
+    | "includePending"
+    | "environment"
+    | "dateBasis"
   >,
 ): SQL {
+  const day = dateOf(q.dateBasis);
   const parts: SQL[] = [
-    sql`t.date >= ${q.from}`,
-    sql`t.date <= ${q.to}`,
+    sql`${day} >= ${q.from}`,
+    sql`${day} <= ${q.to}`,
     sql`(p.environment = ${q.environment} or a.plaid_item_id is null)`,
+    sql`a.hidden = 0`,
   ];
   if (q.accountId !== undefined) parts.push(sql`t.account_id = ${q.accountId}`);
   if (q.category === "none") parts.push(sql`t.category_id is null`);
@@ -312,9 +398,14 @@ export interface CalendarDay {
   date: string;
   count: number;
   pendingCount: number;
-  /** Money that left your accounts that day, and money that came in (transfers included). */
+  /**
+   * Money that left your accounts that day, and money that came in. Moves between your own accounts
+   * and payments toward debt are not in these: they are not money coming in or going out.
+   */
   outflowMinor: number;
   inflowMinor: number;
+  /** Payments toward credit cards and loans, which lower what you owe. Not in the two above. */
+  debtPaidMinor: number;
   accounts: Array<{
     accountId: number;
     name: string;
@@ -322,6 +413,19 @@ export interface CalendarDay {
     count: number;
     outflowMinor: number;
     inflowMinor: number;
+    debtPaidMinor: number;
+    /** The day's net effect on the account, as money: purchases negative, money in positive. */
+    changeMinor: number;
+    institutionName: string | null;
+    /** The connection the account belongs to (null for an account kept by hand). */
+    itemId: number | null;
+  }>;
+  /** The kinds of transactions that day: one entry per category (null for uncategorized). */
+  categories: Array<{
+    categoryId: number | null;
+    name: string;
+    color: string | null;
+    count: number;
   }>;
 }
 
@@ -330,10 +434,24 @@ interface CalendarRow {
   account_id: number;
   name: string;
   color: string | null;
+  institution: string | null;
+  item_id: number | null;
+  change: number | null;
   n: number;
   pending: number;
   outflow: number | null;
   inflow: number | null;
+  debt: number | null;
+  funding: number | null;
+}
+
+/** Whether any credit card or loan account is tracked (so payments can be seen from its side). */
+export function debtAccountsTracked(db: AppDb): boolean {
+  return (
+    db.get<{ n: number }>(
+      sql`select count(*) as n from accounts where type in ('credit', 'loan') and hidden = 0`,
+    )?.n !== 0
+  );
 }
 
 /** What happened on each day of a month, and on which account. Days with nothing are omitted. */
@@ -342,14 +460,18 @@ export function calendarMonth(
   month: string,
   environment: string,
   accountId?: number,
+  dateBasis: DateBasis = "transaction",
 ): { month: string; days: CalendarDay[] } {
   if (!isRealMonth(month))
     throw new AppError(400, "invalid_month", "Month must be written YYYY-MM.");
   const rows = db.all<CalendarRow>(sql`
-    select t.date as date, a.id as account_id, a.name as name, a.color as color,
+    select ${dateOf(dateBasis)} as date, a.id as account_id, a.name as name, a.color as color,
+      p.institution_name as institution, a.plaid_item_id as item_id, -sum(t.amount_minor) as change,
       count(*) as n, sum(t.pending) as pending,
-      sum(case when t.amount_minor > 0 then t.amount_minor else 0 end) as outflow,
-      -sum(case when t.amount_minor < 0 then t.amount_minor else 0 end) as inflow
+      sum(case when t.amount_minor > 0 and ${DEBT_KIND} is null and t.is_transfer = 0 then t.amount_minor else 0 end) as outflow,
+      -sum(case when t.amount_minor < 0 and ${DEBT_KIND} is null and t.is_transfer = 0 then t.amount_minor else 0 end) as inflow,
+      ${debtPaidSum(accountId !== undefined)} as debt,
+      sum(case when ${DEBT_KIND} = 'funding_unpaired' then t.amount_minor else 0 end) as funding
     ${fromTransactions}
     where ${whereClauses({
       from: firstOfMonth(month),
@@ -359,11 +481,15 @@ export function calendarMonth(
       includeTransfers: true,
       includePending: true,
       environment,
+      dateBasis,
     })}
-    group by t.date, a.id
-    order by t.date, a.id
+    group by 1, a.id
+    order by 1, a.id
   `);
 
+  // A card payment seen only from the paying side counts as debt paid only when no card or loan is
+  // tracked; otherwise the card's own side already counts it.
+  const cardsTracked = debtAccountsTracked(db);
   const days = new Map<string, CalendarDay>();
   for (const r of rows) {
     const day = days.get(r.date) ?? {
@@ -372,12 +498,16 @@ export function calendarMonth(
       pendingCount: 0,
       outflowMinor: 0,
       inflowMinor: 0,
+      debtPaidMinor: 0,
       accounts: [],
+      categories: [],
     };
+    const debtPaid = (r.debt ?? 0) + (cardsTracked ? 0 : (r.funding ?? 0));
     day.count += r.n;
     day.pendingCount += r.pending ?? 0;
     day.outflowMinor += r.outflow ?? 0;
     day.inflowMinor += r.inflow ?? 0;
+    day.debtPaidMinor += debtPaid;
     day.accounts.push({
       accountId: r.account_id,
       name: r.name,
@@ -385,8 +515,44 @@ export function calendarMonth(
       count: r.n,
       outflowMinor: r.outflow ?? 0,
       inflowMinor: r.inflow ?? 0,
+      debtPaidMinor: debtPaid,
+      changeMinor: r.change ?? 0,
+      institutionName: r.institution,
+      itemId: r.item_id,
     });
     days.set(r.date, day);
+  }
+
+  // The kinds of transactions on each day, most frequent first.
+  const kinds = db.all<{
+    date: string;
+    category_id: number | null;
+    name: string | null;
+    color: string | null;
+    n: number;
+  }>(sql`
+    select ${dateOf(dateBasis)} as date, t.category_id as category_id, c.name as name,
+      c.color as color, count(*) as n
+    ${fromTransactions}
+    where ${whereClauses({
+      from: firstOfMonth(month),
+      to: lastOfMonth(month),
+      accountId,
+      category: undefined,
+      includeTransfers: true,
+      includePending: true,
+      environment,
+      dateBasis,
+    })}
+    group by 1, t.category_id
+    order by 1, n desc, c.name`);
+  for (const k of kinds) {
+    days.get(k.date)?.categories.push({
+      categoryId: k.category_id,
+      name: k.name ?? "Uncategorized",
+      color: k.color,
+      count: k.n,
+    });
   }
   return { month, days: [...days.values()] };
 }

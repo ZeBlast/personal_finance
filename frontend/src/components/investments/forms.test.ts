@@ -109,6 +109,9 @@ describe("holdings form", () => {
       valueMinor: 2130888,
       costBasisMinor: null,
       gainMinor: null,
+      vestedQuantity: null,
+      vestedValueMinor: null,
+      priceAsOf: null,
       asOf: "2026-09-30",
     };
     const filled = draftFromHolding(holding, presets);
@@ -144,6 +147,8 @@ const tx = (over: Partial<TransactionDraft>): TransactionDraft => ({
   amount: "500",
   fees: "",
   description: "",
+  subtype: "",
+  datetime: "",
   ...over,
 });
 
@@ -204,5 +209,108 @@ describe("transaction form", () => {
     expect(buildTransactionPayload(tx({ fees: "1.50", description: " Rollover " }))).toMatchObject({
       payload: { feesMinor: 150, description: "Rollover" },
     });
+  });
+});
+
+describe("holding details", () => {
+  it("sends vesting, the price date, and identifiers only when given", () => {
+    const result = buildPayload(
+      [
+        draft({
+          preset: "TSP-C",
+          vestedQuantity: "8",
+          vestedValue: "800.50",
+          priceAsOf: "2026-09-29",
+          isin: " us0000000001 ",
+          cusip: "000000001",
+          sector: "Large cap",
+          industry: "",
+        }),
+      ],
+      presets,
+    );
+    expect(result).toEqual({
+      ok: true,
+      payload: [
+        {
+          symbol: "TSP-C",
+          quantity: 10,
+          valueMinor: 100000,
+          vestedQuantity: 8,
+          vestedValueMinor: 80050,
+          priceAsOf: "2026-09-29",
+          detail: { isin: "US0000000001", cusip: "000000001", sector: "Large cap" },
+        },
+      ],
+    });
+  });
+
+  it("refuses vested shares above the shares held, and malformed details", () => {
+    for (const over of [
+      { vestedQuantity: "11" },
+      { vestedQuantity: "abc" },
+      { vestedValue: "-5" },
+      { vestedValue: "x" },
+      { priceAsOf: "29/09/2026" },
+    ]) {
+      expect(
+        buildPayload([draft({ preset: "TSP-C", ...over })], presets).ok,
+        JSON.stringify(over),
+      ).toBe(false);
+    }
+  });
+
+  it("keeps a holding's vesting and price date when it is loaded and saved again", () => {
+    const holding: HoldingRow = {
+      key: "1:1",
+      securityId: 1,
+      accountId: 1,
+      accountName: "TSP",
+      symbol: "TSP-C",
+      name: "TSP C Fund",
+      assetClass: "Stocks",
+      quantity: 10,
+      price: 100,
+      valueMinor: 100000,
+      costBasisMinor: null,
+      gainMinor: null,
+      vestedQuantity: 8,
+      vestedValueMinor: 80000,
+      priceAsOf: "2026-09-29",
+      asOf: "2026-09-30",
+    };
+    const loaded = draftFromHolding(holding, presets);
+    expect(loaded).toMatchObject({
+      vestedQuantity: "8",
+      vestedValue: "800.00",
+      priceAsOf: "2026-09-29",
+    });
+    expect(buildPayload([loaded], presets)).toMatchObject({
+      ok: true,
+      payload: [{ vestedQuantity: 8, vestedValueMinor: 80000, priceAsOf: "2026-09-29" }],
+    });
+  });
+});
+
+describe("investment transaction subtype and time", () => {
+  it("sends them when given", () => {
+    expect(
+      buildTransactionPayload(tx({ subtype: " agency match ", datetime: "2026-09-15T14:30" })),
+    ).toMatchObject({
+      ok: true,
+      payload: { subtype: "agency match", datetime: "2026-09-15T14:30" },
+    });
+  });
+
+  it("leaves them out when empty, and refuses a malformed time", () => {
+    const plain = buildTransactionPayload(tx({}));
+    expect(plain.ok).toBe(true);
+    if (plain.ok) {
+      expect(plain.payload).not.toHaveProperty("subtype");
+      expect(plain.payload).not.toHaveProperty("datetime");
+    }
+    for (const datetime of ["yesterday", "2026-09-15 2pm", "15/09/2026"]) {
+      expect(buildTransactionPayload(tx({ datetime })).ok, datetime).toBe(false);
+    }
   });
 });

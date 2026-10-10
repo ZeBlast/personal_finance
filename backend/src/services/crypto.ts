@@ -62,6 +62,26 @@ export function isValidKeyHex(value: string): boolean {
   return KEY_PATTERN.test(value);
 }
 
+/**
+ * The key that encrypts the database file, derived from the app's master key. Deriving it (rather
+ * than reusing the master key) keeps the two jobs apart: one secret is never used for both. Returns
+ * 64 hex characters.
+ */
+export function deriveDatabaseKey(masterKeyHex: string): string {
+  if (!isValidKeyHex(masterKeyHex)) {
+    throw new Error("Encryption key must be 32 bytes (64 hex characters)");
+  }
+  return Buffer.from(
+    crypto.hkdfSync(
+      "sha256",
+      Buffer.from(masterKeyHex, "hex"),
+      Buffer.alloc(0),
+      "personal-finance/database/v1",
+      32,
+    ),
+  ).toString("hex");
+}
+
 interface KeySource {
   PF_ENCRYPTION_KEY?: string | undefined;
   /** True only for development runs (set from .env); never true for the installed app. */

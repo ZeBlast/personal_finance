@@ -6,7 +6,7 @@ A widget is **one file** in this folder. You do not edit any list, route, or ser
 
 1. Copy `TemplateWidget.example.tsx` to `YourThingWidget.tsx` (the name must end in `Widget.tsx`).
 2. Change the `id`, `title`, `description`, and the component's content.
-3. Save. The widget now appears in **Dashboard → Customize → Add widget**, with a settings dialog
+3. Save. The widget now appears in **Dashboard → Edit dashboard → + Add widget**, with a settings dialog
    built from the settings you declared.
 
 That is all. The registry finds the file automatically, and the automated tests check it against the

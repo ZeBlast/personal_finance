@@ -31,3 +31,6 @@ spike/
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# personal downloads (TSP price charts, activity files) dropped in the project folder
+/*.csv

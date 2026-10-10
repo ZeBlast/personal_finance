@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { recurringDismissed } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays } from "../utils/dates.js";
+import { merchantKey } from "../utils/merchant.js";
 import { AppError } from "../utils/errors.js";
 import { NOT_TRANSFER } from "./analytics.service.js";
 import { getSettings } from "./settings.service.js";
@@ -112,16 +113,6 @@ export function nextAfter(lastDate: string, cadence: Cadence): string {
     case "yearly":
       return addMonthsToDay(lastDate, 12);
   }
-}
-
-/** Merchant text reduced to what stays the same between charges (store numbers and ids removed). */
-export function merchantKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[#*]?\d{3,}/g, " ")
-    .replace(/[^a-z0-9&' .-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 export interface RecurringSeries {
@@ -274,6 +265,7 @@ export function recurringReport(
     JOIN accounts a ON a.id = t.account_id
     LEFT JOIN plaid_items p ON p.id = a.plaid_item_id
     WHERE (p.environment = ${settings.plaidEnvironment} OR a.plaid_item_id IS NULL)
+      AND a.hidden = 0
       AND t.currency = ${settings.currency}
       AND t.date >= ${since} AND t.date <= ${today}
       AND ${NOT_TRANSFER}
@@ -332,3 +324,5 @@ export function dismissSeries(db: AppDb, key: string, merchant: string): void {
 export function restoreSeries(db: AppDb, key: string): void {
   db.delete(recurringDismissed).where(eq(recurringDismissed.key, key)).run();
 }
+
+export { merchantKey };

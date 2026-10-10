@@ -8,7 +8,7 @@ import {
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
-import { applyRules } from "./rule.service.js";
+import { applyRules, DINING_SPLIT_KEY } from "./rule.service.js";
 
 export const NAME_MAX = 60;
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -19,9 +19,16 @@ export interface CategoryDto {
   parentId: number | null;
   color: string | null;
   active: boolean;
+  /** How money coming in under it counts: taxable income, a refund, or the usual rules (null). */
+  incomeTreatment: IncomeTreatment | null;
   transactionCount: number;
   ruleCount: number;
 }
+
+export const INCOME_TREATMENTS = ["income", "refund"] as const;
+export type IncomeTreatment = (typeof INCOME_TREATMENTS)[number];
+const treatmentOf = (v: string | null): IncomeTreatment | null =>
+  v === "income" || v === "refund" ? v : null;
 
 type CategoryRow = typeof categories.$inferSelect;
 
@@ -135,6 +142,7 @@ export function listCategories(db: AppDb, includeInactive: boolean): CategoryDto
     parentId: row.parentId,
     color: row.color,
     active: row.active,
+    incomeTreatment: treatmentOf(row.incomeTreatment),
     transactionCount: txCounts.get(row.id) ?? 0,
     ruleCount: ruleCounts.get(row.id) ?? 0,
   }));
@@ -149,6 +157,7 @@ export function getCategory(db: AppDb, id: number): CategoryDto {
     parentId: row.parentId,
     color: row.color,
     active: row.active,
+    incomeTreatment: treatmentOf(row.incomeTreatment),
     transactionCount: used.transactionCount,
     ruleCount: used.ruleCount,
   };
@@ -156,7 +165,12 @@ export function getCategory(db: AppDb, id: number): CategoryDto {
 
 export function createCategory(
   db: AppDb,
-  input: { name: string; parentId?: number | null | undefined; color?: string | null | undefined },
+  input: {
+    name: string;
+    parentId?: number | null | undefined;
+    color?: string | null | undefined;
+    incomeTreatment?: IncomeTreatment | null | undefined;
+  },
 ): CategoryDto {
   const name = cleanName(input.name);
   const parentId = input.parentId ?? null;
@@ -172,6 +186,7 @@ export function createCategory(
       active: true,
       createdAt: now,
       updatedAt: now,
+      incomeTreatment: input.incomeTreatment ?? null,
     })
     .returning({ id: categories.id })
     .get();
@@ -186,6 +201,7 @@ export function updateCategory(
     parentId?: number | null | undefined;
     color?: string | null | undefined;
     active?: boolean | undefined;
+    incomeTreatment?: IncomeTreatment | null | undefined;
   },
 ): CategoryDto {
   const current = requireCategory(db, id);
@@ -202,6 +218,7 @@ export function updateCategory(
         parentId,
         ...(patch.color === undefined ? {} : { color: cleanColor(patch.color) }),
         ...(patch.active === undefined ? {} : { active: patch.active }),
+        ...(patch.incomeTreatment === undefined ? {} : { incomeTreatment: patch.incomeTreatment }),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(categories.id, id))
@@ -386,6 +403,277 @@ export function seedDefaults(db: AppDb): boolean {
     });
     tx.insert(appSettings).values({ key: SEEDED_KEY, value: "true", updatedAt: now }).run();
     applyRules(tx);
+  });
+  return true;
+}
+
+const ADDITIONS_KEY = "defaults_gas_streaming_v1";
+
+/**
+ * More starting categories added after the first ones: Gas, and Streaming (TV, movies, and music
+ * services). Each comes with ordinary rules, like the others.
+ */
+const ADDED_CATEGORIES: Array<{
+  name: string;
+  color: string;
+  /** The generic default rule these should sit just before, so they win over it. */
+  before: string;
+  rules: Array<{
+    field: "plaid_category" | "merchant";
+    operator: "equals" | "contains";
+    value: string;
+  }>;
+}> = [
+  {
+    name: "Gas",
+    color: "#d97706",
+    before: "TRANSPORTATION",
+    rules: [{ field: "plaid_category", operator: "equals", value: "TRANSPORTATION_GAS" }],
+  },
+  {
+    name: "Streaming",
+    color: "#8b5cf6",
+    before: "ENTERTAINMENT",
+    rules: [
+      { field: "plaid_category", operator: "equals", value: "ENTERTAINMENT_TV_AND_MOVIES" },
+      { field: "plaid_category", operator: "equals", value: "ENTERTAINMENT_MUSIC_AND_AUDIO" },
+      { field: "merchant", operator: "contains", value: "netflix" },
+      { field: "merchant", operator: "contains", value: "hulu" },
+      { field: "merchant", operator: "contains", value: "spotify" },
+      { field: "merchant", operator: "contains", value: "disney+" },
+      { field: "merchant", operator: "contains", value: "youtube premium" },
+      { field: "merchant", operator: "contains", value: "apple music" },
+    ],
+  },
+];
+
+export interface StarterAdditionsResult {
+  categoriesCreated: number;
+  rulesCreated: number;
+  /** Past transactions whose category changed because of the new rules. */
+  recategorized: number;
+}
+
+/**
+ * Adds the Gas and Streaming categories and their rules, once, to a database that already has the
+ * original starting set, and puts past transactions into them. Only transactions the user has not
+ * categorized by hand move. A category with the same name that is already there is used as it is,
+ * and deleting these afterwards does not bring them back.
+ */
+export function ensureStarterAdditions(db: AppDb): StarterAdditionsResult | null {
+  if (db.select().from(appSettings).where(eq(appSettings.key, ADDITIONS_KEY)).get()) return null;
+  const now = new Date().toISOString();
+  const result: StarterAdditionsResult = {
+    categoriesCreated: 0,
+    rulesCreated: 0,
+    recategorized: 0,
+  };
+
+  db.transaction((tx) => {
+    for (const added of ADDED_CATEGORIES) {
+      let category = tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(sql`lower(${categories.name}) = ${added.name.toLowerCase()}`)
+        .get();
+      if (!category) {
+        category = tx
+          .insert(categories)
+          .values({
+            name: added.name,
+            color: added.color,
+            parentId: null,
+            active: true,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: categories.id })
+          .get();
+        result.categoriesCreated += 1;
+      }
+
+      // Just ahead of the broad default rule for this area, so the specific one wins.
+      const generic = tx
+        .select({ priority: transactionRules.priority })
+        .from(transactionRules)
+        .where(
+          sql`${transactionRules.matchValue} = ${added.before} and ${transactionRules.field} = 'plaid_category'`,
+        )
+        .orderBy(asc(transactionRules.priority))
+        .get();
+      const base = (generic?.priority ?? 1000) - added.rules.length - 1;
+      added.rules.forEach((rule, index) => {
+        const name =
+          rule.field === "plaid_category"
+            ? `Bank category ${rule.value} → ${added.name}`
+            : `Merchant contains "${rule.value}" → ${added.name}`;
+        const exists = tx
+          .select({ id: transactionRules.id })
+          .from(transactionRules)
+          .where(eq(transactionRules.name, name))
+          .get();
+        if (exists) return;
+        tx.insert(transactionRules)
+          .values({
+            name,
+            field: rule.field,
+            operator: rule.operator,
+            matchValue: rule.value,
+            categoryId: category!.id,
+            priority: base + index,
+            enabled: true,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        result.rulesCreated += 1;
+      });
+    }
+    result.recategorized = applyRules(tx).changed;
+    tx.insert(appSettings).values({ key: ADDITIONS_KEY, value: "true", updatedAt: now }).run();
+  });
+  return result;
+}
+
+const DINING_SPLIT_DONE = "defaults_dining_split_v1";
+
+/**
+ * Splits food and drink by how it was bought, once: a "Food & Drink" category keeps online orders
+ * (delivery apps, ordering ahead), and "Dining Out" becomes its subcategory for purchases made in
+ * person. The bank-category rule for food and drink now points at Food & Drink, and the rules
+ * engine moves each purchase to the right one of the two from its online flag. Past transactions
+ * the user did not categorize by hand are sorted again. Returns how many moved, or null if done.
+ */
+export function ensureDiningSplit(db: AppDb): number | null {
+  if (db.select().from(appSettings).where(eq(appSettings.key, DINING_SPLIT_DONE)).get()) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  return db.transaction((tx) => {
+    const byName = (name: string) =>
+      tx
+        .select({ id: categories.id, parentId: categories.parentId })
+        .from(categories)
+        .where(sql`lower(${categories.name}) = ${name.toLowerCase()}`)
+        .get();
+    const create = (name: string, color: string, parentId: number | null) =>
+      tx
+        .insert(categories)
+        .values({ name, color, parentId, active: true, createdAt: now, updatedAt: now })
+        .returning({ id: categories.id, parentId: categories.parentId })
+        .get();
+
+    const food = byName("Food & Drink") ?? create("Food & Drink", "#f97316", null);
+    let dining = byName("Dining Out");
+    if (!dining) dining = create("Dining Out", "#ea580c", food.id);
+    else if (dining.parentId !== food.id) {
+      // Only a top-level category with no subcategories of its own can move under Food & Drink.
+      const hasChildren = childIds(tx, dining.id).length > 0;
+      if (dining.parentId === null && !hasChildren) {
+        tx.update(categories)
+          .set({ parentId: food.id, updatedAt: now })
+          .where(eq(categories.id, dining.id))
+          .run();
+      } else {
+        dining = create("Dining Out (in person)", "#ea580c", food.id);
+      }
+    }
+
+    // The broad bank-category rule for food and drink now files into Food & Drink.
+    tx.update(transactionRules)
+      .set({
+        categoryId: food.id,
+        name: "Bank category FOOD_AND_DRINK → Food & Drink",
+        updatedAt: now,
+      })
+      .where(
+        sql`${transactionRules.field} = 'plaid_category' and ${transactionRules.matchValue} = 'FOOD_AND_DRINK' and ${transactionRules.categoryId} = ${dining.id}`,
+      )
+      .run();
+    tx.insert(appSettings)
+      .values({
+        key: DINING_SPLIT_KEY,
+        value: JSON.stringify({ parentId: food.id, childId: dining.id }),
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: JSON.stringify({ parentId: food.id, childId: dining.id }), updatedAt: now },
+      })
+      .run();
+    const moved = applyRules(tx).changed;
+    tx.insert(appSettings).values({ key: DINING_SPLIT_DONE, value: "true", updatedAt: now }).run();
+    return moved;
+  });
+}
+
+const TRANSFER_KINDS_DONE = "defaults_transfer_credit_refund_v1";
+
+/**
+ * Adds "Credit" and "Refund" under Transfers, once. Money in under Credit counts as taxable income;
+ * money in under Refund lowers spending and never counts as income. A Transfers category is made if
+ * there is none, and existing categories with those names are reused (and given the setting).
+ */
+export function ensureTransferSubcategories(db: AppDb): boolean {
+  if (db.select().from(appSettings).where(eq(appSettings.key, TRANSFER_KINDS_DONE)).get())
+    return false;
+  const now = new Date().toISOString();
+  db.transaction((tx) => {
+    const top = (name: string) =>
+      tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          sql`lower(${categories.name}) = ${name.toLowerCase()} and ${categories.parentId} is null`,
+        )
+        .get();
+    const parent =
+      top("Transfers") ??
+      tx
+        .insert(categories)
+        .values({
+          name: "Transfers",
+          color: "#64748b",
+          parentId: null,
+          active: true,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: categories.id })
+        .get();
+    for (const [name, color, treatment] of [
+      ["Credit", "#0d9488", "income"],
+      ["Refund", "#a3a3a3", "refund"],
+    ] as const) {
+      const existing = tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          sql`lower(${categories.name}) = ${name.toLowerCase()} and ${categories.parentId} = ${parent.id}`,
+        )
+        .get();
+      if (existing) {
+        tx.update(categories)
+          .set({ incomeTreatment: treatment, updatedAt: now })
+          .where(eq(categories.id, existing.id))
+          .run();
+      } else {
+        tx.insert(categories)
+          .values({
+            name,
+            color,
+            parentId: parent.id,
+            active: true,
+            incomeTreatment: treatment,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      }
+    }
+    tx.insert(appSettings)
+      .values({ key: TRANSFER_KINDS_DONE, value: "true", updatedAt: now })
+      .run();
   });
   return true;
 }

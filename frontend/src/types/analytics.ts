@@ -25,6 +25,8 @@ export interface CalendarDay {
   pendingCount: number;
   outflowMinor: number;
   inflowMinor: number;
+  /** Payments toward credit cards and loans: they lower what is owed and are not in the two above. */
+  debtPaidMinor: number;
   accounts: Array<{
     accountId: number;
     name: string;
@@ -32,6 +34,19 @@ export interface CalendarDay {
     count: number;
     outflowMinor: number;
     inflowMinor: number;
+    debtPaidMinor: number;
+    /** The day's net effect on the account, as money: purchases negative, money in positive. */
+    changeMinor: number;
+    institutionName: string | null;
+    /** The connection the account belongs to (null for an account kept by hand). */
+    itemId: number | null;
+  }>;
+  /** The kinds of transactions that day: one per category (null for uncategorized). */
+  categories: Array<{
+    categoryId: number | null;
+    name: string;
+    color: string | null;
+    count: number;
   }>;
 }
 

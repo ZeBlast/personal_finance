@@ -3,13 +3,18 @@ import { Router } from "express";
 import { z } from "zod";
 import { accounts } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
-import { listAccounts } from "../services/account.service.js";
+import { listAccounts, setAccountHidden } from "../services/account.service.js";
 import {
   addManualCreditLimit,
   creditLimitView,
   deleteCreditLimitEntry,
   updateCreditLimitEntry,
 } from "../services/credit-limit.service.js";
+import {
+  createManualBankAccount,
+  deleteManualBankAccount,
+  MANUAL_ACCOUNT_KINDS,
+} from "../services/manual-transaction.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { notFound } from "../utils/errors.js";
 
@@ -30,15 +35,47 @@ const editBody = z
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." });
 
+const hiddenBody = z.object({ hidden: z.boolean() }).strict();
+
+const manualAccountBody = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    kind: z.enum(MANUAL_ACCOUNT_KINDS),
+    openingBalanceMinor: z.number().int().min(-100_000_000_000).max(100_000_000_000).optional(),
+    creditLimitMinor: limitMinor.optional(),
+  })
+  .strict();
+
 export function accountsRoutes(db: AppDb): Router {
   const router = Router();
 
   // Accounts from connections in the active Plaid environment, plus manual accounts.
-  router.get("/accounts", (_req, res) => {
+  router.get("/accounts", (req, res) => {
     const environment = getSettings(db).plaidEnvironment;
+    const includeHidden = req.query["includeHidden"] === "1";
     res.json(
-      listAccounts(db).filter((a) => a.itemId === null || a.connectionEnvironment === environment),
+      listAccounts(db, undefined, includeHidden).filter(
+        (a) => a.itemId === null || a.connectionEnvironment === environment,
+      ),
     );
+  });
+
+  /** Hides an account from balances, totals, charts and lists, or shows it again. */
+  router.patch("/accounts/:id", (req, res) => {
+    const id = z.coerce.number().int().positive().parse(req.params["id"]);
+    res.json(setAccountHidden(db, id, hiddenBody.parse(req.body).hidden));
+  });
+
+  /** Creates an account kept by hand: cash, a checking or savings account, or a card. */
+  router.post("/accounts/manual", (req, res) => {
+    const body = manualAccountBody.parse(req.body);
+    const id = createManualBankAccount(db, body, new Date().toISOString());
+    res.status(201).json({ id });
+  });
+
+  router.delete("/accounts/manual/:id", (req, res) => {
+    deleteManualBankAccount(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
   });
 
   const requireAccount = (id: number): void => {

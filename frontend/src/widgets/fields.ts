@@ -37,9 +37,9 @@ export const categoryField: ConfigField = {
 
 export const includeTransfersField: ConfigField = {
   key: "includeTransfers",
-  label: "Include transfers",
+  label: "Include transfers between my accounts",
   type: "boolean",
-  help: "Transfers between accounts and to people (such as Zelle), and credit-card payments, are left out by default.",
+  help: "Money moved between your own accounts, and credit-card payments, are left out by default. Payments to or from other people (such as Zelle) always count.",
 };
 
 /** A "how many items to show" setting. */

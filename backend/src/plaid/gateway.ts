@@ -71,10 +71,54 @@ export interface GatewayTransaction {
   paymentChannel: string | null;
   categoryPrimary: string | null;
   categoryDetailed: string | null;
-  counterparties: Array<{ name: string; type: string }>;
+  counterparties: GatewayCounterparty[];
   /** Payment metadata names, when the institution provides them. */
   paymentPayee: string | null;
   paymentPayer: string | null;
+  /** Everything below is optional: institutions send some of it, and the demo sends a sample. */
+  /** The time of day (ISO 8601), when the institution reports one. */
+  datetime?: string | null | undefined;
+  authorizedDatetime?: string | null | undefined;
+  /** The institution's own wording, before Plaid cleaned it up. */
+  originalDescription?: string | null | undefined;
+  location?: GatewayLocation | null | undefined;
+  merchantEntityId?: string | null | undefined;
+  merchantCategoryCode?: string | null | undefined;
+  logoUrl?: string | null | undefined;
+  website?: string | null | undefined;
+  /** How sure Plaid is of the category: VERY_HIGH, HIGH, MEDIUM, LOW, or UNKNOWN. */
+  categoryConfidence?: string | null | undefined;
+  /** The rest of the payment details. */
+  payment?: GatewayPaymentDetails | null | undefined;
+}
+
+export interface GatewayCounterparty {
+  name: string;
+  type: string;
+  entityId?: string | null | undefined;
+  website?: string | null | undefined;
+  logoUrl?: string | null | undefined;
+  confidenceLevel?: string | null | undefined;
+}
+
+export interface GatewayLocation {
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  postalCode: string | null;
+  country: string | null;
+  lat: number | null;
+  lon: number | null;
+  storeNumber: string | null;
+}
+
+export interface GatewayPaymentDetails {
+  method: string | null;
+  processor: string | null;
+  reference: string | null;
+  reason: string | null;
+  byOrderOf: string | null;
+  ppdId: string | null;
 }
 
 /** One page of incremental changes since a cursor. */
@@ -95,6 +139,43 @@ export interface GatewaySecurity {
   /** The provider's type: equity, etf, mutual fund, fixed income, cash, cryptocurrency, ... */
   type: string | null;
   currency: string;
+  /** Everything else the provider says about the security. All optional: not every source has it. */
+  subtype?: string | null | undefined;
+  isin?: string | null | undefined;
+  cusip?: string | null | undefined;
+  sedol?: string | null | undefined;
+  figi?: string | null | undefined;
+  cfiCode?: string | null | undefined;
+  institutionSecurityId?: string | null | undefined;
+  proxySecurityId?: string | null | undefined;
+  marketIdentifierCode?: string | null | undefined;
+  isCashEquivalent?: boolean | null | undefined;
+  closePrice?: number | null | undefined;
+  closePriceAsOf?: string | null | undefined;
+  sector?: string | null | undefined;
+  industry?: string | null | undefined;
+  updatedAt?: string | null | undefined;
+  option?:
+    | {
+        contractType: string | null;
+        expiration: string | null;
+        strike: number | null;
+        underlying: string | null;
+      }
+    | null
+    | undefined;
+  fixedIncome?:
+    | {
+        yieldRate: number | null;
+        yieldType: string | null;
+        maturityDate: string | null;
+        issueDate: string | null;
+        faceValue: number | null;
+      }
+    | null
+    | undefined;
+  /** The complete object as the provider sent it, kept so nothing it supplies is lost. */
+  raw?: unknown;
 }
 
 /** One position in an investment account. Decimal amounts as reported (dollars, not cents). */
@@ -111,6 +192,13 @@ export interface GatewayHolding {
   currency: string;
   /** When the figures were true, if the provider says so (an ISO date or timestamp). */
   asOf: string | null;
+  /** The vested part of the position, for plans where some of it is not yet fully earned. */
+  vestedQuantity?: number | null | undefined;
+  vestedValue?: number | null | undefined;
+  priceAsOf?: string | null | undefined;
+  priceDatetime?: string | null | undefined;
+  /** The complete holding as the provider sent it, including its tax lots. */
+  raw?: unknown;
 }
 
 export interface HoldingsSnapshot {
@@ -142,11 +230,24 @@ export interface GatewayInvestmentTransaction {
   amount: number;
   fees: number | null;
   currency: string;
+  /** The provider's finer label, such as "qualified dividend". */
+  subtype?: string | null | undefined;
+  datetime?: string | null | undefined;
+  /** Set on a cancellation: the ID of the transaction it cancels. */
+  cancelTransactionId?: string | null | undefined;
+  raw?: unknown;
 }
 
 export interface InvestmentTransactionsResult {
   transactions: GatewayInvestmentTransaction[];
   securities: GatewaySecurity[];
+}
+
+export interface InstitutionBranding {
+  /** A `data:` URL of the logo, or null when there is none. */
+  logo: string | null;
+  /** The brand color as #rrggbb, or null. */
+  color: string | null;
 }
 
 export interface PlaidGateway {
@@ -165,6 +266,8 @@ export interface PlaidGateway {
   exchangePublicToken(publicToken: string): Promise<ExchangedItem>;
   getItem(accessToken: string): Promise<ItemStatus>;
   getInstitutionName(institutionId: string): Promise<string | null>;
+  /** The institution's logo (as a data URL) and brand color, when Plaid has them. */
+  getInstitutionBranding(institutionId: string): Promise<InstitutionBranding>;
   getAccounts(accessToken: string): Promise<GatewayAccount[]>;
   removeItem(accessToken: string): Promise<void>;
   /** Called after the user completes update-mode Link, so the gateway can mark the Item healthy. */

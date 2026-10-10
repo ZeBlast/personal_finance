@@ -2,7 +2,7 @@
 //
 //   backend/src/server.ts --esbuild--> build/server.cjs --Node SEA--> src-tauri/binaries/backend-<triple>.exe
 //
-// It also copies the better-sqlite3 native add-on to src-tauri/resources/native/, because a Node
+// It also copies the better-sqlite3-multiple-ciphers native add-on to src-tauri/resources/native/, because a Node
 // single-executable app cannot embed native add-ons; the backend loads it with process.dlopen.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -67,8 +67,15 @@ await inject(outExe, "NODE_SEA_BLOB", readFileSync(join(buildDir, "sea-prep.blob
 });
 
 // 4. Ship the native add-on beside the app resources.
-const addon = join(root, "node_modules", "better-sqlite3", "prebuilds", "win32-x64.node");
-if (!existsSync(addon)) throw new Error(`Missing better-sqlite3 prebuild: ${addon}`);
+const addon = join(
+  root,
+  "node_modules",
+  "better-sqlite3-multiple-ciphers",
+  "prebuilds",
+  "win32-x64.node",
+);
+if (!existsSync(addon))
+  throw new Error(`Missing better-sqlite3-multiple-ciphers prebuild: ${addon}`);
 copyFileSync(addon, join(nativeDir, "better_sqlite3.node"));
 
 console.log(`built ${outExe}`);

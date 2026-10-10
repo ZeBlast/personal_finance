@@ -30,11 +30,47 @@ export interface PositionInput {
   costBasisMinor: number | null;
   currency: string;
   asOf: string;
+  vestedQuantity?: number | null;
+  vestedValueMinor?: number | null;
+  priceAsOf?: string | null;
+  priceDatetime?: string | null;
+  rawJson?: string | null;
 }
 
 export const MAX_MANUAL_HOLDINGS = 500;
 
 // ---------------------------------------------------------------- securities
+
+/** The detail columns of a security, from what the provider sent. */
+function securityDetail(security: GatewaySecurity) {
+  return {
+    subtype: security.subtype ?? null,
+    isin: security.isin ?? null,
+    cusip: security.cusip ?? null,
+    sedol: security.sedol ?? null,
+    figi: security.figi ?? null,
+    cfiCode: security.cfiCode ?? null,
+    institutionSecurityId: security.institutionSecurityId ?? null,
+    proxySecurityId: security.proxySecurityId ?? null,
+    marketIdentifierCode: security.marketIdentifierCode ?? null,
+    isCashEquivalent: security.isCashEquivalent ?? null,
+    closePrice: security.closePrice ?? null,
+    closePriceAsOf: security.closePriceAsOf ?? null,
+    sector: security.sector ?? null,
+    industry: security.industry ?? null,
+    optionContractType: security.option?.contractType ?? null,
+    optionExpiration: security.option?.expiration ?? null,
+    optionStrike: security.option?.strike ?? null,
+    optionUnderlying: security.option?.underlying ?? null,
+    fixedYieldRate: security.fixedIncome?.yieldRate ?? null,
+    fixedYieldType: security.fixedIncome?.yieldType ?? null,
+    fixedMaturityDate: security.fixedIncome?.maturityDate ?? null,
+    fixedIssueDate: security.fixedIncome?.issueDate ?? null,
+    fixedFaceValue: security.fixedIncome?.faceValue ?? null,
+    providerUpdatedAt: security.updatedAt ?? null,
+    rawJson: security.raw === undefined ? null : JSON.stringify(security.raw),
+  };
+}
 
 export function upsertPlaidSecurity(db: Db, security: GatewaySecurity, now: string): number {
   const values = {
@@ -43,6 +79,7 @@ export function upsertPlaidSecurity(db: Db, security: GatewaySecurity, now: stri
     securityType: security.type,
     assetClass: assetClassFor(security.type),
     currency: security.currency,
+    ...securityDetail(security),
     updatedAt: now,
   };
   const existing = db
@@ -66,11 +103,53 @@ export function upsertPlaidSecurity(db: Db, security: GatewaySecurity, now: stri
     .get().id;
 }
 
+/**
+ * The descriptive data a security can carry. A connected account fills it from the provider; for an
+ * account kept by hand (the Thrift Savings Plan, say) the user can fill in the same things.
+ */
+export interface SecurityDetailInput {
+  securityType?: string | null | undefined;
+  subtype?: string | null | undefined;
+  isin?: string | null | undefined;
+  cusip?: string | null | undefined;
+  sedol?: string | null | undefined;
+  figi?: string | null | undefined;
+  cfiCode?: string | null | undefined;
+  sector?: string | null | undefined;
+  industry?: string | null | undefined;
+  isCashEquivalent?: boolean | null | undefined;
+  closePrice?: number | null | undefined;
+  closePriceAsOf?: string | null | undefined;
+  optionContractType?: string | null | undefined;
+  optionExpiration?: string | null | undefined;
+  optionStrike?: number | null | undefined;
+  optionUnderlying?: string | null | undefined;
+  fixedYieldRate?: number | null | undefined;
+  fixedYieldType?: string | null | undefined;
+  fixedMaturityDate?: string | null | undefined;
+  fixedIssueDate?: string | null | undefined;
+  fixedFaceValue?: number | null | undefined;
+}
+
+/** Keeps only what was actually given: blank text and missing values leave what is stored alone. */
+function givenDetail(
+  detail: SecurityDetailInput | undefined,
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(detail ?? {})) {
+    if (typeof value === "string" && value.trim() !== "") out[key] = value.trim();
+    else if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+    else if (typeof value === "boolean") out[key] = value;
+  }
+  return out;
+}
+
 export interface ManualSecurityInput {
   symbol?: string | null | undefined;
   name?: string | null | undefined;
   assetClass?: string | null | undefined;
   currency: string;
+  detail?: SecurityDetailInput | undefined;
 }
 
 /**
@@ -97,11 +176,12 @@ export function upsertManualSecurity(db: Db, input: ManualSecurityInput, now: st
     .where(eq(securities.manualKey, key))
     .get();
   const requested = input.assetClass as AssetClass | null | undefined;
+  const extras = givenDetail(input.detail);
   if (existing) {
     // A class given explicitly wins; otherwise keep what is there.
     const assetClass = requested ?? existing.assetClass;
     db.update(securities)
-      .set({ name, assetClass, updatedAt: now })
+      .set({ name, assetClass, ...extras, updatedAt: now })
       .where(eq(securities.id, existing.id))
       .run();
     return existing.id;
@@ -116,6 +196,7 @@ export function upsertManualSecurity(db: Db, input: ManualSecurityInput, now: st
       assetClass: requested ?? known?.assetClass ?? "Other",
       currency: input.currency,
       isManual: true,
+      ...extras,
       createdAt: now,
       updatedAt: now,
     })
@@ -151,6 +232,11 @@ export function replaceHoldings(
       costBasisMinor: p.costBasisMinor,
       currency: p.currency,
       asOf: p.asOf,
+      vestedQuantity: p.vestedQuantity ?? null,
+      vestedValueMinor: p.vestedValueMinor ?? null,
+      priceAsOf: p.priceAsOf ?? null,
+      priceDatetime: p.priceDatetime ?? null,
+      rawJson: p.rawJson ?? null,
       updatedAt: observedAt,
     };
     const existing = db
@@ -222,6 +308,11 @@ export function applyHoldingsSnapshot(
         costBasisMinor: toMinorUnits(h.costBasis, h.currency),
         currency: h.currency,
         asOf: h.asOf ?? observedAt,
+        vestedQuantity: h.vestedQuantity ?? null,
+        vestedValueMinor: toMinorUnits(h.vestedValue, h.currency),
+        priceAsOf: h.priceAsOf ?? null,
+        priceDatetime: h.priceDatetime ?? null,
+        rawJson: h.raw === undefined ? null : JSON.stringify(h.raw),
       });
     }
     replaceHoldings(db, accountId, positions, observedAt);
@@ -242,6 +333,17 @@ export function applyInvestmentTransactions(
     const accountId = accountIds.get(t.accountId);
     const amountMinor = toMinorUnits(t.amount, t.currency);
     if (accountId === undefined || amountMinor === null) continue;
+    if (t.cancelTransactionId) {
+      // A cancellation undoes an earlier transaction: both are dropped, so the history shows
+      // what actually happened rather than a purchase and its reversal.
+      db.delete(investmentTransactions)
+        .where(eq(investmentTransactions.plaidInvestmentTransactionId, t.cancelTransactionId))
+        .run();
+      db.delete(investmentTransactions)
+        .where(eq(investmentTransactions.plaidInvestmentTransactionId, t.transactionId))
+        .run();
+      continue;
+    }
     const values = {
       accountId,
       securityId: t.securityId ? (secIds.get(t.securityId) ?? null) : null,
@@ -253,6 +355,10 @@ export function applyInvestmentTransactions(
       amountMinor,
       feesMinor: toMinorUnits(t.fees, t.currency),
       currency: t.currency,
+      subtype: t.subtype ?? null,
+      transactionDatetime: t.datetime ?? null,
+      cancelTransactionId: null,
+      rawJson: t.raw === undefined ? null : JSON.stringify(t.raw),
       updatedAt: now,
     };
     const existing = db
@@ -360,6 +466,12 @@ export interface ManualHoldingInput {
   costBasisMinor?: number | null | undefined;
   /** The date the figures are from; defaults to today. */
   asOf?: string | null | undefined;
+  /** Of the position, how much has vested (for plans where part of it is not yet fully earned). */
+  vestedQuantity?: number | null | undefined;
+  vestedValueMinor?: number | null | undefined;
+  /** The date the price is from, when it differs from `asOf`. */
+  priceAsOf?: string | null | undefined;
+  detail?: SecurityDetailInput | undefined;
 }
 
 /**
@@ -408,9 +520,33 @@ export function setManualHoldings(
           name: row.name,
           assetClass: row.assetClass,
           currency: account.currency,
+          detail: row.detail,
         },
         now,
       );
+      if (
+        row.vestedQuantity != null &&
+        (row.vestedQuantity < 0 || row.vestedQuantity > row.quantity)
+      ) {
+        throw new AppError(
+          400,
+          "invalid_holding",
+          `${label}: the vested quantity must be between 0 and the quantity held.`,
+        );
+      }
+      if (
+        row.vestedValueMinor != null &&
+        (row.vestedValueMinor < 0 || row.vestedValueMinor > valueMinor)
+      ) {
+        throw new AppError(
+          400,
+          "invalid_holding",
+          `${label}: the vested value must be between 0 and the position's value.`,
+        );
+      }
+      if (row.priceAsOf && !isRealDate(row.priceAsOf)) {
+        throw new AppError(400, "invalid_date", `${label}: enter the price date as YYYY-MM-DD.`);
+      }
       if (seen.has(securityId)) {
         throw new AppError(400, "duplicate_holding", `${label} is listed more than once.`);
       }
@@ -429,6 +565,9 @@ export function setManualHoldings(
         costBasisMinor: row.costBasisMinor ?? null,
         currency: account.currency,
         asOf,
+        vestedQuantity: row.vestedQuantity ?? null,
+        vestedValueMinor: row.vestedValueMinor ?? null,
+        priceAsOf: row.priceAsOf ?? null,
       });
     }
     replaceHoldings(tx, accountId, positions, now);

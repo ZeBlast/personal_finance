@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
+import { REPEAT_CHOICES, repeatFromTransaction } from "../services/calendar.service.js";
 import { getSettings } from "../services/settings.service.js";
 import {
-  getTransaction,
-  listTransactions,
-  SORTS,
-  updateTransaction,
-} from "../services/transaction.service.js";
+  createManualTransaction,
+  deleteManualTransaction,
+  updateAnyTransaction,
+} from "../services/manual-transaction.service.js";
+import { transactionCashback } from "../services/cashback.service.js";
+import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 const idParam = z.coerce.number().int().positive();
@@ -19,6 +21,9 @@ const listQuery = z.object({
   from: date.optional(),
   to: date.optional(),
   pending: z.enum(["true", "false"]).optional(),
+  online: z.enum(["true", "false"]).optional(),
+  institution: z.string().min(1).max(200).optional(),
+  dateBasis: z.enum(["transaction", "posted"]).optional(),
   q: z.string().max(200).optional(),
   category: z.union([z.literal("none"), z.coerce.number().int().positive()]).optional(),
   sort: z.enum(SORTS).optional(),
@@ -30,32 +35,103 @@ const patchBody = z
     categoryId: z.number().int().positive().nullable().optional(),
     merchant: z.string().max(200).nullable().optional(),
     recipient: z.string().max(100).nullable().optional(),
+    sender: z.string().max(100).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
+    // True or false is the user's call on whether it was bought online; null goes back to the bank's.
+    online: z.boolean().nullable().optional(),
+    // True or false is the user's decision; null lets the app decide by matching it again.
+    isTransfer: z.boolean().nullable().optional(),
+    // Only for transactions entered by hand (a bank's own cannot change these):
+    accountId: z.number().int().positive().optional(),
+    date: date.optional(),
+    description: z.string().max(200).nullable().optional(),
+    amountMinor: z.number().int().min(1).max(100_000_000_000).optional(),
+    direction: z.enum(["out", "in"]).optional(),
+    pending: z.boolean().optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." });
 
+const createBody = z
+  .object({
+    accountId: z.number().int().positive(),
+    date,
+    merchant: z.string().min(1).max(200),
+    description: z.string().max(200).nullable().optional(),
+    amountMinor: z.number().int().min(1).max(100_000_000_000),
+    direction: z.enum(["out", "in"]),
+    categoryId: z.number().int().positive().nullable().optional(),
+    recipient: z.string().max(100).nullable().optional(),
+    sender: z.string().max(100).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    pending: z.boolean().optional(),
+    isTransfer: z.boolean().optional(),
+    /** Also expect it again: every week, every two weeks, or every month. */
+    repeat: z.enum(REPEAT_CHOICES).optional(),
+  })
+  .strict();
+
 export function transactionsRoutes(db: AppDb): Router {
   const router = Router();
+
+  /** Adds each purchase's estimated card cashback (null when none applies). */
+  const withCashback = <P extends { items: Array<{ id: number }> }>(page: P) => {
+    const earned = transactionCashback(
+      db,
+      page.items.map((t) => t.id),
+    );
+    return {
+      ...page,
+      items: page.items.map((t) => ({ ...t, cashback: earned.get(t.id) ?? null })),
+    };
+  };
 
   router.get("/transactions", (req, res) => {
     const parsed = listQuery.parse(req.query);
     res.json(
-      listTransactions(db, {
-        ...parsed,
-        pending: parsed.pending === undefined ? undefined : parsed.pending === "true",
-        environment: getSettings(db).plaidEnvironment,
-      }),
+      withCashback(
+        listTransactions(db, {
+          ...parsed,
+          pending: parsed.pending === undefined ? undefined : parsed.pending === "true",
+          online: parsed.online === undefined ? undefined : parsed.online === "true",
+          environment: getSettings(db).plaidEnvironment,
+        }),
+      ),
     );
   });
 
   router.get("/transactions/:id", (req, res) => {
-    res.json(getTransaction(db, idParam.parse(req.params["id"])));
+    const t = getTransaction(db, idParam.parse(req.params["id"]));
+    res.json({ ...t, cashback: transactionCashback(db, [t.id]).get(t.id) ?? null });
   });
 
   router.patch("/transactions/:id", (req, res) => {
     const body = patchBody.parse(req.body);
-    res.json(updateTransaction(db, idParam.parse(req.params["id"]), body));
+    const updated = updateAnyTransaction(db, idParam.parse(req.params["id"]), body);
+    res.json({
+      ...updated,
+      cashback: transactionCashback(db, [updated.id]).get(updated.id) ?? null,
+    });
+  });
+
+  /** Adds a transaction by hand, to an account the user keeps by hand (cash, for example). */
+  router.post("/transactions", (req, res) => {
+    const { repeat, ...body } = createBody.parse(req.body);
+    const now = new Date().toISOString();
+    const result = db.transaction((tx) => {
+      const created = createManualTransaction(tx as unknown as AppDb, body, now);
+      const recurring = repeat
+        ? repeatFromTransaction(tx as unknown as AppDb, created, repeat, now)
+        : null;
+      return { ...created, recurring };
+    });
+    res.status(201).json(result);
+  });
+
+  /** Deletes a transaction the user entered. Bank transactions cannot be deleted. */
+  router.delete("/transactions/:id", (req, res) => {
+    deleteManualTransaction(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
   });
 
   return router;

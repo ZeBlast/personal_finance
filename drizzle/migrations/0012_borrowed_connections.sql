@@ -1,0 +1,1 @@
+ALTER TABLE `plaid_items` ADD `borrowed` integer DEFAULT false NOT NULL;

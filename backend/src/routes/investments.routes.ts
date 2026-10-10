@@ -16,8 +16,10 @@ import {
 import {
   portfolioHistory,
   portfolioHoldings,
+  investmentTransactionDetail,
   portfolioOverview,
   portfolioTransactions,
+  securityDetail,
 } from "../services/portfolio.service.js";
 
 const idParam = z.coerce.number().int().positive();
@@ -36,6 +38,33 @@ const accountBody = z
   })
   .strict();
 
+/** Descriptive data about a fund or stock, all optional (what Plaid would supply for a connected account). */
+const detailBody = z
+  .object({
+    securityType: text(40).nullable().optional(),
+    subtype: text(60).nullable().optional(),
+    isin: text(12).nullable().optional(),
+    cusip: text(9).nullable().optional(),
+    sedol: text(7).nullable().optional(),
+    figi: text(12).nullable().optional(),
+    cfiCode: text(6).nullable().optional(),
+    sector: text(80).nullable().optional(),
+    industry: text(80).nullable().optional(),
+    isCashEquivalent: z.boolean().nullable().optional(),
+    closePrice: z.number().min(0).max(1e12).nullable().optional(),
+    closePriceAsOf: date.nullable().optional(),
+    optionContractType: text(10).nullable().optional(),
+    optionExpiration: date.nullable().optional(),
+    optionStrike: z.number().min(0).max(1e12).nullable().optional(),
+    optionUnderlying: text(20).nullable().optional(),
+    fixedYieldRate: z.number().min(-100).max(1000).nullable().optional(),
+    fixedYieldType: text(30).nullable().optional(),
+    fixedMaturityDate: date.nullable().optional(),
+    fixedIssueDate: date.nullable().optional(),
+    fixedFaceValue: z.number().min(0).max(1e12).nullable().optional(),
+  })
+  .strict();
+
 const holdingBody = z
   .object({
     symbol: text(40).nullable().optional(),
@@ -46,6 +75,10 @@ const holdingBody = z
     valueMinor: minor.nullable().optional(),
     costBasisMinor: minor.nullable().optional(),
     asOf: date.nullable().optional(),
+    vestedQuantity: z.number().min(0).max(1e15).nullable().optional(),
+    vestedValueMinor: minor.nullable().optional(),
+    priceAsOf: date.nullable().optional(),
+    detail: detailBody.optional(),
   })
   .strict();
 
@@ -60,6 +93,8 @@ const transactionBody = z
     symbol: text(40).nullable().optional(),
     name: text(120).nullable().optional(),
     description: text(200).nullable().optional(),
+    subtype: text(80).nullable().optional(),
+    datetime: text(20).nullable().optional(),
     quantity: z.number().min(0).max(1e15).nullable().optional(),
     price: z.number().min(0).max(1e12).nullable().optional(),
     /** Positive cash amount; for transfer/other, negative means money out. */
@@ -103,6 +138,15 @@ export function investmentsRoutes(db: AppDb): Router {
   router.get("/investments/transactions", (req, res) => {
     const query = listQuery.parse(req.query);
     res.json(portfolioTransactions(db, query));
+  });
+
+  /** Everything stored about one security and where it is held, including the provider's own record. */
+  router.get("/investments/securities/:id", (req, res) => {
+    res.json(securityDetail(db, idParam.parse(req.params["id"])));
+  });
+
+  router.get("/investments/transactions/:id", (req, res) => {
+    res.json(investmentTransactionDetail(db, idParam.parse(req.params["id"])));
   });
 
   /** Preset funds and the asset classes, for the entry forms. */

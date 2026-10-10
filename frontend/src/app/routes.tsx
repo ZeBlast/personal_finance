@@ -8,7 +8,12 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { DataPage } from "../pages/DataPage";
 import { InsightsPage } from "../pages/InsightsPage";
 import { InvestmentsPage } from "../pages/InvestmentsPage";
+import { PlanningPage } from "../pages/PlanningPage";
+import { ReportsPage } from "../pages/ReportsPage";
+import { ReviewPage } from "../pages/ReviewPage";
+import { SandboxPage } from "../pages/SandboxPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { TaxesPage } from "../pages/TaxesPage";
 import { TransactionsPage } from "../pages/TransactionsPage";
 
 export interface AppRoute {
@@ -21,12 +26,17 @@ export interface AppRoute {
 export const routes: AppRoute[] = [
   { path: "/", label: "Dashboard", Page: DashboardPage },
   { path: "/transactions", label: "Transactions", Page: TransactionsPage },
+  { path: "/review", label: "Review", Page: ReviewPage },
   { path: "/calendar", label: "Calendar", Page: CalendarPage },
+  { path: "/planning", label: "Planning", Page: PlanningPage },
   { path: "/categories", label: "Categories", Page: CategoriesPage },
   { path: "/accounts", label: "Accounts", Page: AccountsPage },
   { path: "/budgets", label: "Budgets", Page: BudgetsPage },
   { path: "/investments", label: "Investments", Page: InvestmentsPage },
   { path: "/insights", label: "Insights", Page: InsightsPage },
+  { path: "/taxes", label: "Taxes", Page: TaxesPage },
+  { path: "/reports", label: "Month report", Page: ReportsPage },
+  { path: "/sandbox", label: "Sandbox", Page: SandboxPage },
   { path: "/analytics", label: "Net worth history", Page: AnalyticsPage },
   { path: "/data", label: "Data & backups", Page: DataPage },
   { path: "/settings", label: "Settings", Page: SettingsPage },

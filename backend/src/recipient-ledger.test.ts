@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ledgerDelta, pageLedger, type LedgerAccount } from "./plaid/fake-ledger.js";
-import { extractRecipient, looksLikeTransfer } from "./services/recipient.js";
+import { extractRecipient } from "./services/recipient.js";
 
 const input = (
   name: string,
@@ -66,13 +66,6 @@ describe("recipient extraction", () => {
   it("caps very long names", () => {
     const long = "A".repeat(300);
     expect(extractRecipient(input(`Zelle payment to ${long}`, 5))?.recipient).toHaveLength(100);
-  });
-
-  it("recognizes transfers", () => {
-    expect(looksLikeTransfer("TRANSFER_OUT", null)).toBe(true);
-    expect(looksLikeTransfer("FOOD_AND_DRINK", { recipient: "A B", source: "parsed" })).toBe(true);
-    expect(looksLikeTransfer("FOOD_AND_DRINK", null)).toBe(false);
-    expect(looksLikeTransfer(null, null)).toBe(false);
   });
 });
 

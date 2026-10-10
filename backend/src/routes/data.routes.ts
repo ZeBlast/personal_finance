@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Router } from "express";
 import { z } from "zod";
-import type { AppDb } from "../db/client.js";
+import { DB_FILE_NAME, isPlaintextDatabase, type AppDb } from "../db/client.js";
 import {
   backupDir,
   cancelRestore,
@@ -19,6 +19,10 @@ import {
 } from "../services/diagnostics.service.js";
 import { EXPORT_KINDS, exportDir, runExport } from "../services/export.service.js";
 import { netWorthHistory } from "../services/networth-history.service.js";
+import { GRANULARITIES, netWorthSeries } from "../services/networth-series.service.js";
+
+/** A recovery key is only needed for a backup made on another computer. */
+const restoreBody = z.object({ recoveryKey: z.string().max(200).optional() }).strict();
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
@@ -40,13 +44,49 @@ export function dataRoutes(options: {
   dataDir: string;
   migrationsDir: string;
   version: string;
+  /** The app's master key, shown to the user as their recovery key. */
+  recoveryKey?: string | undefined;
 }): Router {
-  const { db, dataDir, migrationsDir, version } = options;
+  const { db, dataDir, migrationsDir, version, recoveryKey } = options;
   const router = Router();
+
+  /** Net worth as a continuous series: the end of each day, week, or month. */
+  router.get("/analytics/net-worth-series", (req, res) => {
+    const query = z
+      .object({
+        granularity: z.enum(GRANULARITIES).default("week"),
+        from: date.optional(),
+        to: date.optional(),
+      })
+      .parse(req.query);
+    res.json(netWorthSeries(db, query));
+  });
 
   router.get("/analytics/net-worth-history", (req, res) => {
     const query = z.object({ from: date.optional(), to: date.optional() }).parse(req.query);
     res.json(netWorthHistory(db, query));
+  });
+
+  /** Whether the live database file is encrypted on disk (checked from the file itself). */
+  router.get("/data/encryption", (_req, res) => {
+    res.json({
+      encrypted: !isPlaintextDatabase(path.join(dataDir, DB_FILE_NAME)),
+      recoveryKeyAvailable: recoveryKey !== undefined,
+    });
+  });
+
+  /**
+   * The key that unlocks the database and its backups, for the user to keep somewhere safe. A POST
+   * so it is never fetched by accident (a link, a prefetch, a cached page).
+   */
+  router.post("/data/recovery-key", (_req, res) => {
+    if (recoveryKey === undefined) {
+      res
+        .status(404)
+        .json({ error: "not_available", message: "There is no recovery key to show." });
+      return;
+    }
+    res.set("Cache-Control", "no-store").json({ recoveryKey });
   });
 
   router.get("/backups", (_req, res) => {
@@ -68,7 +108,17 @@ export function dataRoutes(options: {
 
   /** Queues a restore; the swap happens the next time the app starts. */
   router.post("/backups/:name/restore", (req, res) => {
-    res.json(stageRestore(db, dataDir, String(req.params["name"]), knownMigrations(migrationsDir)));
+    const body = restoreBody.parse(req.body ?? {});
+    res.json(
+      stageRestore(
+        db,
+        dataDir,
+        String(req.params["name"]),
+        knownMigrations(migrationsDir),
+        new Date(),
+        body.recoveryKey?.trim().toLowerCase(),
+      ),
+    );
   });
 
   router.delete("/restore/pending", (_req, res) => {

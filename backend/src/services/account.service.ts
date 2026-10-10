@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { accounts, balanceSnapshots, plaidItems } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import type { GatewayAccount } from "../plaid/gateway.js";
+import { notFound } from "../utils/errors.js";
 import { toMinorUnits } from "../utils/money.js";
 import { currentCreditLimit, observeCreditLimit } from "./credit-limit.service.js";
 
@@ -16,6 +17,18 @@ const PALETTE = [
   "#ca8a04",
   "#db2777",
 ];
+
+/** Hides an account from balances, totals, charts and lists, or shows it again. */
+export function setAccountHidden(db: AppDb, id: number, hidden: boolean): AccountSummary {
+  const changed = db
+    .update(accounts)
+    .set({ hidden, updatedAt: new Date().toISOString() })
+    .where(eq(accounts.id, id))
+    .returning({ id: accounts.id })
+    .all();
+  if (changed.length === 0) throw notFound("That account");
+  return listAccounts(db, undefined, true).find((a) => a.id === id)!;
+}
 
 /** The display color for the account with this ID. */
 export function accountColor(accountId: number): string {
@@ -39,6 +52,8 @@ export interface AccountSummary {
   lastBalanceUpdateAt: string | null;
   source: string;
   isManual: boolean;
+  /** Kept out of balances, totals, charts, and lists by the user's choice. */
+  hidden: boolean;
   color: string | null;
   /** Current credit limit for credit accounts, from the limit history; null otherwise. */
   creditLimitMinor: number | null;
@@ -61,10 +76,20 @@ const summaryColumns = {
   lastBalanceUpdateAt: accounts.lastBalanceUpdateAt,
   source: accounts.source,
   isManual: accounts.isManual,
+  hidden: accounts.hidden,
   color: accounts.color,
 };
 
-export function listAccounts(db: AppDb, itemId?: number): AccountSummary[] {
+/**
+ * Accounts, oldest first. Hidden accounts are left out, because everything that adds up or shows
+ * accounts should ignore them; ask for them (the Accounts page does, and so does a single
+ * connection's list) with `includeHidden`.
+ */
+export function listAccounts(
+  db: AppDb,
+  itemId?: number,
+  includeHidden: boolean = itemId !== undefined,
+): AccountSummary[] {
   const query = db
     .select(summaryColumns)
     .from(accounts)
@@ -74,6 +99,7 @@ export function listAccounts(db: AppDb, itemId?: number): AccountSummary[] {
   return rows
     .orderBy(asc(accounts.id))
     .all()
+    .filter((row) => includeHidden || !row.hidden)
     .map((row) => ({
       ...row,
       creditLimitMinor:

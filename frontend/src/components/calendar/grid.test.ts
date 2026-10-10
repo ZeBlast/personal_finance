@@ -55,3 +55,27 @@ describe("monthGrid", () => {
     expect(days.at(-1)).toBe("2028-02-29");
   });
 });
+
+describe("the full month grid", () => {
+  it("fills the first and last weeks with the neighbouring months' days", async () => {
+    const { fullMonthGrid } = await import("./range");
+    const weeks = fullMonthGrid("2026-10"); // Oct 1, 2026 is a Thursday
+    expect(weeks).toHaveLength(5);
+    expect(weeks[0]!.map((c) => c.date)).toEqual([
+      "2026-09-27",
+      "2026-09-28",
+      "2026-09-29",
+      "2026-09-30",
+      "2026-10-01",
+      "2026-10-02",
+      "2026-10-03",
+    ]);
+    expect(weeks[0]![3]!.inMonth).toBe(false);
+    expect(weeks[0]![4]!.inMonth).toBe(true);
+    expect(weeks[4]!.at(-1)).toEqual({ date: "2026-10-31", inMonth: true });
+    // September 2026 ends on a Wednesday: its last week runs into October.
+    expect(fullMonthGrid("2026-09").at(-1)!.at(-1)).toEqual({ date: "2026-10-03", inMonth: false });
+    // February 2026 starts on a Sunday and fills exactly four weeks.
+    expect(fullMonthGrid("2026-02")).toHaveLength(4);
+  });
+});

@@ -96,6 +96,28 @@ function draftsFor(institutionId: string, accountIndex: number, date: string): D
         channel: "other",
       });
     }
+    if (dayOfMonth === 20) {
+      // The paying side of the card payment that shows on the credit card on the same day.
+      drafts.push({
+        key: "cardpay",
+        name: "ONLINE PAYMENT TO CARD 4242",
+        merchant: null,
+        amount: 300,
+        category: ["LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"],
+        channel: "online",
+      });
+    }
+    if (dayOfMonth === 3) {
+      // Half of a transfer between the user's own accounts: the other half is on the savings account.
+      drafts.push({
+        key: "tosav",
+        name: "ONLINE TRANSFER TO SAV 1111",
+        merchant: null,
+        amount: 300,
+        category: ["TRANSFER_OUT", "TRANSFER_OUT_SAVINGS"],
+        channel: "online",
+      });
+    }
     if (dayOfMonth === 1) {
       drafts.push({
         key: "rent",
@@ -138,6 +160,16 @@ function draftsFor(institutionId: string, accountIndex: number, date: string): D
       });
     }
   } else if (institutionId === "ins_fake_bank" && accountIndex === 1) {
+    if (dayOfMonth === 3) {
+      drafts.push({
+        key: "fromchk",
+        name: "ONLINE TRANSFER FROM CHK 0000",
+        merchant: null,
+        amount: -300,
+        category: ["TRANSFER_IN", "TRANSFER_IN_SAVINGS"],
+        channel: "online",
+      });
+    }
     if (dayOfMonth === 28) {
       drafts.push({
         key: "int",
@@ -210,6 +242,48 @@ function enriched(draftHash: number, date: string, asOf: string): boolean {
   return dayNumber(asOf) >= dayNumber(date) + ENRICH_AFTER_DAYS;
 }
 
+/** A believable sample of the extra fields Plaid can send, derived from the transaction itself. */
+function demoDetails(
+  draft: Draft,
+  base: string,
+  date: string,
+  merchant: string | null,
+): Partial<GatewayTransaction> {
+  const h = hash(base);
+  const inStore = draft.channel === "in store";
+  return {
+    datetime: `${date}T${String(8 + (h % 12)).padStart(2, "0")}:${String(h % 60).padStart(2, "0")}:00Z`,
+    authorizedDatetime: `${date}T${String(8 + (h % 12)).padStart(2, "0")}:00:00Z`,
+    // The bank's own wording, before Plaid tidied it.
+    originalDescription: `${draft.name} ${draft.channel === "online" ? "WEB ID" : "POS"} ${1000 + (h % 9000)}`,
+    location: inStore
+      ? {
+          address: `${100 + (h % 900)} Main St`,
+          city: "Springfield",
+          region: "IL",
+          postalCode: "62701",
+          country: "US",
+          lat: 39.7817,
+          lon: -89.6501,
+          storeNumber: String(1 + (h % 400)),
+        }
+      : null,
+    merchantEntityId: merchant ? `entity-fake~${hash(merchant)}` : null,
+    merchantCategoryCode: merchant ? String(5400 + (hash(merchant) % 300)) : null,
+    logoUrl: null,
+    website: merchant ? `${merchant.toLowerCase().replace(/[^a-z0-9]/g, "")}.com` : null,
+    categoryConfidence: merchant ? "VERY_HIGH" : "MEDIUM",
+    payment: {
+      method: draft.channel === "online" ? "ACH" : draft.channel === "in store" ? "Card" : null,
+      processor: draft.channel === "online" ? "Demo Payments" : null,
+      reference: `REF${100000 + (h % 900000)}`,
+      reason: null,
+      byOrderOf: null,
+      ppdId: null,
+    },
+  };
+}
+
 function build(
   accountId: string,
   draft: Draft,
@@ -234,9 +308,21 @@ function build(
     paymentChannel: draft.channel,
     categoryPrimary: draft.category[0],
     categoryDetailed: draft.category[1],
-    counterparties: merchant ? [{ name: merchant, type: "merchant" }] : [],
+    counterparties: merchant
+      ? [
+          {
+            name: merchant,
+            type: "merchant",
+            entityId: `entity-fake~${hash(merchant)}`,
+            website: `${merchant.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`,
+            logoUrl: null,
+            confidenceLevel: "VERY_HIGH",
+          },
+        ]
+      : [],
     paymentPayee: draft.payee ?? null,
     paymentPayer: draft.payer ?? null,
+    ...demoDetails(draft, base, date, merchant),
   };
 }
 

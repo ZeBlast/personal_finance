@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDb } from "./db/client.js";
+import { createDb, runMigrations } from "./db/client.js";
+import os from "node:os";
 import {
   applyPendingRestore,
   autoBackupIfDue,
+  backupBeforeMigrating,
   backupDir,
   checkBackupFile,
   createBackup,
@@ -13,7 +14,15 @@ import {
   pendingRestore,
   pruneAutoBackups,
 } from "./services/backup.service.js";
-import { makeSyncHarness, makeTestApp, linkDemoBank } from "./test-helpers.js";
+import {
+  linkDemoBank,
+  makeSyncHarness,
+  makeTestApp,
+  MIGRATIONS,
+  truncatedMigrations,
+  openDatabaseFile,
+  TEST_DB_KEY,
+} from "./test-helpers.js";
 import { toCsv } from "./utils/csv-write.js";
 
 const cleanups: Array<() => void> = [];
@@ -27,7 +36,7 @@ function app() {
   return { ...t, dir: backupDirOf(t) };
 }
 const backupDirOf = (t: { db: unknown }): string => {
-  const client = (t.db as { $client: Database.Database }).$client;
+  const client = (t.db as { $client: { name: string } }).$client;
   return path.dirname(client.name);
 };
 
@@ -38,7 +47,7 @@ function harness() {
 }
 
 const accountNames = (dir: string, file = "personal-finance.db"): string[] => {
-  const raw = new Database(path.join(dir, file), { readonly: true });
+  const raw = openDatabaseFile(path.join(dir, file), TEST_DB_KEY, true);
   try {
     return (
       raw.prepare("SELECT name FROM accounts ORDER BY id").all() as Array<{ name: string }>
@@ -270,7 +279,7 @@ describe("backups", () => {
     const garbage = path.join(dir, "pf-manual-20260101-000001.db");
     fs.writeFileSync(garbage, "this is not a database at all".repeat(50));
     const strangers = path.join(dir, "pf-manual-20260101-000002.db");
-    const other = new Database(strangers);
+    const other = openDatabaseFile(strangers, null);
     other.exec("CREATE TABLE recipes (id INTEGER)");
     other.close();
     const real = await createBackup(t.db, t.dir, "manual", new Date("2026-01-01T00:00:03Z"));
@@ -284,7 +293,10 @@ describe("backups", () => {
       "pf-manual-20260101-000004.db",
     ]) {
       const res = await t.call("post", `/api/backups/${name}/restore`).expect(409);
-      expect(res.body.error).toBe("backup_unusable");
+      // A file that cannot be opened at all might be encrypted with another computer's key.
+      expect(res.body.error).toBe(
+        name.endsWith("000002.db") ? "backup_unusable" : "backup_needs_key",
+      );
     }
     expect(pendingRestore(t.dir)).toBeNull();
     // A backup from a newer version of the app is refused, with a clear reason.
@@ -322,7 +334,7 @@ describe("backups", () => {
     expect(accountNames(path.join(t.dir, "backups"), kept.name)).toEqual(["Before", "After"]);
 
     // The restored file opens normally and has this app's tables.
-    const reopened = createDb({ dataDir: t.dir });
+    const reopened = createDb({ dataDir: t.dir, key: TEST_DB_KEY });
     expect(reopened.sqlite.prepare("SELECT COUNT(*) AS n FROM accounts").get()).toEqual({ n: 1 });
     reopened.sqlite.close();
   });
@@ -332,7 +344,7 @@ describe("backups", () => {
     const dir = path.join(t.dir, "backups");
     fs.mkdirSync(dir, { recursive: true });
     // A database that was in use when it was set aside: its newest rows live in the -wal file.
-    const live = new Database(path.join(t.dir, "scratch.db"));
+    const live = openDatabaseFile(path.join(t.dir, "scratch.db"), null);
     live.pragma("journal_mode = WAL");
     live.pragma("wal_autocheckpoint = 0");
     live.exec(
@@ -368,27 +380,71 @@ describe("backups", () => {
 
   it("restores an older backup into a newer schema by migrating it", async () => {
     const t = app();
-    const made = (await t.call("post", "/api/backups").expect(201)).body;
-    // Pretend the backup predates the newest migration: remove its last journal row and what it added.
-    const file = path.join(t.dir, "backups", made.name);
-    const raw = new Database(file);
-    raw.exec(
-      "DROP INDEX dashboard_widgets_dashboard_idx; ALTER TABLE dashboard_widgets DROP COLUMN dashboard_id; DROP TABLE dashboards; DROP TABLE recurring_dismissed",
-    );
-    raw.exec(
-      "DELETE FROM __drizzle_migrations WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)",
-    );
-    raw.close();
-    await t.call("post", `/api/backups/${made.name}/restore`).expect(200);
+    // A backup made by an earlier version of the app: it has data, but an older structure.
+    const old = fs.mkdtempSync(path.join(os.tmpdir(), "pf-old-"));
+    const oldMigrations = truncatedMigrations(5);
+    cleanups.push(() => {
+      fs.rmSync(old, { recursive: true, force: true });
+      fs.rmSync(oldMigrations, { recursive: true, force: true });
+    });
+    const earlier = createDb({ dataDir: old, key: TEST_DB_KEY });
+    runMigrations(earlier.db, oldMigrations);
+    earlier.sqlite
+      .prepare(
+        "INSERT INTO accounts (name, type, currency, is_manual, source, created_at, updated_at) VALUES ('From long ago', 'investment', 'USD', 1, 'manual', 'x', 'x')",
+      )
+      .run();
+    earlier.sqlite.close();
+    const dir = path.join(t.dir, "backups");
+    fs.mkdirSync(dir, { recursive: true });
+    const name = "pf-manual-20260101-000000.db";
+    fs.copyFileSync(path.join(old, "personal-finance.db"), path.join(dir, name));
+
+    await t.call("post", `/api/backups/${name}/restore`).expect(200);
     t.sqlite.close();
     applyPendingRestore(t.dir);
-    const { runMigrations } = await import("./db/client.js");
-    const reopened = createDb({ dataDir: t.dir });
+    const reopened = createDb({ dataDir: t.dir, key: TEST_DB_KEY });
     runMigrations(reopened.db, path.resolve(import.meta.dirname, "../../drizzle/migrations"));
+    expect(reopened.sqlite.prepare("SELECT name FROM accounts").all()).toEqual([
+      { name: "From long ago" },
+    ]);
     expect(reopened.sqlite.prepare("SELECT name FROM dashboards").all()).toEqual([
       { name: "Main" },
     ]);
+    expect(
+      reopened.sqlite
+        .prepare("SELECT COUNT(*) AS n FROM transactions WHERE source = 'plaid'")
+        .get(),
+    ).toEqual({ n: 0 });
     reopened.sqlite.close();
+  });
+
+  it("backs up before an update changes the database, and only then", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pf-upd-"));
+    const oldMigrations = truncatedMigrations(5);
+    cleanups.push(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(oldMigrations, { recursive: true, force: true });
+    });
+    const { db, sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
+    // A brand-new database has nothing to protect.
+    expect(await backupBeforeMigrating(db, dir, MIGRATIONS)).toBeNull();
+    runMigrations(db, oldMigrations);
+    sqlite
+      .prepare(
+        "INSERT INTO accounts (name, type, currency, is_manual, source, created_at, updated_at) VALUES ('Keep me', 'depository', 'USD', 1, 'manual', 'x', 'x')",
+      )
+      .run();
+    // An existing database about to be upgraded is copied first, as it is now.
+    const made = await backupBeforeMigrating(db, dir, MIGRATIONS);
+    expect(made?.kind).toBe("pre-update");
+    expect(made?.name).toMatch(/^pf-pre-update-/);
+    expect(accountNames(path.join(dir, "backups"), made!.name)).toEqual(["Keep me"]);
+    runMigrations(db, MIGRATIONS);
+    // Once it is up to date, nothing more is backed up.
+    expect(await backupBeforeMigrating(db, dir, MIGRATIONS)).toBeNull();
+    expect(listBackups(dir)).toHaveLength(1);
+    sqlite.close();
   });
 });
 
@@ -413,7 +469,7 @@ describe("exports", () => {
     expect(text.charCodeAt(0)).toBe(0xfeff); // so Excel reads the text correctly
     const lines = text.slice(1).split("\r\n").filter(Boolean);
     expect(lines[0]).toBe(
-      "date,account,institution,merchant,description,amount (money in is positive),currency,category,pending,transfer,recipient,notes",
+      "date,account,institution,merchant,description,amount (money in is positive),currency,category,pending,transfer,recipient,sender,notes",
     );
     const total = (await h.call("get", "/api/transactions?pageSize=1").expect(200)).body.total;
     expect(lines.length - 1).toBe(res.rows);
@@ -458,12 +514,25 @@ describe("exports", () => {
         secret: "super-secret-value-999",
       })
       .expect(200);
+    await h.call("put", "/api/calendar/notes/2026-09-10").send({ note: "Dentist" }).expect(200);
+    await h
+      .call("post", "/api/planned")
+      .send({
+        merchant: "Rent",
+        amountMinor: 120000,
+        direction: "out",
+        startDate: "2026-11-01",
+        frequency: "monthly",
+      })
+      .expect(201);
     const { res, text } = await exportFile(h, "everything");
     expect(res.name).toMatch(/\.json$/);
     const data = JSON.parse(text);
     expect(data).toMatchObject({ format: "personal-finance-export", version: 1 });
     expect(data.accounts.length).toBe(4);
     expect(data.transactions.length).toBeGreaterThan(0);
+    expect(data.dayNotes).toMatchObject([{ date: "2026-09-10", note: "Dentist" }]);
+    expect(data.plannedTransactions).toMatchObject([{ merchant: "Rent", frequency: "monthly" }]);
     expect(data.connections[0]).not.toHaveProperty("accessTokenEncrypted");
     for (const secret of [
       "super-secret-value-999",

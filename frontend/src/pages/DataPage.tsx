@@ -1,8 +1,9 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, errorMessage, insideTauri } from "../api/client";
+import { api, ApiError, errorMessage, insideTauri } from "../api/client";
 import { ConfirmDialog } from "../components/common/Modal";
+import { RecoveryKeyDialog, SecurityPanel } from "../components/data/SecurityPanel";
 import { buttonClass, primaryClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
 import { adviceFor, formatBytes, formatReport } from "../lib/recovery";
@@ -23,6 +24,7 @@ const KIND_LABEL: Record<BackupInfo["kind"], string> = {
   manual: "Made by you",
   auto: "Automatic",
   "pre-restore": "Saved before a restore",
+  "pre-update": "Saved before an app update",
 };
 
 const EXPORTS: Array<{ kind: ExportKind; label: string; help: string }> = [
@@ -86,6 +88,36 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState<BackupInfo | null>(null);
   const [deleting, setDeleting] = useState<BackupInfo | null>(null);
+  // A backup that this computer's key does not open, waiting for the key it was made with.
+  const [needKey, setNeedKey] = useState<BackupInfo | null>(null);
+
+  /** Queues a restore; a backup from another computer is retried with the recovery key typed in. */
+  async function queueRestore(backup: BackupInfo, recoveryKey?: string): Promise<void> {
+    setBusy(true);
+    try {
+      await api(`/backups/${encodeURIComponent(backup.name)}/restore`, {
+        method: "POST",
+        body: JSON.stringify(recoveryKey ? { recoveryKey } : {}),
+      });
+      onNotice({
+        kind: "info",
+        text: "Restore queued. Close the app and open it again to finish.",
+      });
+      setNeedKey(null);
+      list.reload();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "backup_needs_key") {
+        setNeedKey(backup);
+        if (recoveryKey) onNotice({ kind: "error", text: e.message });
+      } else {
+        setNeedKey(null);
+        onNotice({ kind: "error", text: errorMessage(e, "Could not restore that backup.") });
+      }
+    } finally {
+      setBusy(false);
+      setRestoring(null);
+    }
+  }
 
   async function run(work: () => Promise<string>, failure: string): Promise<void> {
     setBusy(true);
@@ -263,15 +295,16 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
           confirmLabel="Restore at next launch"
           danger
           busy={busy}
-          onConfirm={() =>
-            void run(async () => {
-              await api(`/backups/${encodeURIComponent(restoring.name)}/restore`, {
-                method: "POST",
-              });
-              return "Restore queued. Close the app and open it again to finish.";
-            }, "Could not restore that backup.")
-          }
+          onConfirm={() => void queueRestore(restoring)}
           onCancel={() => setRestoring(null)}
+        />
+      )}
+      {needKey && (
+        <RecoveryKeyDialog
+          backupLabel={when(needKey.createdAt)}
+          busy={busy}
+          onSubmit={(key) => void queueRestore(needKey, key)}
+          onCancel={() => setNeedKey(null)}
         />
       )}
       {deleting && (
@@ -519,8 +552,8 @@ export function DataPage() {
       <div>
         <h1 className="text-2xl font-semibold">Data and backups</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Your data lives only on this computer. Back it up, export it, and check that it is
-          healthy.
+          Your data lives only on this computer, encrypted. Back it up, export it, and check that it
+          is healthy.
         </p>
       </div>
       {notice && (
@@ -535,6 +568,7 @@ export function DataPage() {
           {notice.text}
         </p>
       )}
+      <SecurityPanel />
       <BackupsPanel onNotice={show} />
       <ExportPanel onNotice={show} />
       <DiagnosticsPanel onNotice={show} />

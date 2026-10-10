@@ -82,6 +82,11 @@ export function plaidRoutes({ db, cipher, plaid, getGateway }: Deps): Router {
     res.status(201).json(await plaid.exchange(body.publicToken, body.institution));
   });
 
+  /** Each connected institution with its logo and brand color (for the calendar). */
+  router.get("/institutions", (_req, res) => {
+    res.json(plaid.institutions());
+  });
+
   router.get("/plaid/items", (_req, res) => {
     res.json(plaid.list());
   });

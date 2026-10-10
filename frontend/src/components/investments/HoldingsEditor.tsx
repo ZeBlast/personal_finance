@@ -218,6 +218,41 @@ export function HoldingsEditor({
                       />
                     </div>
                   </div>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-blue-700 dark:text-blue-400">
+                      More details (vested amount, price date, identifiers)
+                    </summary>
+                    <p className="mt-1 text-xs text-slate-500">
+                      All optional. Vested is the part of the position you have fully earned (for a
+                      plan with employer money). Identifiers you leave empty keep what is stored.
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {(
+                        [
+                          ["vestedQuantity", "Vested shares"],
+                          ["vestedValue", "Vested value"],
+                          ["priceAsOf", "Price date (YYYY-MM-DD)"],
+                          ["isin", "ISIN"],
+                          ["cusip", "CUSIP"],
+                          ["sector", "Sector"],
+                          ["industry", "Industry"],
+                          ["subtype", "Subtype"],
+                        ] as const
+                      ).map(([field, label]) => (
+                        <div key={field}>
+                          <label htmlFor={`${rowId}-${field}`} className="block font-medium">
+                            {label}
+                          </label>
+                          <input
+                            id={`${rowId}-${field}`}
+                            value={row[field]}
+                            onChange={(e) => update(row.key, { [field]: e.target.value })}
+                            className={inputClass}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </li>
               );
             })}

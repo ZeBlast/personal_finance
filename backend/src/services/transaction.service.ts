@@ -24,8 +24,9 @@ import type { AppDb } from "../db/client.js";
 import type { GatewayTransaction } from "../plaid/gateway.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { toMinorUnits } from "../utils/money.js";
-import { extractRecipient, looksLikeTransfer } from "./recipient.js";
-import { applyRules } from "./rule.service.js";
+import { extractRecipient } from "./recipient.js";
+import { applyRules, getDiningSplit, isOnline, splitCategory } from "./rule.service.js";
+import { setTransferFlag } from "./transfer.service.js";
 
 type Db = Pick<AppDb, "select" | "insert" | "update" | "delete">;
 
@@ -46,7 +47,7 @@ export function upsertTransaction(
   const amountMinor = toMinorUnits(t.amount, t.currency);
   if (amountMinor === null) throw new Error("Transaction has no valid amount");
 
-  const recipient = extractRecipient({
+  const person = extractRecipient({
     name: t.name,
     amount: t.amount,
     paymentPayee: t.paymentPayee,
@@ -69,9 +70,34 @@ export function upsertTransaction(
     plaidCategoryDetailed: t.categoryDetailed,
     counterpartyName: counterparty?.name ?? null,
     counterpartyType: counterparty?.type ?? null,
-    recipient: recipient?.recipient ?? null,
-    recipientSource: recipient?.source ?? null,
-    isTransfer: looksLikeTransfer(t.categoryPrimary, recipient),
+    counterpartiesJson: t.counterparties.length > 0 ? JSON.stringify(t.counterparties) : null,
+    datetime: t.datetime ?? null,
+    authorizedDatetime: t.authorizedDatetime ?? null,
+    originalDescription: t.originalDescription ?? null,
+    locationAddress: t.location?.address ?? null,
+    locationCity: t.location?.city ?? null,
+    locationRegion: t.location?.region ?? null,
+    locationPostalCode: t.location?.postalCode ?? null,
+    locationCountry: t.location?.country ?? null,
+    locationLat: t.location?.lat ?? null,
+    locationLon: t.location?.lon ?? null,
+    locationStoreNumber: t.location?.storeNumber ?? null,
+    merchantEntityId: t.merchantEntityId ?? null,
+    merchantCategoryCode: t.merchantCategoryCode ?? null,
+    logoUrl: t.logoUrl ?? null,
+    website: t.website ?? null,
+    categoryConfidence: t.categoryConfidence ?? null,
+    paymentMethod: t.payment?.method ?? null,
+    paymentProcessor: t.payment?.processor ?? null,
+    paymentReference: t.payment?.reference ?? null,
+    paymentReason: t.payment?.reason ?? null,
+    paymentByOrderOf: t.payment?.byOrderOf ?? null,
+    paymentPpdId: t.payment?.ppdId ?? null,
+    // The other party is the recipient of money going out and the sender of money coming in.
+    recipient: amountMinor > 0 ? (person?.recipient ?? null) : null,
+    recipientSource: amountMinor > 0 ? (person?.source ?? null) : null,
+    sender: amountMinor <= 0 ? (person?.recipient ?? null) : null,
+    senderSource: amountMinor <= 0 ? (person?.source ?? null) : null,
     updatedAt: now,
   };
 
@@ -85,6 +111,8 @@ export function upsertTransaction(
   const existing =
     byId(t.transactionId) ?? (t.pendingTransactionId ? byId(t.pendingTransactionId) : undefined);
   if (existing) {
+    // Whether it is a transfer between the user's own accounts is decided separately, so a
+    // refresh from the provider never undoes it.
     db.update(transactions).set(provider).where(eq(transactions.id, existing.id)).run();
     return { kind: "modified", id: existing.id };
   }
@@ -116,6 +144,8 @@ export function removeTransactions(db: Db, plaidIds: string[]): string[] {
 // ---- Reading ---------------------------------------------------------------------------
 
 export const SORTS = [
+  "txdate_desc",
+  "txdate_asc",
   "date_desc",
   "date_asc",
   "amount_asc",
@@ -132,6 +162,12 @@ export interface TransactionQuery {
   from?: string | undefined;
   to?: string | undefined;
   pending?: boolean | undefined;
+  /** Only purchases that were (true) or were not (false) bought online, by the user's call or the bank's. */
+  online?: boolean | undefined;
+  /** An institution by name, or "manual" for accounts kept by hand. */
+  institution?: string | undefined;
+  /** Which date `from` and `to` apply to (default: the transaction date). */
+  dateBasis?: "transaction" | "posted" | undefined;
   q?: string | undefined;
   /** A category ID (including its subcategories) or "none" for uncategorized. */
   category?: number | "none" | undefined;
@@ -176,9 +212,80 @@ export interface TransactionDto {
   recipient: string | null;
   recipientSource: "plaid" | "parsed" | "manual" | null;
   providerRecipient: string | null;
+  /** Who sent the money, for money coming in: the user's edit, else the provider/parsed value. */
+  sender: string | null;
+  senderSource: "plaid" | "parsed" | "manual" | null;
+  providerSender: string | null;
+  /** `manual` for a transaction entered by hand, which can be edited in full. */
+  source: "plaid" | "manual";
+  /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
+  /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
+  transferSource: "auto" | "manual" | "system" | null;
+  /** For an automatic match, the other side of the transfer. */
+  transferWith: {
+    id: number;
+    accountName: string;
+    institutionName: string | null;
+    /** `credit`, `loan`, `depository`, ... of the other side's account. */
+    accountType: string;
+    date: string;
+    /** When the other side was made (its authorized date, else its posted date). */
+    transactionDate: string;
+    merchant: string;
+  } | null;
+  /** `credit`, `loan`, `depository`, ... of this transaction's account. */
+  accountType: string;
   paymentChannel: string | null;
+  /** Whether it was an online purchase: the user's call if there is one, else the bank's channel. */
+  online: boolean;
+  /** True when the user set `online` by hand (the bank's value is in `providerOnline`). */
+  onlineEdited: boolean;
+  /** What the bank's payment channel says: true online, false in store, null when it does not say. */
+  providerOnline: boolean | null;
   notes: string | null;
+  /** What Plaid sent beyond the basics; every part may be null. */
+  details: TransactionDetails;
+}
+
+export interface TransactionDetails {
+  datetime: string | null;
+  authorizedDatetime: string | null;
+  /** The bank's own wording, before cleanup. */
+  originalDescription: string | null;
+  location: {
+    address: string | null;
+    city: string | null;
+    region: string | null;
+    postalCode: string | null;
+    country: string | null;
+    lat: number | null;
+    lon: number | null;
+    storeNumber: string | null;
+  } | null;
+  merchant: {
+    entityId: string | null;
+    categoryCode: string | null;
+    logoUrl: string | null;
+    website: string | null;
+  } | null;
+  categoryConfidence: string | null;
+  payment: {
+    method: string | null;
+    processor: string | null;
+    reference: string | null;
+    reason: string | null;
+    byOrderOf: string | null;
+    ppdId: string | null;
+  } | null;
+  counterparties: Array<{
+    name: string;
+    type: string;
+    entityId: string | null;
+    website: string | null;
+    logoUrl: string | null;
+    confidenceLevel: string | null;
+  }>;
 }
 
 const escapeLike = (text: string): string => text.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -189,6 +296,7 @@ const selectColumns = {
   id: transactions.id,
   accountId: transactions.accountId,
   accountName: accounts.name,
+  accountType: accounts.type,
   accountColor: accounts.color,
   institutionName: plaidItems.institutionName,
   date: transactions.date,
@@ -204,9 +312,41 @@ const selectColumns = {
   recipient: transactions.recipient,
   recipientSource: transactions.recipientSource,
   recipientUser: transactions.recipientUser,
+  sender: transactions.sender,
+  senderSource: transactions.senderSource,
+  senderUser: transactions.senderUser,
+  source: transactions.source,
   isTransfer: transactions.isTransfer,
+  transferSource: transactions.transferSource,
+  transferPairId: transactions.transferPairId,
   paymentChannel: transactions.paymentChannel,
+  counterpartyName: transactions.counterpartyName,
+  counterpartyType: transactions.counterpartyType,
+  counterpartiesJson: transactions.counterpartiesJson,
+  datetime: transactions.datetime,
+  authorizedDatetime: transactions.authorizedDatetime,
+  originalDescription: transactions.originalDescription,
+  locationAddress: transactions.locationAddress,
+  locationCity: transactions.locationCity,
+  locationRegion: transactions.locationRegion,
+  locationPostalCode: transactions.locationPostalCode,
+  locationCountry: transactions.locationCountry,
+  locationLat: transactions.locationLat,
+  locationLon: transactions.locationLon,
+  locationStoreNumber: transactions.locationStoreNumber,
+  merchantEntityId: transactions.merchantEntityId,
+  merchantCategoryCode: transactions.merchantCategoryCode,
+  logoUrl: transactions.logoUrl,
+  website: transactions.website,
+  categoryConfidence: transactions.categoryConfidence,
+  paymentMethod: transactions.paymentMethod,
+  paymentProcessor: transactions.paymentProcessor,
+  paymentReference: transactions.paymentReference,
+  paymentReason: transactions.paymentReason,
+  paymentByOrderOf: transactions.paymentByOrderOf,
+  paymentPpdId: transactions.paymentPpdId,
   notesUser: transactions.notesUser,
+  onlineUser: transactions.onlineUser,
   categoryId: transactions.categoryId,
   categorySource: transactions.categorySource,
   categoryName: categories.name,
@@ -229,12 +369,16 @@ type Row = ReturnType<typeof selectTransactions> extends { all(): Array<infer R>
 
 function toDto(r: Row): TransactionDto {
   const manualRecipient = r.recipientUser?.trim() ? r.recipientUser : null;
+  const manualSender = r.senderUser?.trim() ? r.senderUser : null;
   const manualMerchant = r.merchantNameUser?.trim() ? r.merchantNameUser : null;
   const providerMerchant = r.merchantName || r.name;
+  const providerOnline =
+    r.paymentChannel === "online" ? true : r.paymentChannel === "in store" ? false : null;
   return {
     id: r.id,
     accountId: r.accountId,
     accountName: r.accountName,
+    accountType: r.accountType,
     accountColor: r.accountColor,
     institutionName: r.institutionName,
     date: r.date,
@@ -262,15 +406,86 @@ function toDto(r: Row): TransactionDto {
     recipient: manualRecipient ?? r.recipient,
     recipientSource: manualRecipient ? "manual" : (r.recipientSource as "plaid" | "parsed" | null),
     providerRecipient: r.recipient,
+    sender: manualSender ?? r.sender,
+    senderSource: manualSender ? "manual" : (r.senderSource as "plaid" | "parsed" | null),
+    providerSender: r.sender,
+    source: r.source === "manual" ? "manual" : "plaid",
     isTransfer: r.isTransfer,
+    transferSource: r.transferSource as TransactionDto["transferSource"],
+    transferWith: null,
     paymentChannel: r.paymentChannel,
+    online: r.onlineUser ?? providerOnline === true,
+    onlineEdited: r.onlineUser !== null,
+    providerOnline,
     notes: r.notesUser,
+    details: detailsOf(r),
   };
 }
 
+const anyOf = <T extends Record<string, unknown>>(value: T): T | null =>
+  Object.values(value).some((v) => v !== null) ? value : null;
+
+function parseCounterparties(json: string | null): TransactionDetails["counterparties"] {
+  if (!json) return [];
+  try {
+    const list = JSON.parse(json) as Array<Record<string, unknown>>;
+    return list.map((c) => ({
+      name: String(c["name"] ?? ""),
+      type: String(c["type"] ?? ""),
+      entityId: (c["entityId"] as string | null | undefined) ?? null,
+      website: (c["website"] as string | null | undefined) ?? null,
+      logoUrl: (c["logoUrl"] as string | null | undefined) ?? null,
+      confidenceLevel: (c["confidenceLevel"] as string | null | undefined) ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function detailsOf(r: Row): TransactionDetails {
+  return {
+    datetime: r.datetime,
+    authorizedDatetime: r.authorizedDatetime,
+    originalDescription: r.originalDescription,
+    location: anyOf({
+      address: r.locationAddress,
+      city: r.locationCity,
+      region: r.locationRegion,
+      postalCode: r.locationPostalCode,
+      country: r.locationCountry,
+      lat: r.locationLat,
+      lon: r.locationLon,
+      storeNumber: r.locationStoreNumber,
+    }),
+    merchant: anyOf({
+      entityId: r.merchantEntityId,
+      categoryCode: r.merchantCategoryCode,
+      logoUrl: r.logoUrl,
+      website: r.website,
+    }),
+    categoryConfidence: r.categoryConfidence,
+    payment: anyOf({
+      method: r.paymentMethod,
+      processor: r.paymentProcessor,
+      reference: r.paymentReference,
+      reason: r.paymentReason,
+      byOrderOf: r.paymentByOrderOf,
+      ppdId: r.paymentPpdId,
+    }),
+    counterparties: parseCounterparties(r.counterpartiesJson),
+  };
+}
+
+/** When the purchase was made: the authorized date, else the posted date. */
+const transactionDate = sql<string>`coalesce(${transactions.authorizedDate}, ${transactions.date})`;
+
 function orderBy(sort: Sort): SQL[] {
-  const tieBreak = [desc(transactions.date), desc(transactions.id)];
+  const tieBreak = [desc(transactionDate), desc(transactions.date), desc(transactions.id)];
   switch (sort) {
+    case "date_desc":
+      return [desc(transactions.date), desc(transactions.id)];
+    case "txdate_asc":
+      return [asc(transactionDate), asc(transactions.date), asc(transactions.id)];
     case "date_asc":
       return [asc(transactions.date), asc(transactions.id)];
     case "amount_asc":
@@ -293,10 +508,23 @@ export function listTransactions(
   const conditions: SQL[] = [
     or(eq(plaidItems.environment, query.environment), sql`${accounts.plaidItemId} IS NULL`)!,
   ];
-  if (query.accountId !== undefined) conditions.push(eq(transactions.accountId, query.accountId));
-  if (query.from) conditions.push(gte(transactions.date, query.from));
-  if (query.to) conditions.push(lte(transactions.date, query.to));
+  // Hidden accounts stay out of the list, unless one is asked for by name.
+  if (query.accountId === undefined) conditions.push(eq(accounts.hidden, false));
+  else conditions.push(eq(transactions.accountId, query.accountId));
+  // From/to use the transaction date, unless the posted date is asked for.
+  const day: SQL<string> =
+    query.dateBasis === "posted" ? sql<string>`${transactions.date}` : transactionDate;
+  if (query.from) conditions.push(gte(day, query.from));
+  if (query.to) conditions.push(lte(day, query.to));
   if (query.pending !== undefined) conditions.push(eq(transactions.pending, query.pending));
+  if (query.institution === "manual") conditions.push(isNull(accounts.plaidItemId));
+  else if (query.institution !== undefined) {
+    conditions.push(eq(plaidItems.institutionName, query.institution));
+  }
+  if (query.online !== undefined) {
+    const isOnline = sql`coalesce(${transactions.onlineUser}, ${transactions.paymentChannel} = 'online', 0)`;
+    conditions.push(query.online ? sql`${isOnline} = 1` : sql`${isOnline} = 0`);
+  }
   if (query.category === "none") conditions.push(isNull(transactions.categoryId));
   else if (query.category !== undefined) {
     // Choosing a parent category includes its subcategories.
@@ -321,6 +549,8 @@ export function listTransactions(
         matches(transactions.merchantNameUser),
         matches(transactions.recipient),
         matches(transactions.recipientUser),
+        matches(transactions.sender),
+        matches(transactions.senderUser),
         matches(transactions.notesUser),
         matches(categories.name),
       )!,
@@ -340,18 +570,49 @@ export function listTransactions(
 
   const rows = selectTransactions(db)
     .where(where)
-    .orderBy(...orderBy(query.sort ?? "date_desc"))
+    .orderBy(...orderBy(query.sort ?? "txdate_desc"))
     .limit(query.pageSize)
     .offset((query.page - 1) * query.pageSize)
     .all();
 
-  return { items: rows.map(toDto), total, page: query.page, pageSize: query.pageSize };
+  return {
+    items: withTransferPartners(db, rows),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
 }
 
 export function getTransaction(db: AppDb, id: number): TransactionDto {
   const row = selectTransactions(db).where(eq(transactions.id, id)).get();
   if (!row) throw notFound("That transaction");
-  return toDto(row);
+  return withTransferPartners(db, [row])[0]!;
+}
+
+/** Turns rows into DTOs, naming the other side of each automatically matched transfer. */
+function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
+  const ids = [
+    ...new Set(rows.map((r) => r.transferPairId).filter((id): id is number => id !== null)),
+  ];
+  const partners = new Map<number, NonNullable<TransactionDto["transferWith"]>>();
+  if (ids.length > 0) {
+    for (const p of selectTransactions(db).where(inArray(transactions.id, ids)).all()) {
+      partners.set(p.id, {
+        id: p.id,
+        accountName: p.accountName,
+        institutionName: p.institutionName,
+        accountType: p.accountType,
+        date: p.date,
+        transactionDate: p.authorizedDate ?? p.date,
+        merchant: toDto(p).merchant,
+      });
+    }
+  }
+  return rows.map((r) => {
+    const dto = toDto(r);
+    dto.transferWith = r.transferPairId === null ? null : (partners.get(r.transferPairId) ?? null);
+    return dto;
+  });
 }
 
 // ---- Editing ---------------------------------------------------------------------------
@@ -363,7 +624,16 @@ export interface TransactionPatch {
   merchant?: string | null | undefined;
   /** The person on the other side of a transfer; null or empty goes back to the detected one. */
   recipient?: string | null | undefined;
+  /** Who sent the money (for money coming in); null or empty goes back to the detected one. */
+  sender?: string | null | undefined;
   notes?: string | null | undefined;
+  /** Whether this was an online purchase: true or false is the user's call; null goes back to the bank's. */
+  online?: boolean | null | undefined;
+  /**
+   * Whether this is a transfer between the user's own accounts (so it is not counted as income or
+   * spending). `null` lets the app decide again by matching it with the other side.
+   */
+  isTransfer?: boolean | null | undefined;
 }
 
 const blankToNull = (text: string | null): string | null => {
@@ -378,7 +648,12 @@ const blankToNull = (text: string | null): string | null => {
  */
 export function updateTransaction(db: AppDb, id: number, patch: TransactionPatch): TransactionDto {
   const current = db
-    .select({ categorySource: transactions.categorySource })
+    .select({
+      categorySource: transactions.categorySource,
+      categoryId: transactions.categoryId,
+      onlineUser: transactions.onlineUser,
+      paymentChannel: transactions.paymentChannel,
+    })
     .from(transactions)
     .where(eq(transactions.id, id))
     .get();
@@ -415,7 +690,19 @@ export function updateTransaction(db: AppDb, id: number, patch: TransactionPatch
   }
   if (patch.merchant !== undefined) changes.merchantNameUser = blankToNull(patch.merchant);
   if (patch.recipient !== undefined) changes.recipientUser = blankToNull(patch.recipient);
+  if (patch.sender !== undefined) changes.senderUser = blankToNull(patch.sender);
   if (patch.notes !== undefined) changes.notesUser = blankToNull(patch.notes);
+  if (patch.online !== undefined) {
+    // The bank's answer is always kept; the user's is stored only while it differs from it.
+    const bankSays = current.paymentChannel === "online";
+    changes.onlineUser = patch.online === null || patch.online === bankSays ? null : patch.online;
+    // A category chosen by hand still follows the online flag between Food & Drink and Dining Out.
+    if (source === "manual" && patch.categoryId === undefined) {
+      const online = isOnline({ onlineUser: patch.online, paymentChannel: current.paymentChannel });
+      const next = splitCategory(getDiningSplit(db), current.categoryId, online);
+      if (next !== current.categoryId) changes.categoryId = next;
+    }
+  }
 
   db.transaction((tx) => {
     tx.update(transactions)
@@ -425,5 +712,6 @@ export function updateTransaction(db: AppDb, id: number, patch: TransactionPatch
     // The merchant or recipient may now match a different rule, unless the category is the user's.
     if (source !== "manual") applyRules(tx, [id]);
   });
+  if (patch.isTransfer !== undefined) setTransferFlag(db, id, patch.isTransfer);
   return getTransaction(db, id);
 }

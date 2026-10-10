@@ -10,7 +10,13 @@ import {
   merchantKey,
   nextAfter,
 } from "./services/recurring.service.js";
-import { linkDemoBank, makeSyncHarness, makeTestApp } from "./test-helpers.js";
+import {
+  linkDemoBank,
+  makeSyncHarness,
+  makeTestApp,
+  truncatedMigrations,
+  TEST_DB_KEY,
+} from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -106,13 +112,18 @@ describe("dates and names", () => {
 });
 
 describe("building series from transactions", () => {
-  const row = (date: string, merchant: string, amount_minor: number, account = "Checking") => ({
-    date,
-    key_name: merchant,
-    merchant,
-    amount_minor,
-    account,
-  });
+  const row = (
+    date: string,
+    merchant: string,
+    amount_minor: number,
+    account = "Checking",
+  ): {
+    date: string;
+    key_name: string;
+    merchant: string | null;
+    amount_minor: number;
+    account: string;
+  } => ({ date, key_name: merchant, merchant, amount_minor, account });
   const series = (
     rows: ReturnType<typeof row>[],
     today = "2026-10-05",
@@ -608,26 +619,16 @@ describe("named dashboards", () => {
 describe("migrating an existing dashboard to named dashboards", () => {
   const MIGRATIONS = path.resolve(import.meta.dirname, "../../drizzle/migrations");
 
-  /** A migrations folder as it was before the dashboards migration. */
+  /** A migrations folder as it was before the dashboards migration (0000 to 0005). */
   function oldMigrations(): string {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pf-mig-"));
-    fs.mkdirSync(path.join(dir, "meta"));
-    const journal = JSON.parse(
-      fs.readFileSync(path.join(MIGRATIONS, "meta", "_journal.json"), "utf8"),
-    );
-    const last = journal.entries.at(-1);
-    expect(last.tag).toBe("0006_multi_dashboards");
-    journal.entries = journal.entries.slice(0, -1);
-    fs.writeFileSync(path.join(dir, "meta", "_journal.json"), JSON.stringify(journal));
-    for (const e of journal.entries)
-      fs.copyFileSync(path.join(MIGRATIONS, `${e.tag}.sql`), path.join(dir, `${e.tag}.sql`));
+    const dir = truncatedMigrations(6);
     cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
     return dir;
   }
 
   function oldDatabase(initialized: boolean) {
     const data = fs.mkdtempSync(path.join(os.tmpdir(), "pf-migdb-"));
-    const { db, sqlite } = createDb({ dataDir: data });
+    const { db, sqlite } = createDb({ dataDir: data, key: TEST_DB_KEY });
     runMigrations(db, oldMigrations());
     const now = new Date().toISOString();
     for (const [i, type] of ["net-worth", "calendar"].entries()) {

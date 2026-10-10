@@ -27,6 +27,7 @@ import {
   type LinkTokenRequest,
   type PlaidEnvironment,
   type PlaidGateway,
+  type InstitutionBranding,
 } from "./gateway.js";
 
 const CLIENT_NAME = "Personal Finance";
@@ -142,9 +143,46 @@ function mapTransaction(t: Transaction): GatewayTransaction {
     paymentChannel: t.payment_channel ? String(t.payment_channel) : null,
     categoryPrimary: t.personal_finance_category?.primary ?? null,
     categoryDetailed: t.personal_finance_category?.detailed ?? null,
-    counterparties: (t.counterparties ?? []).map((c) => ({ name: c.name, type: String(c.type) })),
+    counterparties: (t.counterparties ?? []).map((c) => ({
+      name: c.name,
+      type: String(c.type),
+      entityId: c.entity_id ?? null,
+      website: c.website ?? null,
+      logoUrl: c.logo_url ?? null,
+      confidenceLevel: c.confidence_level ?? null,
+    })),
     paymentPayee: t.payment_meta?.payee ?? null,
     paymentPayer: t.payment_meta?.payer ?? null,
+    datetime: t.datetime ?? null,
+    authorizedDatetime: t.authorized_datetime ?? null,
+    originalDescription: t.original_description ?? null,
+    location: t.location
+      ? {
+          address: t.location.address ?? null,
+          city: t.location.city ?? null,
+          region: t.location.region ?? null,
+          postalCode: t.location.postal_code ?? null,
+          country: t.location.country ?? null,
+          lat: t.location.lat ?? null,
+          lon: t.location.lon ?? null,
+          storeNumber: t.location.store_number ?? null,
+        }
+      : null,
+    merchantEntityId: t.merchant_entity_id ?? null,
+    merchantCategoryCode: t.merchant_category_code ?? null,
+    logoUrl: t.logo_url ?? null,
+    website: t.website ?? null,
+    categoryConfidence: t.personal_finance_category?.confidence_level ?? null,
+    payment: t.payment_meta
+      ? {
+          method: t.payment_meta.payment_method ?? null,
+          processor: t.payment_meta.payment_processor ?? null,
+          reference: t.payment_meta.reference_number ?? null,
+          reason: t.payment_meta.reason ?? null,
+          byOrderOf: t.payment_meta.by_order_of ?? null,
+          ppdId: t.payment_meta.ppd_id ?? null,
+        }
+      : null,
   };
 }
 
@@ -155,6 +193,41 @@ function mapSecurity(s: Security): GatewaySecurity {
     name: s.name ?? s.ticker_symbol ?? "Unknown security",
     type: s.type ?? null,
     currency: s.iso_currency_code ?? s.unofficial_currency_code ?? "USD",
+    subtype: s.subtype ?? null,
+    isin: s.isin ?? null,
+    cusip: s.cusip ?? null,
+    sedol: s.sedol ?? null,
+    figi: s.figi ?? null,
+    cfiCode: s.cfi_code ?? null,
+    institutionSecurityId: s.institution_security_id ?? null,
+    proxySecurityId: s.proxy_security_id ?? null,
+    marketIdentifierCode: s.market_identifier_code ?? null,
+    isCashEquivalent: s.is_cash_equivalent ?? null,
+    closePrice: s.close_price ?? null,
+    closePriceAsOf: s.close_price_as_of ?? null,
+    sector: s.sector ?? null,
+    industry: s.industry ?? null,
+    updatedAt: s.update_datetime ?? null,
+    option: s.option_contract
+      ? {
+          contractType: s.option_contract.contract_type ?? null,
+          expiration: s.option_contract.expiration_date ?? null,
+          strike: s.option_contract.strike_price ?? null,
+          underlying: s.option_contract.underlying_security_ticker ?? null,
+        }
+      : null,
+    fixedIncome: s.fixed_income
+      ? {
+          yieldRate: s.fixed_income.yield_rate?.percentage ?? null,
+          yieldType: s.fixed_income.yield_rate?.type
+            ? String(s.fixed_income.yield_rate.type)
+            : null,
+          maturityDate: s.fixed_income.maturity_date ?? null,
+          issueDate: s.fixed_income.issue_date ?? null,
+          faceValue: s.fixed_income.face_value ?? null,
+        }
+      : null,
+    raw: s,
   };
 }
 
@@ -168,6 +241,11 @@ function mapHolding(h: Holding): GatewayHolding {
     costBasis: h.cost_basis ?? null,
     currency: h.iso_currency_code ?? h.unofficial_currency_code ?? "USD",
     asOf: h.institution_price_datetime ?? h.institution_price_as_of ?? null,
+    vestedQuantity: h.vested_quantity ?? null,
+    vestedValue: h.vested_value ?? null,
+    priceAsOf: h.institution_price_as_of ?? null,
+    priceDatetime: h.institution_price_datetime ?? null,
+    raw: h,
   };
 }
 
@@ -198,6 +276,10 @@ function mapInvestmentTransaction(t: InvestmentTransaction): GatewayInvestmentTr
     amount: t.amount,
     fees: t.fees ?? null,
     currency: t.iso_currency_code ?? t.unofficial_currency_code ?? "USD",
+    subtype: t.subtype ? String(t.subtype) : null,
+    datetime: t.transaction_datetime ?? null,
+    cancelTransactionId: t.cancel_transaction_id ?? null,
+    raw: t,
   };
 }
 
@@ -243,7 +325,8 @@ export class RealPlaidGateway implements PlaidGateway {
         access_token: accessToken,
         ...(cursor ? { cursor } : {}),
         count: 500,
-        options: { include_personal_finance_category: true },
+        // The original description (the bank's own wording) is only sent when asked for.
+        options: { include_personal_finance_category: true, include_original_description: true },
       });
       return {
         added: data.added.map(mapTransaction),
@@ -334,6 +417,23 @@ export class RealPlaidGateway implements PlaidGateway {
         country_codes: COUNTRY_CODES,
       });
       return response.data.institution.name;
+    } catch (error) {
+      throw toGatewayError(error);
+    }
+  }
+
+  async getInstitutionBranding(institutionId: string): Promise<InstitutionBranding> {
+    try {
+      const response = await this.api.institutionsGetById({
+        institution_id: institutionId,
+        country_codes: COUNTRY_CODES,
+        options: { include_optional_metadata: true },
+      });
+      const institution = response.data.institution;
+      // Plaid sends the logo as a base64 PNG.
+      const logo = institution.logo ? `data:image/png;base64,${institution.logo}` : null;
+      const color = institution.primary_color ?? null;
+      return { logo, color: color && /^#[0-9a-f]{6}$/i.test(color) ? color : null };
     } catch (error) {
       throw toGatewayError(error);
     }

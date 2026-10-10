@@ -1,10 +1,24 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { api, errorMessage } from "../../api/client";
 import { categoryOptions } from "../../hooks/useCategories";
+import { cashbackBadge, formatRate } from "../../lib/cashback";
+import { Attachments } from "./Attachments";
+import { transferLabel } from "../../lib/transferLabel";
 import { formatMinor } from "../../lib/money";
 import { categoryLabel, formatDay } from "../../lib/time";
 import type { Category, Rule, RulePreview, Transaction } from "../../types/api";
 import { Modal } from "../common/Modal";
+import { BankDetails } from "./BankDetails";
+
+type TransferChoice = "auto" | "yes" | "no";
+type OnlineChoice = "auto" | "yes" | "no";
+
+/** What the bank's payment channel says about whether a purchase was online, in words. */
+function bankOnlineText(t: Transaction): string {
+  if (t.providerOnline === true) return "online";
+  if (t.providerOnline === false) return "in store";
+  return t.paymentChannel ? `not clear (“${t.paymentChannel}”)` : "not given";
+}
 
 interface Props {
   transaction: Transaction;
@@ -36,10 +50,18 @@ function categorySourceText(t: Transaction): string {
 export function TransactionDetail({ transaction: t, categories, onClose, onSaved }: Props) {
   const id = useId();
   const [merchant, setMerchant] = useState(t.merchantEdited ? t.merchant : "");
-  const [recipient, setRecipient] = useState(
-    t.recipientSource === "manual" ? (t.recipient ?? "") : "",
-  );
+  // The other party is a recipient when money went out and a sender when it came in.
+  const incoming = t.amountMinor < 0;
+  const detectedPerson = incoming ? t.providerSender : t.providerRecipient;
+  const personWasEdited = incoming ? t.senderSource === "manual" : t.recipientSource === "manual";
+  const personOnRecord = (incoming ? t.sender : t.recipient) ?? "";
+  const [person, setPerson] = useState(personWasEdited ? personOnRecord : "");
   const [notes, setNotes] = useState(t.notes ?? "");
+  const initialTransfer: TransferChoice =
+    t.transferSource === "manual" ? (t.isTransfer ? "yes" : "no") : "auto";
+  const [transfer, setTransfer] = useState<TransferChoice>(initialTransfer);
+  const initialOnline: OnlineChoice = t.onlineEdited ? (t.online ? "yes" : "no") : "auto";
+  const [online, setOnline] = useState<OnlineChoice>(initialOnline);
   const [categoryId, setCategoryId] = useState<string>(t.category ? String(t.category.id) : "");
   const [makeRule, setMakeRule] = useState(false);
   const [preview, setPreview] = useState<RulePreview | null>(null);
@@ -78,10 +100,17 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
       if (categoryChanged) patch["categoryId"] = categoryId === "" ? null : Number(categoryId);
       if (merchant.trim() !== (t.merchantEdited ? t.merchant : ""))
         patch["merchant"] = merchant.trim() || null;
-      if (recipient.trim() !== (t.recipientSource === "manual" ? (t.recipient ?? "") : "")) {
-        patch["recipient"] = recipient.trim() || null;
+      if (person.trim() !== (personWasEdited ? personOnRecord : "")) {
+        patch[incoming ? "sender" : "recipient"] = person.trim() || null;
       }
       if (notes.trim() !== (t.notes ?? "")) patch["notes"] = notes.trim() || null;
+      if (transfer !== initialTransfer) {
+        patch["isTransfer"] = transfer === "auto" ? null : transfer === "yes";
+      }
+
+      if (online !== initialOnline) {
+        patch["online"] = online === "auto" ? null : online === "yes";
+      }
 
       let updated = t;
       if (Object.keys(patch).length > 0) {
@@ -149,6 +178,26 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
             {t.accountName}
             {t.institutionName ? ` · ${t.institutionName}` : ""}
           </Field>
+          {t.cashback && (
+            <Field label="Cashback">
+              {t.cashback.status === "missed"
+                ? "None: not paid with a credit card"
+                : `${formatMinor(t.cashback.cashbackMinor, t.currency)} at ${formatRate(t.cashback.rateBps)}${t.cashback.online ? " (online rate)" : ""}`}
+              <span className="text-slate-500">
+                {" "}
+                · {cashbackBadge(t.cashback).title} Cashback is kept apart from balances until the
+                card pays it as a credit.
+              </span>
+            </Field>
+          )}
+          <Field label="Online purchase">
+            {t.online ? "Yes, online" : "No"}
+            <span className="text-slate-500">
+              {t.onlineEdited
+                ? ` · set by you (the bank says ${bankOnlineText(t)})`
+                : ` · from the bank (${bankOnlineText(t)})`}
+            </span>
+          </Field>
           <Field label="Bank description">
             <span className="break-words">{t.name}</span>
           </Field>
@@ -159,6 +208,8 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
             ) : null}
           </Field>
         </dl>
+
+        <BankDetails details={t.details} />
 
         <div>
           <label htmlFor={`${id}-merchant`} className="block text-sm font-medium">
@@ -220,23 +271,79 @@ export function TransactionDetail({ transaction: t, categories, onClose, onSaved
         </div>
 
         <div>
-          <label htmlFor={`${id}-recipient`} className="block text-sm font-medium">
-            Recipient or sender
+          <label htmlFor={`${id}-person`} className="block text-sm font-medium">
+            {incoming ? "Sender" : "Recipient"}
           </label>
           <input
-            id={`${id}-recipient`}
-            value={recipient}
+            id={`${id}-person`}
+            value={person}
             maxLength={100}
-            placeholder={t.providerRecipient ?? "Who was this sent to or received from?"}
-            onChange={(e) => setRecipient(e.target.value)}
+            placeholder={
+              detectedPerson ??
+              (incoming ? "Who sent you this money?" : "Who was this paid or sent to?")
+            }
+            onChange={(e) => setPerson(e.target.value)}
             className={inputClass}
           />
           <p className="mt-1 text-xs text-slate-500">
-            {t.providerRecipient
-              ? `Detected: ${t.providerRecipient}. Leave blank to use it.`
-              : "Useful for transfers such as Zelle."}
+            {detectedPerson
+              ? `Detected: ${detectedPerson}. Leave blank to use it.`
+              : incoming
+                ? "Who sent you this money. Useful for transfers such as Zelle."
+                : "Useful for transfers such as Zelle."}
           </p>
         </div>
+
+        <div>
+          <label htmlFor={`${id}-transfer`} className="block text-sm font-medium">
+            Transfer between my own accounts
+          </label>
+          <select
+            id={`${id}-transfer`}
+            value={transfer}
+            onChange={(e) => setTransfer(e.target.value as TransferChoice)}
+            className={inputClass}
+          >
+            <option value="auto">
+              Let the app decide (now:{" "}
+              {t.isTransfer && t.transferSource !== "manual" ? "yes" : "no"})
+            </option>
+            <option value="yes">Yes, money moved between my own accounts</option>
+            <option value="no">No, this is income or spending</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            {t.transferWith && t.transferSource === "auto"
+              ? `${transferLabel(t)}, ${formatDay(t.transferWith.transactionDate)}. `
+              : ""}
+            Transfers between your own accounts are left out of income and spending. Money sent to
+            or received from another person counts.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor={`${id}-online`} className="block text-sm font-medium">
+            Bought online
+          </label>
+          <select
+            id={`${id}-online`}
+            value={online}
+            onChange={(e) => setOnline(e.target.value as OnlineChoice)}
+            className={inputClass}
+          >
+            <option value="auto">
+              Use the bank&apos;s answer (now: {t.providerOnline === true ? "online" : "not online"}
+              )
+            </option>
+            <option value="yes">Yes, this was bought online</option>
+            <option value="no">No, this was not bought online</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Cards with an online cashback rate use this. The bank&apos;s answer is a guess and is
+            sometimes wrong, and your choice is kept when the account syncs.
+          </p>
+        </div>
+
+        <Attachments transactionId={t.id} />
 
         <div>
           <label htmlFor={`${id}-notes`} className="block text-sm font-medium">

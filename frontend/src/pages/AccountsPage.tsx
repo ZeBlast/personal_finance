@@ -1,7 +1,11 @@
+import { AccountName } from "../components/common/AccountName";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, errorMessage } from "../api/client";
 import { ConfirmDialog } from "../components/common/Modal";
 import { LimitHistory } from "../components/accounts/LimitHistory";
+import { CashbackSection } from "../components/accounts/CashbackSection";
+import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
+import { ManualAccountsSection } from "../components/accounts/ManualAccountsSection";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { formatMinor } from "../lib/money";
 import { announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
@@ -16,14 +20,22 @@ const STATUS_LABEL: Record<ItemStatus, { text: string; className: string }> = {
   error: { text: "Problem", className: "bg-red-100 text-red-800" },
 };
 
-function AccountRow({ account }: { account: Account }) {
+function AccountRow({
+  account,
+  onChanged,
+  onError,
+}: {
+  account: Account;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
   const isCredit = account.type === "credit";
   const used =
     isCredit && account.creditLimitMinor && account.currentBalanceMinor !== null
       ? Math.round((account.currentBalanceMinor / account.creditLimitMinor) * 100)
       : null;
   return (
-    <li className="py-2 text-sm">
+    <li className={`py-2 text-sm ${account.hidden ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -32,7 +44,12 @@ function AccountRow({ account }: { account: Account }) {
             style={{ backgroundColor: account.color ?? "#94a3b8" }}
           />
           <div className="min-w-0">
-            <div className="truncate font-medium">{account.name}</div>
+            <div className="flex items-center gap-2">
+              <span className="truncate font-medium">
+                <AccountName name={account.name} institutionName={account.institutionName} />
+              </span>
+              {account.hidden && <HiddenBadge />}
+            </div>
             <div className="text-xs text-slate-500">
               {[account.subtype ?? account.type, account.mask ? `••${account.mask}` : null]
                 .filter(Boolean)
@@ -40,24 +57,28 @@ function AccountRow({ account }: { account: Account }) {
             </div>
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="font-medium">
-            {formatMinor(account.currentBalanceMinor, account.currency)}
+        <div className="flex shrink-0 items-center gap-3 text-right">
+          <div>
+            <div className="font-medium">
+              {formatMinor(account.currentBalanceMinor, account.currency)}
+            </div>
+            <div className="text-xs text-slate-500">
+              {isCredit
+                ? account.creditLimitMinor
+                  ? `balance owed · limit ${formatMinor(account.creditLimitMinor, account.currency)}${
+                      used === null ? "" : ` · ${used}% used`
+                    }`
+                  : "balance owed"
+                : account.availableBalanceMinor !== null
+                  ? `${formatMinor(account.availableBalanceMinor, account.currency)} available`
+                  : "current balance"}
+            </div>
           </div>
-          <div className="text-xs text-slate-500">
-            {isCredit
-              ? account.creditLimitMinor
-                ? `balance owed · limit ${formatMinor(account.creditLimitMinor, account.currency)}${
-                    used === null ? "" : ` · ${used}% used`
-                  }`
-                : "balance owed"
-              : account.availableBalanceMinor !== null
-                ? `${formatMinor(account.availableBalanceMinor, account.currency)} available`
-                : "current balance"}
-          </div>
+          <HideToggle account={account} onChanged={onChanged} onError={onError} />
         </div>
       </div>
       {isCredit && <LimitHistory account={account} />}
+      {isCredit && <CashbackSection account={account} />}
     </li>
   );
 }
@@ -268,9 +289,17 @@ export function AccountsPage() {
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${label.className}`}>
                   {label.text}
                 </span>
+                {item.borrowed && (
+                  <span
+                    className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900"
+                    title="This connection belongs to your real app. This copy can read it, but cannot disconnect or repair it."
+                  >
+                    Borrowed · read-only
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {item.status === "login_required" && (
+                {item.status === "login_required" && !item.borrowed && (
                   <ConnectButton
                     label="Reconnect"
                     primary
@@ -298,10 +327,17 @@ export function AccountsPage() {
                   }}
                   className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
                 >
-                  Disconnect
+                  {item.borrowed ? "Remove from this copy" : "Disconnect"}
                 </button>
               </div>
             </header>
+
+            {item.borrowed && (
+              <p className="mt-1 text-xs text-violet-800 dark:text-violet-300">
+                Borrowed from your real app. It syncs only when you press Sync now, and signing in
+                again or disconnecting has to be done in the real app.
+              </p>
+            )}
 
             <p className="mt-1 text-xs text-slate-500">
               {item.lastSuccessfulSyncAt
@@ -317,7 +353,12 @@ export function AccountsPage() {
 
             <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-700">
               {item.accounts.map((account) => (
-                <AccountRow key={account.id} account={account} />
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  onChanged={() => void load()}
+                  onError={(text) => setNotice({ kind: "error", text })}
+                />
               ))}
               {item.accounts.length === 0 && (
                 <li className="py-2 text-sm text-slate-500">No accounts loaded yet.</li>
@@ -349,12 +390,20 @@ export function AccountsPage() {
       {disconnecting && (
         <ConfirmDialog
           title={
-            localOnly
-              ? "Delete the local copy only?"
-              : `Disconnect ${disconnecting.institutionName}?`
+            disconnecting.borrowed
+              ? `Remove ${disconnecting.institutionName} from this copy?`
+              : localOnly
+                ? "Delete the local copy only?"
+                : `Disconnect ${disconnecting.institutionName}?`
           }
           message={
-            localOnly ? (
+            disconnecting.borrowed ? (
+              <>
+                This only removes the borrowed copy and what it imported from this app. Plaid is not
+                told anything, so the connection in your real app is not affected. You can borrow it
+                again later.
+              </>
+            ) : localOnly ? (
               <>
                 {disconnectCause === "token_unreadable"
                   ? "This app can no longer read the saved connection (its encryption key changed), so it cannot tell Plaid to disconnect."
@@ -372,7 +421,13 @@ export function AccountsPage() {
               </>
             )
           }
-          confirmLabel={localOnly ? "Delete local copy" : "Disconnect"}
+          confirmLabel={
+            disconnecting.borrowed
+              ? "Remove from this copy"
+              : localOnly
+                ? "Delete local copy"
+                : "Disconnect"
+          }
           danger
           busy={disconnectBusy}
           onConfirm={() => void disconnect()}
@@ -383,6 +438,8 @@ export function AccountsPage() {
           }}
         />
       )}
+
+      <ManualAccountsSection />
     </section>
   );
 }

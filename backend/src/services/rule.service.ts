@@ -1,10 +1,16 @@
 import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
-import { categories, transactionRules, transactions } from "../../../drizzle/schema.js";
+import {
+  appSettings,
+  categories,
+  transactionRules,
+  transactions,
+} from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
+import { merchantKey } from "../utils/merchant.js";
 
-export const RULE_FIELDS = ["merchant", "name", "recipient", "plaid_category"] as const;
-export const RULE_OPERATORS = ["equals", "contains", "starts_with"] as const;
+export const RULE_FIELDS = ["merchant", "name", "recipient", "sender", "plaid_category"] as const;
+export const RULE_OPERATORS = ["equals", "contains", "starts_with", "same_merchant"] as const;
 export type RuleField = (typeof RULE_FIELDS)[number];
 export type RuleOperator = (typeof RULE_OPERATORS)[number];
 
@@ -16,6 +22,7 @@ export interface RuleSubject {
   merchant: string;
   name: string;
   recipient: string | null;
+  sender: string | null;
   plaidPrimary: string | null;
   plaidDetailed: string | null;
 }
@@ -37,6 +44,8 @@ function candidates(field: RuleField, subject: RuleSubject): string[] {
       return [subject.name];
     case "recipient":
       return subject.recipient ? [subject.recipient] : [];
+    case "sender":
+      return subject.sender ? [subject.sender] : [];
     case "plaid_category":
       // The bank's category matches at either level: "FOOD_AND_DRINK" or "FOOD_AND_DRINK_GROCERIES".
       return [subject.plaidDetailed, subject.plaidPrimary].filter((v): v is string => !!v);
@@ -47,6 +56,13 @@ function candidates(field: RuleField, subject: RuleSubject): string[] {
 export function ruleMatches(rule: RuleLike, subject: RuleSubject): boolean {
   const wanted = norm(rule.matchValue);
   if (wanted === "") return false;
+  if (rule.operator === "same_merchant") {
+    // The same place, ignoring case, store numbers and reference ids.
+    const key = merchantKey(rule.matchValue);
+    return (
+      key !== "" && candidates(rule.field, subject).some((value) => merchantKey(value) === key)
+    );
+  }
   return candidates(rule.field, subject).some((value) => {
     const have = norm(value);
     switch (rule.operator) {
@@ -56,6 +72,8 @@ export function ruleMatches(rule: RuleLike, subject: RuleSubject): boolean {
         return have.includes(wanted);
       case "starts_with":
         return have.startsWith(wanted);
+      case "same_merchant":
+        return false; // handled above
     }
   });
 }
@@ -100,12 +118,62 @@ const subjectColumns = {
   merchantNameUser: transactions.merchantNameUser,
   recipient: transactions.recipient,
   recipientUser: transactions.recipientUser,
+  sender: transactions.sender,
+  senderUser: transactions.senderUser,
   plaidPrimary: transactions.plaidCategoryPrimary,
   plaidDetailed: transactions.plaidCategoryDetailed,
   categoryId: transactions.categoryId,
   categorySource: transactions.categorySource,
   categoryRuleId: transactions.categoryRuleId,
+  onlineUser: transactions.onlineUser,
+  paymentChannel: transactions.paymentChannel,
 };
+
+// ---- Food & Drink: online stays, in person is Dining Out ----------------------------------------
+
+export const DINING_SPLIT_KEY = "dining_split";
+
+/**
+ * The pair of categories split by whether a purchase was online: the parent (Food & Drink) keeps
+ * online orders, and its subcategory (Dining Out) takes purchases made in person.
+ */
+export interface DiningSplit {
+  parentId: number;
+  childId: number;
+}
+
+export function getDiningSplit(db: Pick<AppDb, "select">): DiningSplit | null {
+  const row = db.select().from(appSettings).where(eq(appSettings.key, DINING_SPLIT_KEY)).get();
+  if (!row) return null;
+  try {
+    const value = JSON.parse(row.value) as Partial<DiningSplit>;
+    return typeof value.parentId === "number" && typeof value.childId === "number"
+      ? { parentId: value.parentId, childId: value.childId }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a transaction was bought online: the user's call if they made one, else the bank's. */
+export function isOnline(row: {
+  onlineUser: boolean | null;
+  paymentChannel: string | null;
+}): boolean {
+  return row.onlineUser ?? row.paymentChannel === "online";
+}
+
+/** Moves a purchase between Food & Drink (online) and Dining Out (in person); others stay. */
+export function splitCategory(
+  split: DiningSplit | null,
+  categoryId: number | null,
+  online: boolean,
+): number | null {
+  if (!split || categoryId === null) return categoryId;
+  if (categoryId === split.parentId && !online) return split.childId;
+  if (categoryId === split.childId && online) return split.parentId;
+  return categoryId;
+}
 
 function toSubject(row: {
   name: string;
@@ -113,6 +181,8 @@ function toSubject(row: {
   merchantNameUser: string | null;
   recipient: string | null;
   recipientUser: string | null;
+  sender: string | null;
+  senderUser: string | null;
   plaidPrimary: string | null;
   plaidDetailed: string | null;
 }): RuleSubject {
@@ -120,6 +190,7 @@ function toSubject(row: {
     merchant: row.merchantNameUser?.trim() || row.merchantName || row.name,
     name: row.name,
     recipient: row.recipientUser?.trim() || row.recipient,
+    sender: row.senderUser?.trim() || row.sender,
     plaidPrimary: row.plaidPrimary,
     plaidDetailed: row.plaidDetailed,
   };
@@ -156,10 +227,11 @@ export function applyRules(db: Writer, ids?: number[]): ApplyResult {
             .where(and(inArray(transactions.id, ids), notManual))
             .all();
 
+  const split = getDiningSplit(db);
   let changed = 0;
   for (const row of rows) {
     const match = firstMatch(rules, toSubject(row));
-    const nextCategory = match?.categoryId ?? null;
+    const nextCategory = splitCategory(split, match?.categoryId ?? null, isOnline(row));
     const nextRule = match?.id ?? null;
     const nextSource = match ? "rule" : null;
     if (

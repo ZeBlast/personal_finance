@@ -7,6 +7,7 @@ import { createApp } from "./app.js";
 import { loadEnv } from "./config/env.js";
 import { createDb, runMigrations, type AppDb } from "./db/client.js";
 import { createCipher } from "./services/crypto.js";
+import { TEST_DB_KEY } from "./test-helpers.js";
 
 const cipher = createCipher("ab".repeat(32));
 const PORT = 47999;
@@ -20,7 +21,7 @@ let app: ReturnType<typeof createApp>;
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "pf-test-"));
-  const { db, sqlite } = createDb({ dataDir: dir });
+  const { db, sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
   runMigrations(db, MIGRATIONS);
   testDb = db;
   app = createApp({ db, port: PORT, token: TOKEN, version: "9.9.9", cipher });
@@ -171,7 +172,7 @@ describe("settings", () => {
 
 describe("database", () => {
   it("applies migrations repeatedly without error", () => {
-    const { db, sqlite } = createDb({ dataDir: dir });
+    const { db, sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
     expect(() => {
       runMigrations(db, MIGRATIONS);
       runMigrations(db, MIGRATIONS);
@@ -180,13 +181,13 @@ describe("database", () => {
   });
 
   it("fails clearly when migrations are missing", () => {
-    const { db, sqlite } = createDb({ dataDir: dir });
+    const { db, sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
     expect(() => runMigrations(db, path.join(dir, "nothing-here"))).toThrow(/Migrations not found/);
     sqlite.close();
   });
 
   it("enables foreign keys and WAL", () => {
-    const { sqlite } = createDb({ dataDir: dir });
+    const { sqlite } = createDb({ dataDir: dir, key: TEST_DB_KEY });
     expect(sqlite.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(sqlite.pragma("journal_mode", { simple: true })).toBe("wal");
     sqlite.close();

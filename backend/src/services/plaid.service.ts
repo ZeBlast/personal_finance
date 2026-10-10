@@ -32,6 +32,8 @@ export interface ItemSummary {
   daysRequested: number;
   lastSuccessfulSyncAt: string | null;
   createdAt: string;
+  /** Belongs to another install of the app (a development copy): read-only here. */
+  borrowed: boolean;
   accounts: AccountSummary[];
 }
 
@@ -81,8 +83,23 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
       daysRequested: row.daysRequested,
       lastSuccessfulSyncAt: row.lastSuccessfulSyncAt,
       createdAt: row.createdAt,
+      borrowed: row.borrowed,
       accounts: listAccounts(db, row.id),
     };
+  }
+
+  /**
+   * A borrowed connection is read-only. Anything that would change the connection at Plaid
+   * (disconnecting it, signing in again, repairing it) is refused, because the access token is
+   * shared with the app that really owns it: disconnecting here would disconnect it there too.
+   */
+  function refuseIfBorrowed(row: ItemRow, what: string): void {
+    if (!row.borrowed) return;
+    throw new AppError(
+      409,
+      "borrowed_connection",
+      `${row.institutionName} is borrowed from your real app, so it cannot be ${what} from here. Do that in the real app.`,
+    );
   }
 
   function requireItem(id: number): ItemRow {
@@ -135,7 +152,7 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
       .run();
   }
 
-  return {
+  const service = {
     async createLinkToken(kind: LinkKind = "banking") {
       const gateway = getGateway();
       try {
@@ -217,6 +234,9 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
         warning = `Connected, but the accounts could not be loaded yet: ${failure.message}`;
       }
 
+      // The institution's logo, for showing which bank things happened at (best effort).
+      if (warning === undefined) await service.refreshBranding().catch(() => 0);
+
       const saved = requireItem(row.id);
       const duplicate = saved.institutionId
         ? db
@@ -239,6 +259,65 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
       };
     },
 
+    /**
+     * Looks up the logo and brand color of each connection's institution that has not been looked
+     * up yet (or not for a month), in the environment in use. Best effort: a failure leaves it for
+     * next time. Returns how many were updated.
+     */
+    async refreshBranding(options: { force?: boolean } = {}): Promise<number> {
+      const gateway = getGateway();
+      const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const rows = db
+        .select()
+        .from(plaidItems)
+        .where(eq(plaidItems.environment, gateway.environment))
+        .all()
+        .filter(
+          (r) =>
+            r.institutionId !== null &&
+            (options.force || r.brandingCheckedAt === null || r.brandingCheckedAt < monthAgo),
+        );
+      let updated = 0;
+      for (const row of rows) {
+        try {
+          const branding = await gateway.getInstitutionBranding(row.institutionId!);
+          db.update(plaidItems)
+            .set({
+              institutionLogo: branding.logo,
+              institutionColor: branding.color,
+              brandingCheckedAt: now(),
+            })
+            .where(eq(plaidItems.id, row.id))
+            .run();
+          updated += 1;
+        } catch {
+          // Try again next time.
+        }
+      }
+      return updated;
+    },
+
+    /** Each connection's institution, with its logo and color when known (current environment). */
+    institutions(): Array<{
+      itemId: number;
+      institutionName: string;
+      logo: string | null;
+      color: string | null;
+    }> {
+      // From the settings, not the gateway: listing logos must work even when Plaid is not set up.
+      const environment = getSettings(db).plaidEnvironment;
+      return db
+        .select({
+          itemId: plaidItems.id,
+          institutionName: plaidItems.institutionName,
+          logo: plaidItems.institutionLogo,
+          color: plaidItems.institutionColor,
+        })
+        .from(plaidItems)
+        .where(eq(plaidItems.environment, environment))
+        .all();
+    },
+
     /** Plaid's own ID for an Item; internal use (demo tools), not exposed in API summaries. */
     plaidItemIdOf(id: number): string {
       return requireItem(id).plaidItemId;
@@ -258,6 +337,7 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
 
     async createUpdateLinkToken(id: number) {
       const row = requireItem(id);
+      refuseIfBorrowed(row, "signed in again");
       const gateway = gatewayFor(row);
       try {
         const token = await gateway.createLinkToken({
@@ -299,6 +379,7 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
 
     async reauthenticated(id: number, publicToken: string | undefined): Promise<ItemSummary> {
       const row = requireItem(id);
+      refuseIfBorrowed(row, "signed in again");
       const gateway = gatewayFor(row);
       try {
         await gateway.completeReauthentication(readToken(row), publicToken);
@@ -314,6 +395,11 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
      */
     async remove(id: number, force: boolean): Promise<void> {
       const row = requireItem(id);
+      if (row.borrowed) {
+        // Only ever the local copy: Plaid is never told, so the real app's connection is untouched.
+        db.delete(plaidItems).where(eq(plaidItems.id, id)).run(); // accounts cascade
+        return;
+      }
       try {
         const gateway = gatewayFor(row);
         await gateway.removeItem(readToken(row));
@@ -334,6 +420,7 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
       db.delete(plaidItems).where(eq(plaidItems.id, id)).run(); // accounts cascade
     },
   };
+  return service;
 }
 
 export type PlaidService = ReturnType<typeof createPlaidService>;

@@ -7,8 +7,15 @@ import { ConfirmDialog } from "../components/common/Modal";
 import { CsvImportDialog } from "../components/investments/CsvImportDialog";
 import { HoldingsEditor } from "../components/investments/HoldingsEditor";
 import { ManualAccountDialog } from "../components/investments/ManualAccountDialog";
+import {
+  InvestmentTransactionDialog,
+  SecurityDetailDialog,
+} from "../components/investments/SecurityDetailDialog";
 import { buttonClass, primaryClass } from "../components/investments/styles";
 import { TransactionForm } from "../components/investments/TransactionForm";
+import { TspAccountDialog } from "../components/investments/TspAccountDialog";
+import { TspPanel } from "../components/investments/TspPanel";
+import { TSP_SUBTYPE } from "../lib/tsp";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { useApi } from "../hooks/useApi";
 import { formatAxisMoney, formatMinor, formatQuantity } from "../lib/money";
@@ -25,6 +32,7 @@ import type {
 
 type Dialog =
   | "new-account"
+  | "new-tsp"
   | "holdings"
   | "import-holdings"
   | "import-transactions"
@@ -126,6 +134,9 @@ export function InvestmentsPage() {
     null,
   );
   const [busy, setBusy] = useState(false);
+  /** A fund or stock whose full record is open, and an investment transaction likewise. */
+  const [viewSecurity, setViewSecurity] = useState<{ id: number; title: string } | null>(null);
+  const [viewTransaction, setViewTransaction] = useState<number | null>(null);
 
   const query = accountId ? `accountId=${accountId}` : "";
   const all = useApi<PortfolioOverview>("/investments/overview");
@@ -220,6 +231,9 @@ export function InvestmentsPage() {
             onDone={(text, itemId) => void connected(text, itemId)}
             onError={(text) => setNotice({ kind: "error", text })}
           />
+          <button type="button" className={buttonClass} onClick={() => setDialog("new-tsp")}>
+            Add TSP account
+          </button>
           <button type="button" className={primaryClass} onClick={() => setDialog("new-account")}>
             Add account by hand
           </button>
@@ -317,6 +331,10 @@ export function InvestmentsPage() {
                 Delete account
               </button>
             </div>
+          )}
+
+          {manualSelected && manualSelected.subtype === TSP_SUBTYPE && (
+            <TspPanel accountId={manualSelected.id} onChanged={reloadAll} />
           )}
 
           {overview && (
@@ -433,8 +451,22 @@ export function InvestmentsPage() {
                     {holdings.data.map((h) => (
                       <tr key={h.key} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="py-2 pr-3">
-                          <div className="font-medium">{h.symbol ?? h.name}</div>
+                          <button
+                            type="button"
+                            className="text-left font-medium hover:underline"
+                            title="Show everything stored about this holding"
+                            onClick={() =>
+                              setViewSecurity({ id: h.securityId, title: h.symbol ?? h.name })
+                            }
+                          >
+                            {h.symbol ?? h.name}
+                          </button>
                           {h.symbol && <div className="text-xs text-slate-500">{h.name}</div>}
+                          {h.vestedValueMinor !== null && (
+                            <div className="text-xs text-slate-500">
+                              {money(h.vestedValueMinor)} vested
+                            </div>
+                          )}
                         </td>
                         <td className="py-2 pr-3">{h.assetClass}</td>
                         {!accountId && <td className="py-2 pr-3">{h.accountName}</td>}
@@ -533,6 +565,9 @@ export function InvestmentsPage() {
                                   ? ` · ${formatQuantity(t.quantity)} shares`
                                   : ""}
                                 {t.symbol ? ` · ${t.symbol}` : ""}
+                                {t.subtype && t.subtype.toLowerCase() !== t.type
+                                  ? ` · ${t.subtype}`
+                                  : ""}
                               </div>
                             </td>
                             {!accountId && <td className="py-2 pr-3">{t.accountName}</td>}
@@ -548,7 +583,15 @@ export function InvestmentsPage() {
                                 {money(Math.abs(cashIn))}
                               </span>
                             </td>
-                            <td className="py-2 pl-2 text-right">
+                            <td className="space-x-3 py-2 pl-2 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                className="text-xs text-blue-700 underline dark:text-blue-400"
+                                onClick={() => setViewTransaction(t.id)}
+                                aria-label={`Details of the ${TYPE_LABEL[t.type] ?? t.type} on ${t.date}`}
+                              >
+                                Details
+                              </button>
                               {t.source === "manual" && (
                                 <button
                                   type="button"
@@ -590,6 +633,17 @@ export function InvestmentsPage() {
         </>
       )}
 
+      {dialog === "new-tsp" && (
+        <TspAccountDialog
+          onCreated={(id) => {
+            setAccountId(String(id));
+            changed(
+              "TSP account created. Enter what it holds with “Edit holdings”, and add a recurring contribution below.",
+            );
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
       {dialog === "new-account" && (
         <ManualAccountDialog
           onCreated={(id) => {
@@ -633,6 +687,19 @@ export function InvestmentsPage() {
           busy={busy}
           onConfirm={() => void deleteAccount()}
           onCancel={() => setDialog(null)}
+        />
+      )}
+      {viewSecurity && (
+        <SecurityDetailDialog
+          securityId={viewSecurity.id}
+          title={viewSecurity.title}
+          onClose={() => setViewSecurity(null)}
+        />
+      )}
+      {viewTransaction !== null && (
+        <InvestmentTransactionDialog
+          transactionId={viewTransaction}
+          onClose={() => setViewTransaction(null)}
         />
       )}
       {deletingTransaction && (

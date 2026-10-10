@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../api/client";
+import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
 import { TransactionDetail } from "../components/transactions/TransactionDetail";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
-import { formatMinor } from "../lib/money";
-import { useSyncFinishedCount } from "../lib/syncEvents";
+import { AccountName } from "../components/common/AccountName";
+import { accountLabel } from "../lib/accountLabel";
+import { AmountCell, TransactionTags } from "../components/transactions/TransactionCells";
+import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import type { Account, Transaction, TransactionPage, TransactionSort } from "../types/api";
 
@@ -14,28 +17,25 @@ interface Filters {
   accountId: string;
   category: string; // "" = all, "none" = uncategorized, or a category ID
   pending: string; // "" = all, "true", "false"
+  online: string; // "" = all, "true" (bought online), "false" (not online)
+  institution: string; // "" = all, an institution's name, or "manual"
   from: string;
   to: string;
 }
 
-const NO_FILTERS: Filters = { q: "", accountId: "", category: "", pending: "", from: "", to: "" };
+const NO_FILTERS: Filters = {
+  q: "",
+  accountId: "",
+  category: "",
+  pending: "",
+  online: "",
+  institution: "",
+  from: "",
+  to: "",
+};
 
 const controlClass =
   "rounded border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-600 dark:bg-slate-800";
-
-function AmountCell({ t }: { t: Transaction }) {
-  // The data uses Plaid's convention (positive = money out); show it the way people read it:
-  // spending as a minus, money in as a plus.
-  const shown = -t.amountMinor;
-  return (
-    <span
-      className={`tabular-nums ${shown > 0 ? "font-medium text-green-700 dark:text-green-400" : ""}`}
-    >
-      {shown > 0 ? "+" : ""}
-      {formatMinor(shown, t.currency)}
-    </span>
-  );
-}
 
 /** A column header that sorts when clicked and shows the current direction. */
 function SortHeader({
@@ -57,7 +57,7 @@ function SortHeader({
   return (
     <th
       aria-sort={active ? (sort === ascending ? "ascending" : "descending") : "none"}
-      className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : ""}`}
+      className={`px-2 py-2 font-medium ${align === "right" ? "text-right" : ""}`}
     >
       <button
         type="button"
@@ -76,12 +76,15 @@ export function TransactionsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const { categories } = useCategories();
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<TransactionSort>("date_desc");
+  const [sort, setSort] = useState<TransactionSort>("txdate_desc");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<Transaction | null>(null);
+  /** Adding a transaction by hand ("new"), or editing one that was entered by hand. */
+  const [manualDialog, setManualDialog] = useState<"new" | Transaction | null>(null);
+  const [reloads, setReloads] = useState(0);
   const synced = useSyncFinishedCount();
 
   useEffect(() => {
@@ -106,6 +109,8 @@ export function TransactionsPage() {
     if (filters.accountId) params.set("accountId", filters.accountId);
     if (filters.category) params.set("category", filters.category);
     if (filters.pending) params.set("pending", filters.pending);
+    if (filters.online) params.set("online", filters.online);
+    if (filters.institution) params.set("institution", filters.institution);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
     api<TransactionPage>(`/transactions?${params}`)
@@ -120,9 +125,15 @@ export function TransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, sort, filters, synced]);
+  }, [page, sort, filters, synced, reloads]);
 
   const options = useMemo(() => categoryOptions(categories ?? []), [categories]);
+  const institutions = [
+    ...new Set(accounts.map((a) => a.institutionName).filter((n): n is string => !!n)),
+  ].sort();
+  const handAccounts = accounts.filter(
+    (a) => a.isManual && (a.type === "depository" || a.type === "credit"),
+  );
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const filtered = Object.values(filters).some((v) => v !== "") || search !== "";
 
@@ -133,6 +144,22 @@ export function TransactionsPage() {
 
   function replaceRow(updated: Transaction): void {
     setData((d) => d && { ...d, items: d.items.map((t) => (t.id === updated.id ? updated : t)) });
+  }
+
+  async function quickOnline(t: Transaction, online: boolean): Promise<void> {
+    try {
+      // Food & Drink purchases move between Food & Drink (online) and Dining Out (in person).
+      replaceRow(
+        await api<Transaction>(`/transactions/${t.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ online }),
+        }),
+      );
+      setError(null);
+      announceDataChanged();
+    } catch (e) {
+      setError(errorMessage(e, "Could not change whether it was bought online."));
+    }
   }
 
   async function quickCategory(t: Transaction, value: string): Promise<void> {
@@ -150,15 +177,30 @@ export function TransactionsPage() {
   }
 
   return (
-    <section className="max-w-6xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Transactions</h1>
-        {data && (
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {data.total} {data.total === 1 ? "transaction" : "transactions"}
-            {filtered ? " match your filters" : ""}
-          </p>
-        )}
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Transactions</h1>
+          {data && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {data.total} {data.total === 1 ? "transaction" : "transactions"}
+              {filtered ? " match your filters" : ""}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setManualDialog("new")}
+          disabled={handAccounts.length === 0}
+          title={
+            handAccounts.length === 0
+              ? "Add a cash or other account by hand on the Accounts page first"
+              : undefined
+          }
+          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          Add transaction
+        </button>
       </div>
 
       <div className="flex flex-wrap items-end gap-2" role="search">
@@ -166,7 +208,7 @@ export function TransactionsPage() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search merchant, recipient, category, notes"
+          placeholder="Search merchant, recipient, sender, category, notes"
           aria-label="Search transactions"
           className={`${controlClass} w-72`}
         />
@@ -179,9 +221,23 @@ export function TransactionsPage() {
           <option value="">All accounts</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.name}
+              {accountLabel(a.name, a.institutionName)}
             </option>
           ))}
+        </select>
+        <select
+          aria-label="Institution"
+          value={filters.institution}
+          onChange={(e) => setFilter("institution", e.target.value)}
+          className={controlClass}
+        >
+          <option value="">All institutions</option>
+          {institutions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+          {accounts.some((a) => !a.institutionName) && <option value="manual">Kept by hand</option>}
         </select>
         <select
           aria-label="Category"
@@ -206,6 +262,16 @@ export function TransactionsPage() {
           <option value="">Pending and posted</option>
           <option value="true">Pending only</option>
           <option value="false">Posted only</option>
+        </select>
+        <select
+          aria-label="Online purchases"
+          value={filters.online}
+          onChange={(e) => setFilter("online", e.target.value)}
+          className={controlClass}
+        >
+          <option value="">Online and not online</option>
+          <option value="true">Online only</option>
+          <option value="false">Not online</option>
         </select>
         <label className="text-xs text-slate-500">
           From
@@ -276,7 +342,14 @@ export function TransactionsPage() {
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase dark:bg-slate-800 dark:text-slate-400">
               <tr>
                 <SortHeader
-                  label="Date"
+                  label="Transaction date"
+                  ascending="txdate_asc"
+                  descending="txdate_desc"
+                  sort={sort}
+                  onSort={setSort}
+                />
+                <SortHeader
+                  label="Posted"
                   ascending="date_asc"
                   descending="date_desc"
                   sort={sort}
@@ -289,9 +362,10 @@ export function TransactionsPage() {
                   sort={sort}
                   onSort={setSort}
                 />
-                <th className="px-3 py-2 font-medium">Category</th>
-                <th className="px-3 py-2 font-medium">Account</th>
-                <th className="px-3 py-2 font-medium">Recipient</th>
+                <th className="px-2 py-2 font-medium">Category</th>
+                <th className="px-2 py-2 text-center font-medium">Online</th>
+                <th className="px-2 py-2 font-medium">Account</th>
+                <th className="px-2 py-2 font-medium">Recipient / sender</th>
                 <SortHeader
                   label="Amount"
                   ascending="amount_asc"
@@ -300,26 +374,27 @@ export function TransactionsPage() {
                   onSort={setSort}
                   align="right"
                 />
+                <th className="px-2 py-2 font-medium">Tags</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {data.items.map((t) => (
                 <tr key={t.id}>
-                  <td className="px-3 py-2 whitespace-nowrap">{formatDay(t.date)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {formatDay(t.authorizedDate ?? t.date)}
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                    {t.pending ? "Pending" : formatDay(t.date)}
+                  </td>
+                  <td className="max-w-56 min-w-32 px-2 py-2">
                     <button
                       type="button"
-                      onClick={() => setSelected(t)}
+                      onClick={() => (t.source === "manual" ? setManualDialog(t) : setSelected(t))}
                       title="Open details and edit"
                       className="text-left font-medium hover:underline"
                     >
                       {t.merchant}
                     </button>
-                    {t.pending && (
-                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-                        Pending
-                      </span>
-                    )}
                     {t.notes && (
                       <span
                         title={t.notes}
@@ -330,7 +405,7 @@ export function TransactionsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 whitespace-nowrap">
                     <span
                       aria-hidden="true"
                       className="mr-1 inline-block h-2.5 w-2.5 rounded-full"
@@ -350,7 +425,7 @@ export function TransactionsPage() {
                           : "No category"
                       }
                       onChange={(e) => void quickCategory(t, e.target.value)}
-                      className="max-w-44 rounded border border-transparent bg-transparent py-1 text-sm hover:border-slate-300 dark:hover:border-slate-600"
+                      className="max-w-36 rounded border border-transparent bg-transparent py-1 text-sm hover:border-slate-300 dark:hover:border-slate-600"
                     >
                       <option value="">Uncategorized</option>
                       {/* Keep an archived category visible so the row still reads correctly. */}
@@ -364,19 +439,47 @@ export function TransactionsPage() {
                       ))}
                     </select>
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 text-center">
+                    {/* The pencil sits beside the box without moving it. */}
+                    <span className="relative inline-block align-middle">
+                      <input
+                        type="checkbox"
+                        checked={t.online}
+                        onChange={(e) => void quickOnline(t, e.target.checked)}
+                        aria-label={`Bought online: ${t.merchant}`}
+                        title={
+                          t.onlineEdited
+                            ? "Changed by you. Click again to go back to the bank's answer."
+                            : "From the bank's payment channel. Click to change it."
+                        }
+                        className="block h-4 w-4"
+                      />
+                      {t.onlineEdited && (
+                        <span
+                          className="absolute top-1/2 left-full ml-1 -translate-y-1/2 text-xs text-slate-400"
+                          title={`Changed by you (the bank says ${t.providerOnline ? "online" : "not online"})`}
+                        >
+                          ✎
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="max-w-56 min-w-32 px-2 py-2">
                     <span
                       aria-hidden="true"
                       className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: t.accountColor ?? "#94a3b8" }}
                     />
-                    {t.accountName}
+                    <AccountName name={t.accountName} institutionName={t.institutionName} />
                   </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    {t.recipient ?? ""}
+                  <td className="max-w-32 px-2 py-2 break-words text-slate-600 dark:text-slate-300">
+                    {(t.amountMinor > 0 ? t.recipient : t.sender) ?? ""}
                   </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <td className="min-w-28 px-2 py-2 text-right whitespace-nowrap">
                     <AmountCell t={t} />
+                  </td>
+                  <td className="w-44 min-w-36 px-2 py-2">
+                    <TransactionTags t={t} />
                   </td>
                 </tr>
               ))}
@@ -409,6 +512,20 @@ export function TransactionsPage() {
         </div>
       )}
 
+      {manualDialog && (
+        <ManualTransactionDialog
+          accounts={handAccounts}
+          categories={categories ?? []}
+          transaction={manualDialog === "new" ? undefined : manualDialog}
+          onSaved={(message) => {
+            setManualDialog(null);
+            setNotice(message);
+            setReloads((n) => n + 1);
+            announceDataChanged();
+          }}
+          onClose={() => setManualDialog(null)}
+        />
+      )}
       {selected && (
         <TransactionDetail
           transaction={selected}

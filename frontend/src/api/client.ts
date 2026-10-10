@@ -68,3 +68,37 @@ export function browserTabUrl(): string | undefined {
     ? `${bootstrap.apiBase}/?token=${encodeURIComponent(bootstrap.token)}`
     : undefined;
 }
+
+/** Sends a file as the request body (for attachments); the answer is JSON. */
+export async function apiUpload<T>(path: string, file: Blob, contentType: string): Promise<T> {
+  const headers = new Headers({ "content-type": contentType });
+  if (bootstrap) headers.set("x-pf-token", bootstrap.token);
+  const response = await fetch(`${bootstrap?.apiBase ?? ""}/api${path}`, {
+    method: "POST",
+    headers,
+    body: file,
+  });
+  if (!response.ok) {
+    let message = `Upload failed (${response.status})`;
+    let code = "request_failed";
+    try {
+      const body = (await response.json()) as { error?: string; message?: string };
+      if (body.error) code = body.error;
+      if (body.message) message = body.message;
+    } catch {
+      // Not JSON.
+    }
+    throw new ApiError(response.status, code, message);
+  }
+  return (await response.json()) as T;
+}
+
+/** Fetches a file (an attachment) as a Blob, with the same authentication as other calls. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  if (bootstrap) headers.set("x-pf-token", bootstrap.token);
+  const response = await fetch(`${bootstrap?.apiBase ?? ""}/api${path}`, { headers });
+  if (!response.ok)
+    throw new ApiError(response.status, "request_failed", "Could not open the file.");
+  return response.blob();
+}

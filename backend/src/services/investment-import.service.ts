@@ -25,10 +25,13 @@ import {
  *   price            (per unit)                 value (also: market_value) -- one of the two
  *   cost_basis       (total paid; optional)     asset_class (Stocks, Bonds, Cash, Funds, Crypto, Other)
  *   as_of            (YYYY-MM-DD; optional)
+ *   Optional detail: isin, cusip, sedol, sector, industry, subtype, vested_quantity, vested_value,
+ *   price_as_of (the date of the price, YYYY-MM-DD).
  *
  * Transactions file columns:
  *   date (YYYY-MM-DD), type (buy, sell, dividend, interest, contribution, withdrawal, fee,
- *   transfer, other), amount, and optionally symbol, name, quantity, price, fees, description.
+ *   transfer, other), amount, and optionally symbol, name, quantity, price, fees, description,
+ *   subtype (a finer label such as "employer match") and datetime (YYYY-MM-DDTHH:MM).
  *   `amount` is the cash involved as a POSITIVE number; the type decides the direction. For
  *   `transfer` and `other`, use a positive amount for money in and a negative one for money out.
  */
@@ -187,6 +190,23 @@ export function importHoldingsCsv(
       problems.push(`Row ${line}: "${asOf}" is not a date (use YYYY-MM-DD).`);
       continue;
     }
+    const vestedQuantity = cell(
+      line,
+      problems,
+      () => parseNumberCell(pick(cells, "vested_quantity", "vested_shares")),
+      null,
+    );
+    const vestedValue = cell(
+      line,
+      problems,
+      () => parseNumberCell(pick(cells, "vested_value")),
+      null,
+    );
+    const priceAsOf = pick(cells, "price_as_of", "price_date");
+    if (priceAsOf && !isRealDate(priceAsOf)) {
+      problems.push(`Row ${line}: "${priceAsOf}" is not a date (use YYYY-MM-DD).`);
+      continue;
+    }
     parsed.push({
       symbol: pick(cells, "symbol") || null,
       name: pick(cells, "name") || null,
@@ -196,6 +216,17 @@ export function importHoldingsCsv(
       valueMinor: value === null ? null : toMinorUnits(value, "USD"),
       costBasisMinor: cost === null ? null : toMinorUnits(cost, "USD"),
       asOf: asOf || null,
+      vestedQuantity,
+      vestedValueMinor: vestedValue === null ? null : toMinorUnits(vestedValue, "USD"),
+      priceAsOf: priceAsOf || null,
+      detail: {
+        isin: pick(cells, "isin"),
+        cusip: pick(cells, "cusip"),
+        sedol: pick(cells, "sedol"),
+        sector: pick(cells, "sector"),
+        industry: pick(cells, "industry"),
+        subtype: pick(cells, "subtype", "security_subtype"),
+      },
     });
   }
   if (problems.length > 0) fail(problems);
@@ -233,6 +264,10 @@ export interface ManualTransactionInput {
   amountMinor?: number | null | undefined;
   feesMinor?: number | null | undefined;
   description?: string | null | undefined;
+  /** A finer label than the type, such as "employer match" or "loan repayment". */
+  subtype?: string | null | undefined;
+  /** The time of day, when known (YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS]). */
+  datetime?: string | null | undefined;
 }
 
 interface Prepared {
@@ -244,6 +279,8 @@ interface Prepared {
   price: number | null;
   amountMinor: number;
   feesMinor: number | null;
+  subtype: string | null;
+  datetime: string | null;
 }
 
 function prepare(db: Db, input: ManualTransactionInput, currency: string, now: string): Prepared {
@@ -293,7 +330,26 @@ function prepare(db: Db, input: ManualTransactionInput, currency: string, now: s
     price: input.price ?? null,
     amountMinor: storedAmountMinor(kind, entered),
     feesMinor: input.feesMinor ?? null,
+    subtype: input.subtype?.trim().slice(0, 80) || null,
+    datetime: checkedDatetime(input.datetime),
   };
+}
+
+/** A date with an optional time, as typed; anything else is refused with a clear message. */
+function checkedDatetime(text: string | null | undefined): string | null {
+  const value = text?.trim() ?? "";
+  if (value === "") return null;
+  if (
+    !/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$/.test(value) ||
+    !isRealDate(value.slice(0, 10))
+  ) {
+    throw new AppError(
+      400,
+      "invalid_datetime",
+      `"${value}" is not a date and time (use YYYY-MM-DD or YYYY-MM-DDTHH:MM).`,
+    );
+  }
+  return value;
 }
 
 function fingerprint(accountId: number, p: Prepared, occurrence: number): string {
@@ -335,6 +391,8 @@ function insertPrepared(
       amountMinor: p.amountMinor,
       feesMinor: p.feesMinor,
       currency,
+      subtype: p.subtype,
+      transactionDatetime: p.datetime,
       source: "manual",
       createdAt: now,
       updatedAt: now,
@@ -415,6 +473,8 @@ export function importTransactionsCsv(
         price,
         amountMinor: amount === null ? null : toMinorUnits(amount, account.currency),
         feesMinor: fees === null ? null : toMinorUnits(fees, account.currency),
+        subtype: pick(cells, "subtype") || null,
+        datetime: pick(cells, "datetime", "time") || null,
       },
     });
   }

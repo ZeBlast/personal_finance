@@ -1,7 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
-import { calendarMonth, GROUPS, overview, summarize } from "../services/analytics.service.js";
+import {
+  calendarMonth,
+  DATE_BASES,
+  GROUPS,
+  overview,
+  summarize,
+} from "../services/analytics.service.js";
 import {
   budgetMonth,
   copyBudgets,
@@ -33,6 +39,7 @@ const summaryQuery = z.object({
 const calendarQuery = z.object({
   month,
   accountId: z.coerce.number().int().positive().optional(),
+  dateBasis: z.enum(DATE_BASES).optional(),
 });
 
 const budgetCreate = z
@@ -71,7 +78,7 @@ export function analyticsRoutes(db: AppDb): Router {
 
   router.get("/analytics/calendar", (req, res) => {
     const q = calendarQuery.parse(req.query);
-    res.json(calendarMonth(db, q.month, environment(), q.accountId));
+    res.json(calendarMonth(db, q.month, environment(), q.accountId, q.dateBasis));
   });
 
   /** Current balances rolled up into assets, debts and net worth, plus credit-card utilization. */

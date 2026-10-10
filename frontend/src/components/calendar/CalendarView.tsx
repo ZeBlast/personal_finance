@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useDateBasis } from "../../hooks/useDateBasis";
 import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
 import { lastOfMonth, monthLabel, monthOf, shiftMonth, today } from "../../lib/period";
@@ -31,7 +32,14 @@ function dayLabel(date: string, day: CalendarDay | undefined): string {
 
 /** What happened on one day, listed under the calendar. */
 function DayDetail({ date, accountId }: { date: string; accountId: string }) {
-  const query = new URLSearchParams({ from: date, to: date, pageSize: "100", sort: "amount_asc" });
+  const basis = useDateBasis();
+  const query = new URLSearchParams({
+    from: date,
+    to: date,
+    pageSize: "100",
+    sort: "amount_asc",
+    dateBasis: basis,
+  });
   if (accountId) query.set("accountId", accountId);
   const { data, error, loading } = useApi<TransactionPage>(`/transactions?${query}`);
 
@@ -91,9 +99,10 @@ function DayDetail({ date, accountId }: { date: string; accountId: string }) {
 export function CalendarView({ accountId, compact }: { accountId: string; compact?: boolean }) {
   const [month, setMonth] = useState(() => monthOf(today()));
   const [selected, setSelected] = useState<string | null>(null);
+  const basis = useDateBasis();
   const query = accountId ? `&accountId=${accountId}` : "";
   const { data, error, loading } = useApi<CalendarMonth>(
-    `/analytics/calendar?month=${month}${query}`,
+    `/analytics/calendar?month=${month}${query}&dateBasis=${basis}`,
   );
 
   const byDate = useMemo(() => new Map((data?.days ?? []).map((d) => [d.date, d])), [data]);

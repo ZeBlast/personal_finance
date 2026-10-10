@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   balanceSnapshots,
   holdings,
@@ -29,6 +29,8 @@ export interface PortfolioAccount {
   institutionName: string | null;
   source: string;
   isManual: boolean;
+  /** For a Thrift Savings Plan kept by hand: "thrift savings plan". */
+  subtype: string | null;
   color: string | null;
   connectionStatus: string | null;
   currency: string;
@@ -78,6 +80,11 @@ export interface HoldingRow {
   valueMinor: number;
   costBasisMinor: number | null;
   gainMinor: number | null;
+  /** The vested part of the position, when the source says (a retirement plan, for example). */
+  vestedQuantity: number | null;
+  vestedValueMinor: number | null;
+  /** The date the price is from, when the source gave one separately from `asOf`. */
+  priceAsOf: string | null;
   asOf: string;
 }
 
@@ -105,6 +112,9 @@ type HoldingQueryRow = {
   price: number | null;
   valueMinor: number;
   costBasisMinor: number | null;
+  vestedQuantity: number | null;
+  vestedValueMinor: number | null;
+  priceAsOf: string | null;
   asOf: string;
 };
 
@@ -122,6 +132,9 @@ function holdingRows(db: AppDb, accountIds: number[]): HoldingQueryRow[] {
       price: holdings.price,
       valueMinor: holdings.valueMinor,
       costBasisMinor: holdings.costBasisMinor,
+      vestedQuantity: holdings.vestedQuantity,
+      vestedValueMinor: holdings.vestedValueMinor,
+      priceAsOf: holdings.priceAsOf,
       asOf: holdings.asOf,
     })
     .from(holdings)
@@ -148,6 +161,7 @@ export function portfolioOverview(db: AppDb, accountId?: number): PortfolioOverv
       institutionName: a.institutionName,
       source: a.source,
       isManual: a.isManual,
+      subtype: a.subtype,
       color: a.color,
       connectionStatus: a.connectionStatus,
       currency: a.currency,
@@ -222,6 +236,9 @@ export function portfolioHoldings(
     valueMinor: r.valueMinor,
     costBasisMinor: r.costBasisMinor,
     gainMinor: r.costBasisMinor === null ? null : r.valueMinor - r.costBasisMinor,
+    vestedQuantity: r.vestedQuantity,
+    vestedValueMinor: r.vestedValueMinor,
+    priceAsOf: r.priceAsOf,
     asOf: r.asOf,
   });
   if (!options.combine) return rows.map(toRow);
@@ -246,6 +263,14 @@ export function portfolioHoldings(
         : existing.costBasisMinor + r.costBasisMinor;
     existing.gainMinor =
       existing.costBasisMinor === null ? null : existing.valueMinor - existing.costBasisMinor;
+    existing.vestedQuantity =
+      existing.vestedQuantity === null || r.vestedQuantity === null
+        ? null
+        : existing.vestedQuantity + r.vestedQuantity;
+    existing.vestedValueMinor =
+      existing.vestedValueMinor === null || r.vestedValueMinor === null
+        ? null
+        : existing.vestedValueMinor + r.vestedValueMinor;
     if (r.asOf > existing.asOf) existing.asOf = r.asOf;
     existing.price = r.price ?? existing.price;
   }
@@ -348,6 +373,9 @@ export interface InvestmentTransactionRow {
   amountMinor: number;
   feesMinor: number | null;
   currency: string;
+  /** The provider's finer label (or the user's), such as "employer match". */
+  subtype: string | null;
+  transactionDatetime: string | null;
   source: string;
 }
 
@@ -378,6 +406,8 @@ export function portfolioTransactions(
       amountMinor: investmentTransactions.amountMinor,
       feesMinor: investmentTransactions.feesMinor,
       currency: investmentTransactions.currency,
+      subtype: investmentTransactions.subtype,
+      transactionDatetime: investmentTransactions.transactionDatetime,
       source: investmentTransactions.source,
     })
     .from(investmentTransactions)
@@ -389,4 +419,111 @@ export function portfolioTransactions(
     .all()
     .map((r) => ({ ...r, accountName: names.get(r.accountId) ?? null }));
   return { total, rows };
+}
+
+/** Reads stored JSON back, or null when there is none (or it is damaged). */
+function parseStored(text: string | null): unknown {
+  if (text === null) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+export interface PositionDetail {
+  holdingId: number;
+  accountId: number;
+  accountName: string;
+  quantity: number;
+  price: number | null;
+  valueMinor: number;
+  costBasisMinor: number | null;
+  vestedQuantity: number | null;
+  vestedValueMinor: number | null;
+  asOf: string;
+  priceAsOf: string | null;
+  priceDatetime: string | null;
+  /** The complete holding as the provider sent it (tax lots included), when it came from one. */
+  raw: unknown;
+}
+
+export interface SecurityDetail {
+  /** Every stored column about the security, apart from the raw provider object. */
+  security: Record<string, unknown>;
+  /** The security exactly as the provider sent it, when it came from one. */
+  raw: unknown;
+  positions: PositionDetail[];
+}
+
+/** Everything stored about one security and where it is held. */
+export function securityDetail(db: AppDb, securityId: number): SecurityDetail {
+  const row = db.select().from(securities).where(eq(securities.id, securityId)).get();
+  if (!row) throw new AppError(404, "not_found", "That security was not found");
+  const { rawJson, ...security } = row;
+  const accountList = investmentAccounts(db);
+  const names = new Map(accountList.map((a) => [a.id, a.name]));
+  const positions =
+    accountList.length === 0
+      ? []
+      : db
+          .select()
+          .from(holdings)
+          .where(
+            and(
+              eq(holdings.securityId, securityId),
+              inArray(
+                holdings.accountId,
+                accountList.map((a) => a.id),
+              ),
+            ),
+          )
+          .orderBy(desc(holdings.valueMinor))
+          .all();
+  return {
+    security,
+    raw: parseStored(rawJson),
+    positions: positions.map((p) => ({
+      holdingId: p.id,
+      accountId: p.accountId,
+      accountName: names.get(p.accountId) ?? "",
+      quantity: p.quantity,
+      price: p.price,
+      valueMinor: p.valueMinor,
+      costBasisMinor: p.costBasisMinor,
+      vestedQuantity: p.vestedQuantity,
+      vestedValueMinor: p.vestedValueMinor,
+      asOf: p.asOf,
+      priceAsOf: p.priceAsOf,
+      priceDatetime: p.priceDatetime,
+      raw: parseStored(p.rawJson),
+    })),
+  };
+}
+
+export interface InvestmentTransactionDetail extends InvestmentTransactionRow {
+  cancelTransactionId: string | null;
+  /** The transaction exactly as the provider sent it, when it came from one. */
+  raw: unknown;
+}
+
+export function investmentTransactionDetail(db: AppDb, id: number): InvestmentTransactionDetail {
+  const row = db
+    .select({
+      accountId: investmentTransactions.accountId,
+      rawJson: investmentTransactions.rawJson,
+      cancel: investmentTransactions.cancelTransactionId,
+    })
+    .from(investmentTransactions)
+    .where(eq(investmentTransactions.id, id))
+    .get();
+  if (!row) throw new AppError(404, "not_found", "That transaction was not found");
+  // Looking it up through the list keeps the rule that hidden environments stay hidden.
+  const found = portfolioTransactions(db, {
+    accountId: row.accountId,
+    limit: 1_000_000,
+    offset: 0,
+  }).rows.find((t) => t.id === id);
+  if (!found) throw new AppError(404, "not_found", "That transaction was not found");
+  return { ...found, cancelTransactionId: row.cancel, raw: parseStored(row.rawJson) };
 }

@@ -1,0 +1,153 @@
+import express, { Router } from "express";
+import { z } from "zod";
+import type { AppDb } from "../db/client.js";
+import {
+  addAttachment,
+  deleteAttachment,
+  getAttachmentFile,
+  listAttachments,
+  MAX_ATTACHMENT_BYTES,
+} from "../services/attachment.service.js";
+import { clearBillSettings, listBills, setBillSettings } from "../services/bills.service.js";
+import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js";
+import { monthReport } from "../services/report.service.js";
+import {
+  dismissDuplicate,
+  listDuplicates,
+  reviewQueue,
+  setReviewed,
+} from "../services/review.service.js";
+import {
+  setSubscriptionReview,
+  SUBSCRIPTION_STATUSES,
+  subscriptionReview,
+} from "../services/subscriptions.service.js";
+import { AppError } from "../utils/errors.js";
+
+const idParam = z.coerce.number().int().positive();
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+
+const billBody = z
+  .object({
+    closingDay: z.number().int().min(1).max(31),
+    dueDay: z.number().int().min(1).max(31),
+    minimumMinor: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
+    autopay: z.boolean().default(false),
+  })
+  .strict();
+
+const subscriptionBody = z
+  .object({
+    merchant: z.string().min(1).max(200),
+    status: z.enum(SUBSCRIPTION_STATUSES).nullable(),
+    note: z.string().max(1000).nullable().optional(),
+  })
+  .strict();
+
+/** Planning and tidying: forecast, card bills, subscriptions, the month report, files, review. */
+export function planningRoutes(db: AppDb): Router {
+  const router = Router();
+
+  router.get("/forecast", (req, res) => {
+    const q = z
+      .object({
+        days: z.coerce.number().int().min(7).max(MAX_FORECAST_DAYS).optional(),
+        today: day.optional(),
+      })
+      .parse(req.query);
+    res.json(cashForecast(db, q));
+  });
+
+  router.get("/bills", (req, res) => {
+    const q = z.object({ today: day.optional() }).parse(req.query);
+    res.json(listBills(db, q.today));
+  });
+
+  router.put("/accounts/:id/bill", (req, res) => {
+    const id = idParam.parse(req.params["id"]);
+    setBillSettings(db, id, billBody.parse(req.body));
+    res.json(listBills(db).find((b) => b.accountId === id) ?? null);
+  });
+
+  router.delete("/accounts/:id/bill", (req, res) => {
+    clearBillSettings(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+
+  router.get("/subscriptions", (_req, res) => {
+    res.json(subscriptionReview(db));
+  });
+
+  router.put("/subscriptions/:key", (req, res) => {
+    const key = z.string().min(1).max(500).parse(req.params["key"]);
+    setSubscriptionReview(db, key, subscriptionBody.parse(req.body));
+    res.json(subscriptionReview(db));
+  });
+
+  router.get("/reports/month", (req, res) => {
+    const q = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(req.query);
+    res.json(monthReport(db, q.month));
+  });
+
+  // ---- Files attached to transactions ----------------------------------------------------------
+
+  router.get("/transactions/:id/attachments", (req, res) => {
+    res.json(listAttachments(db, idParam.parse(req.params["id"])));
+  });
+
+  /** The file is the request body; its name comes in the `name` query parameter. */
+  router.post(
+    "/transactions/:id/attachments",
+    express.raw({ type: () => true, limit: MAX_ATTACHMENT_BYTES + 1024 }),
+    (req, res) => {
+      const id = idParam.parse(req.params["id"]);
+      const name = z.string().min(1).max(300).parse(req.query["name"]);
+      if (!Buffer.isBuffer(req.body)) {
+        throw new AppError(400, "empty_file", "Send the file as the request body.");
+      }
+      const mime = (req.headers["content-type"] ?? "").split(";")[0]!.trim();
+      res.status(201).json(addAttachment(db, id, { name, mime, data: req.body }));
+    },
+  );
+
+  router.get("/attachments/:id", (req, res) => {
+    const file = getAttachmentFile(db, idParam.parse(req.params["id"]));
+    res.setHeader("content-type", file.mime);
+    res.setHeader("content-disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
+    // Never let the browser treat an uploaded file as something else (such as a web page).
+    res.setHeader("x-content-type-options", "nosniff");
+    res.setHeader("content-security-policy", "sandbox; default-src 'none'; img-src 'self' data:");
+    res.send(file.data);
+  });
+
+  router.delete("/attachments/:id", (req, res) => {
+    deleteAttachment(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+
+  // ---- Duplicates and the review queue ---------------------------------------------------------
+
+  router.get("/duplicates", (_req, res) => {
+    res.json(listDuplicates(db));
+  });
+
+  router.post("/duplicates/dismiss", (req, res) => {
+    const body = z.object({ a: idParam, b: idParam }).strict().parse(req.body);
+    dismissDuplicate(db, body.a, body.b);
+    res.status(204).end();
+  });
+
+  router.get("/review", (_req, res) => {
+    res.json(reviewQueue(db));
+  });
+
+  router.post("/review/mark", (req, res) => {
+    const body = z
+      .object({ ids: z.array(idParam).min(1).max(1000), reviewed: z.boolean().default(true) })
+      .strict()
+      .parse(req.body);
+    res.json({ changed: setReviewed(db, body.ids, body.reviewed) });
+  });
+
+  return router;
+}

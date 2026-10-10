@@ -4,6 +4,90 @@
   color-scheme: light dark;
 }
 
+/*
+ * Dropdown lists (the pop-up part of a <select>) are drawn by the browser from the colors of the
+ * <option> elements, and take the page's inherited text color when none is set. On a dark page that
+ * gave white text on a white list. Setting both explicitly, from one pair of colors per theme,
+ * keeps every dropdown readable. This is in the base layer so a component's own classes still win.
+ */
+@layer base {
+  :root {
+    --pf-field-bg: #ffffff;
+    --pf-field-fg: #0f172a;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --pf-field-bg: #1e293b;
+      --pf-field-fg: #f1f5f9;
+    }
+  }
+
+  select,
+  option,
+  optgroup {
+    background-color: var(--pf-field-bg);
+    color: var(--pf-field-fg);
+  }
+}
+
 body {
   margin: 0;
+}
+
+/* The calendar slides to the next or previous month. */
+@keyframes pf-month-from-below {
+  from {
+    transform: translateY(14%);
+    opacity: 0.15;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes pf-month-from-above {
+  from {
+    transform: translateY(-14%);
+    opacity: 0.15;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.pf-month-next {
+  animation: pf-month-from-below 260ms ease-out;
+}
+.pf-month-prev {
+  animation: pf-month-from-above 260ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-month-next,
+  .pf-month-prev {
+    animation: none;
+  }
+}
+
+/* Money moving along a cash-flow map connection. */
+@keyframes pf-flow {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+.pf-flow-dash {
+  animation: pf-flow 1.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-flow-dash {
+    animation: none;
+  }
+}
+:root {
+  --pf-label-halo: #f8fafc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pf-label-halo: #020617;
+  }
 }

@@ -1,13 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import type Database from "better-sqlite3";
+import type Database from "better-sqlite3-multiple-ciphers";
 import type { AppDb } from "../db/client.js";
-import { DB_FILE_NAME } from "../db/client.js";
+import { databaseKeyOf, DB_FILE_NAME, rawKey } from "../db/client.js";
+import { deriveDatabaseKey, isValidKeyHex } from "./crypto.js";
 import { AppError, notFound } from "../utils/errors.js";
 
 /**
- * Backups are complete copies of the database file, made while the app is running with SQLite's
- * online-backup API (safe even in the middle of a sync). They live in `<data folder>/backups`.
+ * Backups are complete copies of the database file, made while the app is running with
+ * `VACUUM INTO` (safe even in the middle of a sync). They are encrypted with the same key as the
+ * database, and live in `<data folder>/backups`.
  *
  * Restoring is staged: the chosen backup is checked and copied beside the database as
  * `restore-pending.db`, and the swap happens at the next launch BEFORE the database is opened (a
@@ -15,7 +17,7 @@ import { AppError, notFound } from "../utils/errors.js";
  * use is kept as a `pre-restore` backup first, so a restore can itself be undone.
  */
 
-export type BackupKind = "manual" | "auto" | "pre-restore";
+export type BackupKind = "manual" | "auto" | "pre-restore" | "pre-update";
 
 export interface BackupInfo {
   name: string;
@@ -30,7 +32,7 @@ export interface PendingRestore {
   stagedAt: string;
 }
 
-const NAME_PATTERN = /^pf-(manual|auto|pre-restore)-\d{8}-\d{6}(?:-\d+)?\.db$/;
+const NAME_PATTERN = /^pf-(manual|auto|pre-restore|pre-update)-\d{8}-\d{6}(?:-\d+)?\.db$/;
 const PENDING_DB = "restore-pending.db";
 const PENDING_META = "restore-pending.json";
 
@@ -88,7 +90,8 @@ export async function createBackup(
   }
   const partial = path.join(dir, `${name}.partial`);
   try {
-    await client(db).backup(partial);
+    // VACUUM INTO writes a complete, self-contained copy that is encrypted with the same key.
+    client(db).prepare("VACUUM INTO ?").run(partial);
     fs.renameSync(partial, path.join(dir, name));
   } catch (error) {
     fs.rmSync(partial, { force: true });
@@ -141,9 +144,44 @@ export async function autoBackupIfDue(
 
 export interface BackupCheck {
   ok: boolean;
+  /** The file is encrypted with a key this computer does not have (a backup from another computer). */
+  needsKey?: boolean;
   /** What is wrong, in words a person can act on. Empty when ok. */
   problems: string[];
   migrations: number;
+}
+
+/**
+ * Attaches a database file to the live connection under `name`, trying this computer's key, then no
+ * key (a backup an earlier version made, which was not encrypted), then any recovery key the user
+ * supplied (a backup from another computer). Returns false when none of them opens it.
+ */
+function attachBackup(
+  sqlite: Database.Database,
+  file: string,
+  name: string,
+  recoveryKeyHex?: string,
+): boolean {
+  const local = databaseKeyOf(sqlite);
+  const tries: string[] = [];
+  if (local) tries.push(rawKey(local));
+  tries.push("");
+  if (recoveryKeyHex) tries.push(rawKey(deriveDatabaseKey(recoveryKeyHex)));
+  for (const key of tries) {
+    try {
+      sqlite.prepare(`ATTACH DATABASE ? AS ${name} KEY ?`).run(file, key);
+      // A wrong key only shows itself on the first read.
+      sqlite.prepare(`SELECT COUNT(*) FROM ${name}.sqlite_master`).get();
+      return true;
+    } catch {
+      try {
+        sqlite.prepare(`DETACH DATABASE ${name}`).run();
+      } catch {
+        // Nothing was attached.
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -151,14 +189,26 @@ export interface BackupCheck {
  * app's data, and must not come from a NEWER version of the app (this version could not read it).
  * The file is attached to the live connection for the duration of the check and only read.
  */
-export function checkBackupFile(db: AppDb, file: string, knownMigrations: number): BackupCheck {
+export function checkBackupFile(
+  db: AppDb,
+  file: string,
+  knownMigrations: number,
+  recoveryKeyHex?: string,
+): BackupCheck {
   const sqlite = client(db);
   const problems: string[] = [];
   let migrations = 0;
-  try {
-    sqlite.prepare("ATTACH DATABASE ? AS candidate").run(file);
-  } catch {
-    return { ok: false, problems: ["That file is not a readable database."], migrations: 0 };
+  if (!attachBackup(sqlite, file, "candidate", recoveryKeyHex)) {
+    return {
+      ok: false,
+      needsKey: true,
+      problems: [
+        recoveryKeyHex
+          ? "That recovery key does not open this backup (or the file is damaged)."
+          : "This backup could not be opened. It may be damaged, or encrypted with a key this computer does not have: a backup from another computer needs that computer's recovery key.",
+      ],
+      migrations: 0,
+    };
   }
   try {
     const integrity = sqlite.prepare("PRAGMA candidate.integrity_check").all() as Array<{
@@ -210,15 +260,70 @@ export function checkBackupFile(db: AppDb, file: string, knownMigrations: number
  * running (a `pre-restore` one) can have recent changes in a separate write-ahead log; reading it
  * through SQLite and writing it out with VACUUM INTO includes them, which copying the file would not.
  */
-function copyConsolidated(db: AppDb, source: string, target: string): void {
+function copyConsolidated(
+  db: AppDb,
+  source: string,
+  target: string,
+  recoveryKeyHex?: string,
+): void {
   const sqlite = client(db);
   fs.rmSync(target, { force: true });
-  sqlite.prepare("ATTACH DATABASE ? AS candidate").run(source);
+  if (!attachBackup(sqlite, source, "candidate", recoveryKeyHex)) {
+    throw new AppError(409, "backup_needs_key", "That backup could not be opened.");
+  }
   try {
+    // The copy is written with this computer's key, whatever key the source had.
     sqlite.prepare("VACUUM candidate INTO ?").run(target);
   } finally {
     sqlite.prepare("DETACH DATABASE candidate").run();
   }
+}
+
+/** How many migrations a database has applied, and how many this version of the app knows. */
+export function migrationState(
+  db: AppDb,
+  migrationsDir: string,
+): { applied: number; known: number } {
+  let applied = 0;
+  try {
+    applied = (
+      client(db).prepare("SELECT COUNT(*) AS n FROM __drizzle_migrations").get() as { n: number }
+    ).n;
+  } catch {
+    // No journal table: a brand-new database.
+  }
+  let known = 0;
+  try {
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"),
+    ) as { entries?: unknown[] };
+    known = journal.entries?.length ?? 0;
+  } catch {
+    // Reported by the migration step itself.
+  }
+  return { applied, known };
+}
+
+/**
+ * Backs up the database BEFORE a newer version of the app changes its structure, so a faulty
+ * upgrade can never cost data. Does nothing for a new database or when nothing is pending. Keeps
+ * the newest few of these.
+ */
+export async function backupBeforeMigrating(
+  db: AppDb,
+  dataDir: string,
+  migrationsDir: string,
+  keep = 5,
+  now: Date = new Date(),
+): Promise<BackupInfo | null> {
+  const { applied, known } = migrationState(db, migrationsDir);
+  if (applied === 0 || applied >= known) return null;
+  const made = await createBackup(db, dataDir, "pre-update", now);
+  const old = listBackups(dataDir)
+    .filter((x) => x.kind === "pre-update")
+    .slice(Math.max(0, keep));
+  for (const x of old) deleteBackup(dataDir, x.name);
+  return made;
 }
 
 export function pendingRestore(dataDir: string): PendingRestore | null {
@@ -241,19 +346,27 @@ export function stageRestore(
   name: string,
   knownMigrations: number,
   now: Date = new Date(),
+  recoveryKeyHex?: string,
 ): PendingRestore {
   const source = path.join(backupDir(dataDir), requireBackupName(name));
   if (!fs.existsSync(source)) throw notFound("That backup");
-  const check = checkBackupFile(db, source, knownMigrations);
+  if (recoveryKeyHex !== undefined && !isValidKeyHex(recoveryKeyHex)) {
+    throw new AppError(
+      400,
+      "invalid_recovery_key",
+      "A recovery key is 64 letters and digits (0 to 9, a to f).",
+    );
+  }
+  const check = checkBackupFile(db, source, knownMigrations, recoveryKeyHex);
   if (!check.ok) {
     throw new AppError(
       409,
-      "backup_unusable",
+      check.needsKey ? "backup_needs_key" : "backup_unusable",
       `This backup cannot be restored. ${check.problems.join(" ")}`,
     );
   }
   const target = path.join(dataDir, PENDING_DB);
-  copyConsolidated(db, source, `${target}.partial`);
+  copyConsolidated(db, source, `${target}.partial`, recoveryKeyHex);
   fs.renameSync(`${target}.partial`, target);
   const pending: PendingRestore = { name, stagedAt: now.toISOString() };
   fs.writeFileSync(path.join(dataDir, PENDING_META), JSON.stringify(pending));

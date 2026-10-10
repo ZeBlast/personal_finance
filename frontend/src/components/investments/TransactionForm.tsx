@@ -31,6 +31,8 @@ export function TransactionForm({
     amount: "",
     fees: "",
     description: "",
+    subtype: "",
+    datetime: "",
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -155,6 +157,31 @@ export function TransactionForm({
               inputMode="decimal"
               value={draft.price}
               onChange={(e) => set({ price: e.target.value })}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor={`${id}-subtype`} className="block font-medium">
+              Subtype (optional)
+            </label>
+            <input
+              id={`${id}-subtype`}
+              value={draft.subtype}
+              maxLength={80}
+              onChange={(e) => set({ subtype: e.target.value })}
+              placeholder="employer match, loan repayment..."
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor={`${id}-datetime`} className="block font-medium">
+              Time (optional)
+            </label>
+            <input
+              id={`${id}-datetime`}
+              type="datetime-local"
+              value={draft.datetime}
+              onChange={(e) => set({ datetime: e.target.value })}
               className={inputClass}
             />
           </div>

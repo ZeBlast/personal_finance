@@ -1,5 +1,6 @@
 import {
   index,
+  blob,
   integer,
   real,
   sqliteTable,
@@ -41,6 +42,11 @@ export const plaidItems = sqliteTable("plaid_items", {
   environment: text("environment").notNull(),
   institutionId: text("institution_id"),
   institutionName: text("institution_name").notNull(),
+  /** The institution's logo as a data URL, and its brand color, when Plaid has them. */
+  institutionLogo: text("institution_logo"),
+  institutionColor: text("institution_color"),
+  /** When the logo was last looked up, so a missing one is not asked for again and again. */
+  brandingCheckedAt: text("branding_checked_at"),
   /** AES-256-GCM encrypted Plaid access token. Never returned by the API or written to logs. */
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
   /** `active`, `login_required` (user must re-authenticate), or `error`. */
@@ -50,6 +56,12 @@ export const plaidItems = sqliteTable("plaid_items", {
   lastErrorMessage: text("last_error_message"),
   /** History length requested when the Item was created; Plaid fixes it at that point. */
   daysRequested: integer("days_requested").notNull(),
+  /**
+   * A connection that belongs to ANOTHER install of the app (a development copy borrowing the real
+   * app's access token). It can read, but never disconnects, repairs, or otherwise changes the
+   * connection at Plaid, and it syncs only when asked: the real app owns it.
+   */
+  borrowed: integer("borrowed", { mode: "boolean" }).notNull().default(false),
   /** Transactions sync cursor (used from Phase 3). */
   syncCursor: text("sync_cursor"),
   lastSuccessfulSyncAt: text("last_successful_sync_at"),
@@ -78,6 +90,11 @@ export const accounts = sqliteTable(
     availableBalanceMinor: integer("available_balance_minor"),
     lastBalanceUpdateAt: text("last_balance_update_at"),
     isManual: integer("is_manual", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Set by the user to keep the account out of balances, totals, charts, and lists. It is still
+     * synced and stored, and showing it again brings everything back.
+     */
+    hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
     /** `plaid` or `manual`. */
     source: text("source").notNull().default("plaid"),
     /** Display color used by lists and the calendar. */
@@ -123,15 +140,69 @@ export const transactions = sqliteTable(
     plaidCategoryDetailed: text("plaid_category_detailed"),
     counterpartyName: text("counterparty_name"),
     counterpartyType: text("counterparty_type"),
+    /**
+     * Everything else Plaid says about the transaction, kept as sent and never edited by the user.
+     * The first counterparty above is the one used for display; all of them are here.
+     */
+    counterpartiesJson: text("counterparties_json"),
+    /** The time of day, when the institution reports one (ISO 8601 with offset). */
+    datetime: text("datetime"),
+    authorizedDatetime: text("authorized_datetime"),
+    /** The institution's own wording, before Plaid cleaned it up. */
+    originalDescription: text("original_description"),
+    locationAddress: text("location_address"),
+    locationCity: text("location_city"),
+    locationRegion: text("location_region"),
+    locationPostalCode: text("location_postal_code"),
+    locationCountry: text("location_country"),
+    locationLat: real("location_lat"),
+    locationLon: real("location_lon"),
+    locationStoreNumber: text("location_store_number"),
+    /** Plaid's merchant record: a stable ID, the merchant category code, a logo and website. */
+    merchantEntityId: text("merchant_entity_id"),
+    merchantCategoryCode: text("merchant_category_code"),
+    logoUrl: text("logo_url"),
+    website: text("website"),
+    /** How Plaid is about its category guess: VERY_HIGH, HIGH, MEDIUM, LOW or UNKNOWN. */
+    categoryConfidence: text("category_confidence"),
+    /** Payment details the institution supplies (all optional). */
+    paymentMethod: text("payment_method"),
+    paymentProcessor: text("payment_processor"),
+    paymentReference: text("payment_reference"),
+    paymentReason: text("payment_reason"),
+    paymentByOrderOf: text("payment_by_order_of"),
+    paymentPpdId: text("payment_ppd_id"),
     /** Person on the other side of a transfer such as Zelle, and how it was found. */
     recipient: text("recipient"),
     /** `plaid` (provider metadata) or `parsed` (read from the description). */
     recipientSource: text("recipient_source"),
+    /** Who sent the money, for money coming IN (the recipient field is for money going out). */
+    sender: text("sender"),
+    senderSource: text("sender_source"),
+    /** `plaid` for bank transactions, `manual` for ones the user entered (those can be fully edited). */
+    source: text("source").notNull().default("plaid"),
+    /**
+     * Money moving between the user's own accounts, which is neither income nor spending. Sending
+     * money to, or receiving it from, another person is not a transfer in this sense.
+     */
     isTransfer: integer("is_transfer", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Why `is_transfer` has its value: `auto` (matched with an equal and opposite transaction on
+     * another of the user's accounts), `manual` (the user decided; detection never changes it),
+     * `system` (an opening balance), or null (never flagged).
+     */
+    transferSource: text("transfer_source"),
+    /** For an automatic match, the transaction on the other account. */
+    transferPairId: integer("transfer_pair_id"),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),
+    senderUser: text("sender_user"),
     notesUser: text("notes_user"),
+    /** The user's call on whether this was an online purchase; null means use the bank's payment channel. */
+    onlineUser: integer("online_user", { mode: "boolean" }),
+    /** When the user marked it as looked at in the review queue (null: not yet). */
+    reviewedAt: text("reviewed_at"),
     /**
      * The category and how it got there: `manual` (the user chose it; rules never change it),
      * `rule` (assigned by the rule in `category_rule_id`), or null (none yet).
@@ -167,6 +238,12 @@ export const categories = sqliteTable(
     /** Display color, `#rrggbb`. */
     color: text("color"),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
+    /**
+     * How money coming in under this category counts: `income` (taxable income, such as a credit
+     * that is really earnings), `refund` (money given back: it lowers spending and is never
+     * income), or null (the usual rules decide).
+     */
+    incomeTreatment: text("income_treatment"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -261,6 +338,65 @@ export const recurringDismissed = sqliteTable("recurring_dismissed", {
   createdAt: text("created_at").notNull(),
 });
 
+/** The user's own note for one calendar day. A day with no note has no row. */
+export const dayNotes = sqliteTable("day_notes", {
+  date: text("date").primaryKey(),
+  note: text("note").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * A transaction the user expects, once or on a schedule (rent, a paycheck, a subscription).
+ * `amount_minor` follows the transaction sign convention: positive is money out, negative is money
+ * in. The repeat rule is stored as plain columns and expanded into dates by `utils/recurrence.ts`.
+ */
+export const plannedTransactions = sqliteTable("planned_transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** The account it will hit, if the user knows; otherwise it counts under "All accounts" only. */
+  accountId: integer("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  merchant: text("merchant").notNull(),
+  amountMinor: integer("amount_minor").notNull(),
+  categoryId: integer("category_id").references(() => categories.id, { onDelete: "set null" }),
+  /** The recipient (money out) or sender (money in). */
+  person: text("person"),
+  notes: text("notes"),
+  startDate: text("start_date").notNull(),
+  /** `once`, `daily`, `weekly`, `monthly`, or `yearly`. */
+  frequency: text("frequency").notNull(),
+  /** Repeat every N days, weeks, months, or years. */
+  repeatEvery: integer("repeat_every").notNull().default(1),
+  /** Weekly: the days of the week to repeat on, as 0 (Sunday) to 6 comma separated. */
+  weekdays: text("weekdays"),
+  /** Monthly: `day` (the same date each month) or `weekday` (such as the 2nd Tuesday). */
+  monthMode: text("month_mode"),
+  /** Monthly by day: 1 to 31, or -1 for the last day of the month. */
+  dayOfMonth: integer("day_of_month"),
+  /** Monthly by weekday: 1 to 4, or -1 for the last, of the weekday in `weekdays`. */
+  nthWeek: integer("nth_week"),
+  endDate: text("end_date"),
+  /** Stop after this many occurrences. */
+  maxCount: integer("max_count"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** One occurrence of a planned transaction that was skipped or handled, so it stops being "expected". */
+export const plannedExceptions = sqliteTable(
+  "planned_exceptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    plannedId: integer("planned_id")
+      .notNull()
+      .references(() => plannedTransactions.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** `skipped` (it did not happen) or `done` (it happened, or was recorded as a transaction). */
+    kind: text("kind").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("planned_exceptions_unique").on(table.plannedId, table.date)],
+);
+
 /** One attempt to synchronize a connection, kept as history and for the sync status display. */
 export const syncRuns = sqliteTable(
   "sync_runs",
@@ -322,6 +458,33 @@ export const securities = sqliteTable("securities", {
   assetClass: text("asset_class").notNull(),
   currency: text("currency").notNull().default("USD"),
   isManual: integer("is_manual", { mode: "boolean" }).notNull().default(false),
+  /** Identifiers and descriptive data Plaid provides (all optional; manual funds may fill them in too). */
+  isin: text("isin"),
+  cusip: text("cusip"),
+  sedol: text("sedol"),
+  figi: text("figi"),
+  cfiCode: text("cfi_code"),
+  institutionSecurityId: text("institution_security_id"),
+  proxySecurityId: text("proxy_security_id"),
+  marketIdentifierCode: text("market_identifier_code"),
+  isCashEquivalent: integer("is_cash_equivalent", { mode: "boolean" }),
+  subtype: text("subtype"),
+  closePrice: real("close_price"),
+  closePriceAsOf: text("close_price_as_of"),
+  sector: text("sector"),
+  industry: text("industry"),
+  optionContractType: text("option_contract_type"),
+  optionExpiration: text("option_expiration"),
+  optionStrike: real("option_strike"),
+  optionUnderlying: text("option_underlying"),
+  fixedYieldRate: real("fixed_yield_rate"),
+  fixedYieldType: text("fixed_yield_type"),
+  fixedMaturityDate: text("fixed_maturity_date"),
+  fixedIssueDate: text("fixed_issue_date"),
+  fixedFaceValue: real("fixed_face_value"),
+  providerUpdatedAt: text("provider_updated_at"),
+  /** The complete security object exactly as the provider sent it, so nothing it supplies is lost. */
+  rawJson: text("raw_json"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -348,6 +511,14 @@ export const holdings = sqliteTable(
     currency: text("currency").notNull(),
     /** When the provider (or the user) says the figures were true. */
     asOf: text("as_of").notNull(),
+    /** The part of the position that has vested (a retirement plan's employer money, for example). */
+    vestedQuantity: real("vested_quantity"),
+    vestedValueMinor: integer("vested_value_minor"),
+    /** The price's own date and time as the provider gave them. */
+    priceAsOf: text("price_as_of"),
+    priceDatetime: text("price_datetime"),
+    /** The complete holding object as the provider sent it, including its tax lots. */
+    rawJson: text("raw_json"),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
@@ -403,12 +574,139 @@ export const investmentTransactions = sqliteTable(
     amountMinor: integer("amount_minor").notNull(),
     feesMinor: integer("fees_minor"),
     currency: text("currency").notNull(),
+    /** The provider's own finer label (for example "employer match" or "qualified dividend"). */
+    subtype: text("subtype"),
+    transactionDatetime: text("transaction_datetime"),
+    /** Set on a cancellation: the provider ID of the transaction it cancels. */
+    cancelTransactionId: text("cancel_transaction_id"),
+    rawJson: text("raw_json"),
     /** `plaid` or `manual`. */
     source: text("source").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [index("investment_tx_account_date_idx").on(table.accountId, table.date)],
+);
+
+/**
+ * The daily price of one unit of a fund (the TSP's funds, for now): from a price file the user
+ * imported, fetched online, or typed in. One price per fund per day.
+ */
+export const fundPrices = sqliteTable(
+  "fund_prices",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** The fund's symbol as used for holdings, such as `TSP-C`. */
+    symbol: text("symbol").notNull(),
+    date: text("date").notNull(),
+    price: real("price").notNull(),
+    /** `csv`, `fetched`, or `manual`. */
+    source: text("source").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("fund_prices_symbol_date_unique").on(table.symbol, table.date)],
+);
+
+/** How new contributions to a manual TSP account are split between funds (basis points of 100%). */
+export const tspAllocations = sqliteTable(
+  "tsp_allocations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    symbol: text("symbol").notNull(),
+    percentBps: integer("percent_bps").notNull(),
+  },
+  (table) => [
+    uniqueIndex("tsp_allocations_account_symbol_unique").on(table.accountId, table.symbol),
+  ],
+);
+
+/**
+ * A recurring dollar amount going into a manual TSP account, split by its allocation. Each time it
+ * comes due it is turned into fund units at that day's price and added to the holdings.
+ */
+export const tspContributions = sqliteTable("tsp_contributions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  amountMinor: integer("amount_minor").notNull(),
+  /** `weekly`, `biweekly`, `semimonthly` (two set days a month), or `monthly`. */
+  frequency: text("frequency").notNull(),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
+  /** Monthly and semimonthly: the day of the month (1 to 31, or -1 for the last day). */
+  dayOfMonth: integer("day_of_month"),
+  /** Semimonthly: the second day of the month. */
+  secondDayOfMonth: integer("second_day_of_month"),
+  /**
+   * Employer money added on each contribution day: `fers` (the federal agency's 1% automatic plus
+   * its match of the first 5% of pay), `custom` (matchPercent of what you put in, up to
+   * matchUpToPercent of pay, plus autoPercent of pay), or null for none.
+   */
+  matchPlan: text("match_plan"),
+  /** Gross pay for each contribution period, which the match is worked out from. */
+  payMinor: integer("pay_minor"),
+  matchPercent: real("match_percent"),
+  matchUpToPercent: real("match_up_to_percent"),
+  autoPercent: real("auto_percent"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** One contribution turned into units of one fund on one day, so it is never applied twice. */
+export const tspContributionApplications = sqliteTable(
+  "tsp_contribution_applications",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    contributionId: integer("contribution_id")
+      .notNull()
+      .references(() => tspContributions.id, { onDelete: "cascade" }),
+    /** The day it was due. */
+    date: text("date").notNull(),
+    symbol: text("symbol").notNull(),
+    /** The day whose price was used (the due day, or the last business day before it). */
+    priceDate: text("price_date").notNull(),
+    price: real("price").notNull(),
+    units: real("units").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    /** Of `amountMinor` (and the units), the part the employer put in. */
+    employerMinor: integer("employer_minor").notNull().default(0),
+    appliedAt: text("applied_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("tsp_applications_unique").on(table.contributionId, table.date, table.symbol),
+  ],
+);
+
+/**
+ * How much cashback a credit card earns: a percentage for a category (a purchase in a subcategory
+ * uses its parent's rate when it has none of its own), and optionally one for everything else (the
+ * row with no category). The rate is in basis points: 150 is 1.5%.
+ */
+export const cashbackRules = sqliteTable(
+  "cashback_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** Null means "everything else". */
+    categoryId: integer("category_id").references(() => categories.id, { onDelete: "cascade" }),
+    rateBps: integer("rate_bps").notNull(),
+    /** True for a rate that applies only to online purchases. */
+    onlineOnly: integer("online_only", { mode: "boolean" }).notNull().default(false),
+    /** A merchant name (matched case-insensitively, anywhere in the name) for a merchant rule. */
+    merchant: text("merchant"),
+    /** True for an exclusion: the merchant earns nothing from the category (or from any rate, when no category). */
+    exclude: integer("exclude", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("cashback_rules_account_idx").on(table.accountId)],
 );
 
 /**
@@ -436,4 +734,75 @@ export const creditLimitHistory = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [index("credit_limit_account_idx").on(table.accountId, table.effectiveDate)],
+);
+
+/**
+ * A credit card's billing cycle, set by the user: the day its statement closes and the day payment
+ * is due. With those, the app works out each statement's balance and whether it has been paid.
+ */
+export const cardBills = sqliteTable("card_bills", {
+  accountId: integer("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  /** Day of the month the statement closes (1-31; a short month uses its last day). */
+  closingDay: integer("closing_day").notNull(),
+  /** Day of the month the payment is due (1-31), in the month after the statement closes. */
+  dueDay: integer("due_day").notNull(),
+  /** The minimum payment the issuer asks for, when known. */
+  minimumMinor: integer("minimum_minor"),
+  /** The card pays itself from another account. */
+  autopay: integer("autopay", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** The user's decision about a recurring charge: keep it, or cancel it. */
+export const subscriptionReviews = sqliteTable("subscription_reviews", {
+  /** The recurring series' key (see recurring.service). */
+  key: text("key").primaryKey(),
+  merchant: text("merchant").notNull(),
+  /** `keep`, `cancel` (meaning to), or `cancelled` (done). */
+  status: text("status").notNull(),
+  note: text("note"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** A file attached to a transaction (a receipt, a warranty), kept inside the encrypted database. */
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    data: blob("data", { mode: "buffer" }).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("attachments_transaction_idx").on(table.transactionId)],
+);
+
+/** Two transactions the user said are not duplicates of each other. */
+export const duplicateDismissals = sqliteTable("duplicate_dismissals", {
+  /** "smaller id:larger id". */
+  pairKey: text("pair_key").primaryKey(),
+  createdAt: text("created_at").notNull(),
+});
+
+/** Named copies of a sandbox drawing (the maths nodes or the cash-flow map), to load again later. */
+export const sandboxSaves = sqliteTable(
+  "sandbox_saves",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** "math" or "flow". */
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    /** The drawing, as the page saves it (JSON). */
+    data: text("data").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("sandbox_saves_kind_idx").on(table.kind)],
 );

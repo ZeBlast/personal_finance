@@ -252,6 +252,7 @@ describe("rule matching", () => {
     merchant: "Whole Foods Market",
     name: "WHOLEFDS MKT 10234",
     recipient: null,
+    sender: null,
     plaidPrimary: "FOOD_AND_DRINK",
     plaidDetailed: "FOOD_AND_DRINK_GROCERIES",
     ...over,

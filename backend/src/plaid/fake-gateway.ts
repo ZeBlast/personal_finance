@@ -10,6 +10,7 @@ import {
   type InvestmentTransactionsResult,
   type PlaidGateway,
   type TransactionSyncPage,
+  type InstitutionBranding,
 } from "./gateway.js";
 import { DEFAULT_PAGE_SIZE, isoDate, pageLedger } from "./fake-ledger.js";
 import { demoAccountValue, demoHoldings, demoInvestmentTransactions } from "./fake-investments.js";
@@ -225,6 +226,21 @@ export class FakePlaidGateway implements PlaidGateway {
 
   async getInstitutionName(institutionId: string): Promise<string | null> {
     return FAKE_INSTITUTIONS.find((i) => i.id === institutionId)?.name ?? null;
+  }
+
+  async getInstitutionBranding(institutionId: string): Promise<InstitutionBranding> {
+    const institution = FAKE_INSTITUTIONS.find((i) => i.id === institutionId);
+    if (!institution) return { logo: null, color: null };
+    // A made-up logo for the demo: the institution's initials on a colored circle.
+    const palette = ["#1d4ed8", "#047857", "#b91c1c", "#7c3aed"];
+    const color = palette[FAKE_INSTITUTIONS.indexOf(institution) % palette.length]!;
+    const initials = institution.name
+      .split(/s+/)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="32" fill="${color}"/><text x="32" y="41" font-family="Arial" font-size="26" font-weight="bold" fill="#fff" text-anchor="middle">${initials}</text></svg>`;
+    return { logo: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, color };
   }
 
   async getAccounts(accessToken: string): Promise<GatewayAccount[]> {
