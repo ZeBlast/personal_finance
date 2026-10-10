@@ -8,7 +8,7 @@ import { FILING_STATUSES, type FilingStatus } from "../lib/sandbox/taxes";
 import {
   annualOf,
   estimateTaxes,
-  projectAnnual,
+  suggestAnnual,
   type SourceInput,
   type TaxInputs,
 } from "../lib/taxes/estimate";
@@ -143,7 +143,7 @@ function TaxWorkspace({ data }: { data: TaxData }) {
         key: s.key,
         label: s.label,
         kind: s.kind,
-        suggested: projectAnnual(s.totalMinor / 100, data.year, today),
+        suggested: suggestAnnual(s, data.year, today),
         annualIncome: answer?.annualIncome ?? null,
         // Only pay has FICA taken out; credits, interest, and money from people do not.
         ficaExempt: answer?.ficaExempt ?? !(s.kind === "income" && s.wages),

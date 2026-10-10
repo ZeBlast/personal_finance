@@ -71,7 +71,13 @@ describe("taxes", () => {
         count: 2,
         wages: true,
       }),
-      expect.objectContaining({ key: "credit", kind: "credit", totalMinor: 20_000, count: 1, wages: false }),
+      expect.objectContaining({
+        key: "credit",
+        kind: "credit",
+        totalMinor: 20_000,
+        count: 1,
+        wages: false,
+      }),
     ]);
     expect(body.profile).toBeNull();
   });

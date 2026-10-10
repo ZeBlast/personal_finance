@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { stateTax, marylandLocalTax } from "../sandbox/dmvTaxes";
 import { federalIncomeTax } from "../sandbox/taxes";
-import { estimateTaxes, projectAnnual, type SourceInput, type TaxInputs } from "./estimate";
+import {
+  estimateTaxes,
+  projectAnnual,
+  suggestAnnual,
+  type SourceInput,
+  type TaxInputs,
+} from "./estimate";
 
 const source = (over: Partial<SourceInput> = {}): SourceInput => ({
   key: "income:acme",
@@ -102,5 +108,53 @@ describe("projectAnnual", () => {
     expect(projectAnnual(50_000, 2025, new Date(2026, 5, 1))).toBe(50_000);
     // July 1 at the end of the day: 182 of 365 days gone.
     expect(projectAnnual(18_200, 2026, new Date(2026, 6, 1))).toBeCloseTo(36_500, 0);
+  });
+});
+
+describe("suggestAnnual", () => {
+  const today = new Date(2026, 6, 1); // July 1: 182 days of 2026 gone
+  it("keeps one-off money and credits as they are", () => {
+    expect(
+      suggestAnnual(
+        { totalMinor: 20_000, count: 1, kind: "income", firstDate: "2026-01-10" },
+        2026,
+        today,
+      ),
+    ).toBe(200);
+    expect(
+      suggestAnnual(
+        { totalMinor: 50_000, count: 3, kind: "credit", firstDate: "2026-01-10" },
+        2026,
+        today,
+      ),
+    ).toBe(500);
+  });
+
+  it("scales repeating pay from its first payment, not from January", () => {
+    // Pay since Jan 1: half the year gone, so about double.
+    expect(
+      suggestAnnual(
+        { totalMinor: 1_820_000, count: 13, kind: "income", firstDate: "2026-01-01" },
+        2026,
+        today,
+      ),
+    ).toBeCloseTo(36_500, 0);
+    // A job that started Apr 1 (91 days in): 92 days paid so far, 275 days in the rest of the year.
+    const started = suggestAnnual(
+      { totalMinor: 920_000, count: 6, kind: "income", firstDate: "2026-04-01" },
+      2026,
+      today,
+    );
+    expect(started).toBeCloseTo((9_200 * 275) / 92, 0);
+  });
+
+  it("uses the total for a year that is over", () => {
+    expect(
+      suggestAnnual(
+        { totalMinor: 5_000_000, count: 26, kind: "income", firstDate: "2025-01-03" },
+        2025,
+        today,
+      ),
+    ).toBe(50_000);
   });
 });

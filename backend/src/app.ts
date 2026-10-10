@@ -77,7 +77,14 @@ export function createApp({
   const plaid = createPlaidService({ db, cipher, getGateway });
 
   app.use("/api", requireToken(token));
-  app.use("/api", express.json({ limit: "1mb" }));
+  // File imports (TSP price history since 2003 can be a few megabytes) get a larger limit.
+  const importJson = express.json({ limit: "8mb" });
+  const json = express.json({ limit: "1mb" });
+  app.use("/api", (req, res, next) =>
+    /^\/(tsp\/prices\/import|accounts\/\d+\/tsp\/activity\/import)$/.test(req.path)
+      ? importJson(req, res, next)
+      : json(req, res, next),
+  );
   app.use("/api", healthRoutes(db, version));
   app.use("/api", settingsRoutes(db));
   app.use("/api", plaidRoutes({ db, cipher, plaid, getGateway }));
@@ -134,6 +141,13 @@ export function createApp({
       res.status(400).json({
         error: "invalid_request",
         issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
+      return;
+    }
+    if (err?.type === "entity.too.large") {
+      res.status(413).json({
+        error: "too_large",
+        message: "That is too large to send. Try a smaller file or a shorter date range.",
       });
       return;
     }

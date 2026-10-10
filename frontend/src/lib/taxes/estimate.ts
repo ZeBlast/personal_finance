@@ -89,6 +89,26 @@ export function projectAnnual(totalSoFar: number, year: number, today: Date): nu
   return round2((totalSoFar * (end - start)) / (now - start));
 }
 
+/**
+ * What a source will likely pay in the whole year, from what it has paid so far. Only income that
+ * repeats (two or more payments) is scaled up, from its first payment to the end of the year, so
+ * a job that started mid-year is not underestimated. Credits and one-off money count as they are.
+ */
+export function suggestAnnual(
+  s: { totalMinor: number; count: number; kind: "income" | "credit"; firstDate: string },
+  year: number,
+  today: Date,
+): number {
+  const total = s.totalMinor / 100;
+  if (s.kind !== "income" || s.count < 2) return round2(total);
+  const day = (d: string): number => Date.parse(`${d}T00:00:00Z`);
+  const start = Math.max(day(s.firstDate), Date.UTC(year, 0, 1));
+  const end = Date.UTC(year + 1, 0, 1);
+  const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) + 86_400_000;
+  if (now >= end || now <= start) return round2(total);
+  return round2((total * (end - start)) / (now - start));
+}
+
 export function estimateTaxes(input: TaxInputs): TaxEstimate {
   const fy = federalYearFor(input.year);
   const ly = localYearFor(input.year);

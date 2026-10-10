@@ -16,6 +16,7 @@ import {
   createTspAccount,
   dueDates,
   employerAmount,
+  writeHoldings,
   refreshTspValues,
   setAllocations,
   splitAmount,
@@ -802,6 +803,65 @@ describe("through the API", () => {
     expect(funds.find((f) => f.symbol === "TSP-L2075")!.latest).toBeNull();
   });
 
+  it("counts units held before the activity, and keeps days with a recorded balance", async () => {
+    const t = app();
+    const id = (
+      await t
+        .call("post", "/api/tsp/accounts")
+        .send({ name: "My TSP", allocations: [{ symbol: "TSP-L2065", percent: 100 }] })
+        .expect(201)
+    ).body.id as number;
+    const chart = ['"Jun 2, 2025 to Jun 6, 2025","L 2065"'];
+    for (let d = 2; d <= 6; d++) chart.push(`"2025-06-0${d} 00:00:00",10.0000`);
+    await t
+      .call("post", "/api/tsp/prices/import")
+      .send({ csv: chart.join("\n") })
+      .expect(200);
+    // 100 units held from before, entered by hand; the activity file adds 15 on Jun 4.
+    writeHoldings(
+      t.db,
+      id,
+      [
+        {
+          symbol: "TSP-L2065",
+          name: "L 2065",
+          assetClass: "Funds",
+          quantity: 115,
+          costBasisMinor: null,
+          fallbackPrice: null,
+          fallbackValueMinor: 0,
+        },
+      ],
+      "2026-10-10",
+      NOW,
+    );
+    t.sqlite
+      .prepare(
+        "INSERT INTO balance_snapshots (account_id, observed_at, current_balance_minor, currency) VALUES (?, '2025-06-05T15:30:12.345Z', 123456, 'USD')",
+      )
+      .run(id);
+    const activity = [
+      '"VALUATION DATE","POSTING DATE","ACTIVITY TYPE","PLAN","ACCOUNT","FUND","AMOUNT","FUND NAV/PRICE","FUND UNITS",',
+      '"06-04-2025","06-05-2025","Traditional","Thrift Savings Plan - Civilian","Traditional","L 2065","150.00","10.0000","15.000000",',
+    ];
+    const r = await t
+      .call("post", `/api/accounts/${id}/tsp/activity/import`)
+      .send({ csv: activity.join("\n"), updateHoldings: false })
+      .expect(200);
+    expect(r.body.history).toMatchObject({ from: "2025-06-04", to: "2025-06-06", days: 2 });
+    const rows = t.sqlite
+      .prepare(
+        "SELECT substr(observed_at, 1, 10) AS day, current_balance_minor AS v FROM balance_snapshots WHERE account_id = ? AND observed_at < '2026' ORDER BY observed_at",
+      )
+      .all(id);
+    // 115 units at $10 on Jun 4 and 6; Jun 5 keeps its recorded balance.
+    expect(rows).toEqual([
+      { day: "2025-06-04", v: 115_000 },
+      { day: "2025-06-05", v: 123_456 },
+      { day: "2025-06-06", v: 115_000 },
+    ]);
+  });
+
   it("catches up from the TSP's chart and activity files, with the balance history", async () => {
     const t = app();
     const id = (
@@ -860,6 +920,25 @@ describe("through the API", () => {
       .all(id) as Array<{ quantity: number }>;
     expect(held).toEqual([{ quantity: 15 }]);
   });
+
+  it("takes a price file of a few megabytes, and says plainly when a request is too large", async () => {
+    const t = app();
+    // Like tsp.gov's full history: every fund, over 20 years of days (more than 1 MB).
+    const funds =
+      "L Income,L 2030,L 2035,L 2040,L 2045,L 2050,L 2055,L 2060,L 2065,L 2070,L 2075,G Fund,F Fund,C Fund,S Fund,I Fund";
+    const rows = [`Date,${funds}`];
+    const prices = Array.from({ length: 16 }, (_, i) => (10 + i).toFixed(6)).join(",");
+    for (let i = 0; i < 6000; i++) rows.push(`${addDays("2003-01-01", i)},${prices}`);
+    const csv = rows.join("\n");
+    expect(csv.length).toBeGreaterThan(1_000_000);
+    const imported = await t.call("post", "/api/tsp/prices/import").send({ csv }).expect(200);
+    expect(imported.body).toMatchObject({ days: 6000, prices: 96_000 });
+    const big = await t
+      .call("put", "/api/calendar/notes/2026-01-01")
+      .send({ note: "x".repeat(1_500_000) })
+      .expect(413);
+    expect(big.body.error).toBe("too_large");
+  }, 60_000);
 
   it("explains an automatic download that is refused", async () => {
     const t = makeTestApp();
