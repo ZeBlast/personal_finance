@@ -505,3 +505,79 @@ describe("merchant nodes", () => {
     expect(m.nodes.find((n) => n.kind === "institution")!.logo).toBe("data:image/png;base64,AA");
   });
 });
+
+describe("grouping accounts into their institutions", () => {
+  const grouped = { ...DEFAULT_OPTIONS, groupInstitutions: true };
+  // Checking also sends money to the Wallet, an account kept by hand.
+  const withWallet: GraphData = {
+    ...data,
+    transactions: [
+      ...data.transactions,
+      tx({ id: 7, amountMinor: 2_000, isTransfer: true, transferPairId: 8, categoryId: null }),
+      tx({
+        id: 8,
+        accountId: 20,
+        amountMinor: -2_000,
+        isTransfer: true,
+        transferPairId: 7,
+        categoryId: null,
+      }),
+      tx({ id: 9, accountId: 20, merchant: "Kiosk", amountMinor: 400 }),
+    ],
+  };
+
+  it("draws linked accounts as their institution, and leaves accounts kept by hand alone", () => {
+    const m = buildModel(withWallet, grouped);
+    const bank = institutionNode("item-1");
+    expect(ids(m)).not.toContain(accountNode(10));
+    expect(ids(m)).not.toContain(accountNode(11));
+    expect(ids(m)).toContain(accountNode(20));
+    expect(m.nodes.find((n) => n.id === bank)).toMatchObject({
+      memberAccountIds: [10, 11],
+      weightMinor: 50_000,
+    });
+    // The Wallet still hangs off its own institution node; the bank owns no account nodes.
+    expect(m.links.filter((l) => l.kind === "owns").map((l) => l.target)).toEqual([
+      accountNode(20),
+    ]);
+    // Spending and income attach to the institution, in clusters of its own.
+    expect(m.links).toContainEqual(
+      expect.objectContaining({ source: bank, target: clusterNode(bank, 5), kind: "spends" }),
+    );
+    expect(m.links).toContainEqual(expect.objectContaining({ target: bank, kind: "income" }));
+    expect(m.links).toContainEqual(
+      expect.objectContaining({ source: accountNode(20), target: clusterNode(20, 5) }),
+    );
+  });
+
+  it("counts transfers inside one institution on it, and draws the rest between nodes", () => {
+    const m = buildModel(withWallet, grouped);
+    const bank = institutionNode("item-1");
+    // Checking → Savings stays inside the bank; Checking → Wallet leaves it.
+    expect(m.links.filter((l) => l.kind === "transfer")).toEqual([
+      expect.objectContaining({ source: bank, target: accountNode(20), weightMinor: 2_000 }),
+    ]);
+    expect(m.nodes.find((n) => n.id === bank)!.internalMinor).toBe(10_000);
+    expect(m.links.some((l) => l.source === l.target)).toBe(false);
+  });
+
+  it("changes nothing when off, and still groups categories across everything when asked", () => {
+    const off = buildModel(withWallet, DEFAULT_OPTIONS);
+    expect(off.nodes.find((n) => n.id === institutionNode("item-1"))!.memberAccountIds).toBe(
+      undefined,
+    );
+    const both = buildModel(withWallet, { ...grouped, groupCategories: true });
+    expect(both.links).toContainEqual(
+      expect.objectContaining({ source: institutionNode("item-1"), target: clusterNode(null, 5) }),
+    );
+    expect(both.links).toContainEqual(
+      expect.objectContaining({ source: accountNode(20), target: clusterNode(null, 5) }),
+    );
+  });
+
+  it("hides an institution whose accounts are all idle, when idle accounts are hidden", () => {
+    const quiet: GraphData = { ...data, transactions: [tx({ id: 1, accountId: 20 })] };
+    const m = buildModel(quiet, { ...grouped, hideIdleAccounts: true });
+    expect(ids(m)).not.toContain(institutionNode("item-1"));
+  });
+});

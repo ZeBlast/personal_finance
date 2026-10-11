@@ -136,6 +136,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
     showExternal: DEFAULT_OPTIONS.showExternal,
     showSpending: DEFAULT_OPTIONS.showSpending,
     groupCategories: DEFAULT_OPTIONS.groupCategories,
+    groupInstitutions: DEFAULT_OPTIONS.groupInstitutions,
     groupMerchants: DEFAULT_OPTIONS.groupMerchants,
     hideIdleAccounts: DEFAULT_OPTIONS.hideIdleAccounts,
     search: "",
@@ -662,6 +663,11 @@ export function NetworkGraph({ data }: { data: GraphData }) {
                 onChange={(v) => setOptions((o) => ({ ...o, groupCategories: v }))}
               />
               <Toggle
+                label="Group linked accounts into their institution"
+                checked={options.groupInstitutions}
+                onChange={(v) => setOptions((o) => ({ ...o, groupInstitutions: v }))}
+              />
+              <Toggle
                 label="One node per merchant in open groups"
                 checked={options.groupMerchants}
                 onChange={(v) => setOptions((o) => ({ ...o, groupMerchants: v }))}
@@ -976,6 +982,18 @@ function Details({
       ) : (
         <>
           {node.kind === "account" && <Row label="Balance" value={money(node.weightMinor)} />}
+          {node.memberAccountIds && (
+            <dl className="mt-1 space-y-1">
+              <Row
+                label="Accounts"
+                value={node.memberAccountIds.map((id) => accountName.get(id) ?? "").join(", ")}
+              />
+              <Row label="Balances together" value={money(node.weightMinor)} />
+              {(node.internalMinor ?? 0) > 0 && (
+                <Row label="Moved between them" value={money(node.internalMinor ?? 0)} />
+              )}
+            </dl>
+          )}
           {txs.length > 0 && (
             <p className="mt-1 text-slate-600 dark:text-slate-300">
               {txs.length} transaction{txs.length === 1 ? "" : "s"} ·{" "}

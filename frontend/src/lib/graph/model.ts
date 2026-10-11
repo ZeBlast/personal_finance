@@ -12,6 +12,10 @@
  *   accounts, as thick as the money moved).
  * - With `showExternal`, payments to and from other people (Zelle and the like) link the account
  *   with a node for the person, pointing the way the money went.
+ * - With `groupInstitutions`, a linked institution stands in for its accounts: their spending,
+ *   income, people and transfers attach to it. A transfer between two accounts of one institution
+ *   draws no line (it would loop back to the same node) and is counted on the institution instead
+ *   (`internalMinor`). Accounts kept by hand are not grouped.
  */
 
 export interface GraphData {
@@ -69,6 +73,10 @@ export interface GraphNode {
   open?: boolean;
   /** For an institution: its logo (an image data URL), drawn in the node. */
   logo?: string | null;
+  /** For an institution standing in for its accounts (`groupInstitutions`): those accounts. */
+  memberAccountIds?: number[];
+  /** For such an institution: money moved between its own accounts, in cents. */
+  internalMinor?: number;
 }
 
 export type LinkKind = "owns" | "spends" | "income" | "transfer" | "external";
@@ -105,6 +113,8 @@ export interface ModelOptions {
   groupMerchants: boolean;
   /** One node per category for all accounts, instead of one per account. */
   groupCategories: boolean;
+  /** Linked accounts drawn as their institution (accounts kept by hand stay as they are). */
+  groupInstitutions: boolean;
   /** Leave out accounts with no transactions in the period. */
   hideIdleAccounts: boolean;
   /** Only transactions whose merchant, category, or source contains this (case does not matter). */
@@ -118,6 +128,7 @@ export const DEFAULT_OPTIONS: ModelOptions = {
   showExternal: true,
   showSpending: true,
   groupCategories: false,
+  groupInstitutions: false,
   groupMerchants: true,
   hideIdleAccounts: false,
   search: "",
@@ -129,14 +140,22 @@ const TRANSFER_COLOR = "#38bdf8";
 const PERSON_COLOR = "#f97316";
 const UNCATEGORIZED_COLOR = "#94a3b8";
 
+/** The institution id the server gives accounts kept by hand (never grouped). */
+export const MANUAL_INSTITUTION = "manual";
+
 export const institutionNode = (id: string): string => `inst:${id}`;
 export const accountNode = (id: number): string => `acct:${id}`;
-/** A category cluster: an account's, or (account null) the one shared by all accounts. */
-export const clusterNode = (accountId: number | null, categoryId: number | null): string =>
-  `cl:${accountId ?? "all"}:${categoryId ?? "none"}`;
+/**
+ * Who a category cluster belongs to: an account (its id), a grouped institution (its node id), or
+ * (null) all accounts at once.
+ */
+type Owner = number | string | null;
+/** A category cluster: an account's or institution's, or (owner null) the one shared by all. */
+export const clusterNode = (owner: Owner, categoryId: number | null): string =>
+  `cl:${owner ?? "all"}:${categoryId ?? "none"}`;
 /** A subcategory cluster, under its category's cluster. */
-export const subclusterNode = (accountId: number | null, subcategoryId: number): string =>
-  `sub:${accountId ?? "all"}:${subcategoryId}`;
+export const subclusterNode = (owner: Owner, subcategoryId: number): string =>
+  `sub:${owner ?? "all"}:${subcategoryId}`;
 export const txNode = (id: number): string => `tx:${id}`;
 /** A merchant's transactions within an open group. */
 export const merchantNode = (group: string, merchant: string): string =>
@@ -207,19 +226,31 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
     (a) => busy.has(a.id) || (!options.hideIdleAccounts && search === ""),
   );
   const shownAccounts = new Set(accounts.map((a) => a.id));
+  // A linked account drawn as its institution (`groupInstitutions`), or as itself.
+  const institutionOf = new Map(data.accounts.map((a) => [a.id, a.institutionId]));
+  const grouped = (accountId: number): boolean =>
+    options.groupInstitutions &&
+    (institutionOf.get(accountId) ?? MANUAL_INSTITUTION) !== MANUAL_INSTITUTION;
+  const endpoint = (accountId: number): string =>
+    grouped(accountId) ? institutionNode(institutionOf.get(accountId)!) : accountNode(accountId);
   for (const inst of data.institutions) {
-    if (!accounts.some((a) => a.institutionId === inst.id)) continue;
+    const members = accounts.filter((a) => a.institutionId === inst.id);
+    if (members.length === 0) continue;
+    const standsIn = options.groupInstitutions && inst.id !== MANUAL_INSTITUTION;
     nodes.set(institutionNode(inst.id), {
       id: institutionNode(inst.id),
       kind: "institution",
       label: inst.name,
       color: inst.color ?? INSTITUTION_COLOR,
-      weightMinor: 0,
+      // Standing in for its accounts, it is as big as they are together.
+      weightMinor: standsIn ? members.reduce((n, a) => n + Math.abs(a.balanceMinor ?? 0), 0) : 0,
       transactionIds: [],
       logo: inst.logo ?? null,
+      ...(standsIn ? { memberAccountIds: members.map((a) => a.id), internalMinor: 0 } : {}),
     });
   }
   for (const a of accounts) {
+    if (grouped(a.id)) continue;
     nodes.set(accountNode(a.id), {
       id: accountNode(a.id),
       kind: "account",
@@ -249,7 +280,7 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
 
   for (const t of txs) {
     if (!shownAccounts.has(t.accountId)) continue;
-    const account = accountNode(t.accountId);
+    const account = endpoint(t.accountId);
     const amount = Math.abs(t.amountMinor);
     const group = groupOf(t, options.showExternal);
 
@@ -297,13 +328,24 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
       // Each matched pair is drawn once, from the side the money left.
       if (!pair || !shownAccounts.has(pair.accountId) || pair.accountId === t.accountId) continue;
       if (t.amountMinor < 0) continue;
-      addLink(account, accountNode(pair.accountId), "transfer", amount);
+      const other = endpoint(pair.accountId);
+      if (other === account) {
+        // Between two accounts of one grouped institution: no line, counted on the institution.
+        const inst = nodes.get(account);
+        if (inst) inst.internalMinor = (inst.internalMinor ?? 0) + amount;
+        continue;
+      }
+      addLink(account, other, "transfer", amount);
       continue;
     }
 
     // Spending (and money in that is not income, such as refunds) goes into a category cluster.
     if (!options.showSpending) continue;
-    const owner = options.groupCategories ? null : t.accountId;
+    const owner: Owner = options.groupCategories
+      ? null
+      : grouped(t.accountId)
+        ? account
+        : t.accountId;
     const cluster = clusterNode(owner, t.categoryId);
     const color = t.categoryColor ?? UNCATEGORIZED_COLOR;
     const clusterOf = (id: string, label: string, c: string): GraphNode => {
@@ -314,7 +356,7 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
         color: c,
         weightMinor: 0,
         transactionIds: [],
-        ...(owner === null ? {} : { accountId: owner }),
+        ...(typeof owner === "number" ? { accountId: owner } : {}),
         open: options.openClusters.has(id),
       };
       node.weightMinor += t.amountMinor; // refunds take away
@@ -345,7 +387,7 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
           color: txColor,
           weightMinor: 0,
           transactionIds: [],
-          ...(owner === null ? {} : { accountId: owner }),
+          ...(typeof owner === "number" ? { accountId: owner } : {}),
         };
         m.weightMinor += amount;
         m.transactionIds.push(t.id);
