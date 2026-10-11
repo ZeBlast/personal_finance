@@ -39,6 +39,7 @@ function radiusOf(n: GraphNode): number {
     case "account":
       return Math.min(16, 8 + Math.sqrt(dollars) / 25);
     case "income":
+    case "person":
       return Math.min(16, 6 + Math.sqrt(dollars) / 12);
     case "cluster":
       return Math.min(15, 4.5 + Math.sqrt(n.transactionIds.length) * 1.4);
@@ -52,6 +53,7 @@ const CHARGE: Record<GraphNode["kind"], number> = {
   institution: 1,
   account: 1,
   income: 0.8,
+  person: 0.8,
   cluster: 0.5,
   transaction: 0.08,
 };
@@ -64,6 +66,8 @@ function linkShape(l: GraphLink, target: GraphNode | undefined): SimLink {
       return { source: l.source, target: l.target, distance: 190, strength: 0.25 };
     case "transfer":
       return { source: l.source, target: l.target, distance: 240, strength: 0.08 };
+    case "external":
+      return { source: l.source, target: l.target, distance: 170, strength: 0.25 };
     default:
       return target?.kind === "transaction"
         ? { source: l.source, target: l.target, distance: 34, strength: 0.9 }
@@ -73,9 +77,14 @@ function linkShape(l: GraphLink, target: GraphNode | undefined): SimLink {
 
 /** Label visibility at a zoom level, 0 to 1, by kind (bigger things show their names sooner). */
 function labelAlpha(kind: GraphNode["kind"], scale: number, textFade: number): number {
-  const start = { institution: 0.25, account: 0.45, income: 0.7, cluster: 0.9, transaction: 2.4 }[
-    kind
-  ];
+  const start = {
+    institution: 0.25,
+    account: 0.45,
+    income: 0.7,
+    person: 0.7,
+    cluster: 0.9,
+    transaction: 2.4,
+  }[kind];
   const from = start * textFade;
   return Math.max(0, Math.min(1, (scale - from) / (from * 0.6 + 0.05)));
 }
@@ -106,7 +115,9 @@ export function NetworkGraph({ data }: { data: GraphData }) {
   const [options, setOptions] = useState<Omit<ModelOptions, "openClusters">>({
     showIncome: DEFAULT_OPTIONS.showIncome,
     showTransfers: DEFAULT_OPTIONS.showTransfers,
+    showExternal: DEFAULT_OPTIONS.showExternal,
     showSpending: DEFAULT_OPTIONS.showSpending,
+    groupCategories: DEFAULT_OPTIONS.groupCategories,
     hideIdleAccounts: DEFAULT_OPTIONS.hideIdleAccounts,
     search: "",
   });
@@ -139,7 +150,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
   );
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model]);
   useEffect(() => {
-    hasTransfers.current = model.links.some((l) => l.kind === "transfer");
+    hasTransfers.current = model.links.some((l) => l.kind === "transfer" || l.kind === "external");
   }, [model]);
   const near = useMemo(() => neighbours(model), [model]);
   const txById = useMemo(() => new Map(data.transactions.map((t) => [t.id, t])), [data]);
@@ -262,7 +273,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
         (l.source === focus || l.target === focus);
       const dollars = l.weightMinor / 100;
       const width =
-        (l.kind === "income" || l.kind === "transfer"
+        (l.kind === "income" || l.kind === "transfer" || l.kind === "external"
           ? 1 + Math.min(4, Math.log10(1 + dollars))
           : 1) / Math.sqrt(scale);
       ctx.globalAlpha = on
@@ -272,7 +283,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
       ctx.strokeStyle =
         on && (l.kind === "owns" || l.kind === "spends") ? "#a78bfa" : LINK_COLORS[l.kind];
       ctx.lineWidth = on ? width * 1.6 : width;
-      if (l.kind === "transfer") {
+      if (l.kind === "transfer" || l.kind === "external") {
         drawTransfer(
           ctx,
           l,
@@ -309,6 +320,10 @@ export function NetworkGraph({ data }: { data: GraphData }) {
         ctx.lineTo(p.x, p.y + r);
         ctx.lineTo(p.x - r, p.y);
         ctx.closePath();
+      } else if (n.kind === "person") {
+        // People money was sent to or received from are squares.
+        const r = p.radius;
+        ctx.rect(p.x - r, p.y - r, r * 2, r * 2);
       } else {
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       }
@@ -586,9 +601,19 @@ export function NetworkGraph({ data }: { data: GraphData }) {
                 onChange={(v) => setOptions((o) => ({ ...o, showSpending: v }))}
               />
               <Toggle
+                label="Group categories across accounts"
+                checked={options.groupCategories}
+                onChange={(v) => setOptions((o) => ({ ...o, groupCategories: v }))}
+              />
+              <Toggle
                 label="Transfers between accounts"
                 checked={options.showTransfers}
                 onChange={(v) => setOptions((o) => ({ ...o, showTransfers: v }))}
+              />
+              <Toggle
+                label="Transfers to and from people"
+                checked={options.showExternal}
+                onChange={(v) => setOptions((o) => ({ ...o, showExternal: v }))}
               />
               <Toggle
                 label="Accounts with no activity"
@@ -817,6 +842,7 @@ const KIND_LABEL: Record<GraphNode["kind"], string> = {
   institution: "Institution",
   account: "Account",
   income: "Income source",
+  person: "Person (money sent or received)",
   cluster: "Spending group",
   transaction: "Transaction",
 };
@@ -865,7 +891,14 @@ function Details({
             value={`${single.amountMinor < 0 ? "+" : "−"}${money(Math.abs(single.amountMinor))}`}
           />
           <Row label="Account" value={accountName.get(single.accountId) ?? ""} />
-          <Row label="Category" value={single.categoryName ?? "Uncategorized"} />
+          <Row
+            label="Category"
+            value={
+              single.subcategoryName
+                ? `${single.categoryName ?? ""} › ${single.subcategoryName}`
+                : (single.categoryName ?? "Uncategorized")
+            }
+          />
           {single.pending && <Row label="Status" value="Pending" />}
         </dl>
       ) : (
@@ -874,7 +907,11 @@ function Details({
           {txs.length > 0 && (
             <p className="mt-1 text-slate-600 dark:text-slate-300">
               {txs.length} transaction{txs.length === 1 ? "" : "s"} ·{" "}
-              {node.kind === "income" ? "received " : ""}
+              {node.kind === "income"
+                ? "received "
+                : node.kind === "person"
+                  ? "sent or received "
+                  : ""}
               {money(Math.abs(node.weightMinor))}
             </p>
           )}
@@ -956,6 +993,10 @@ function Legend() {
           className="inline-block w-4 border-t-2 border-dashed border-sky-400"
         />,
         "Transfer",
+      )}
+      {item(
+        <span aria-hidden="true" className="inline-block h-2.5 w-2.5 bg-orange-500" />,
+        "Person (money sent or received)",
       )}
     </ul>
   );

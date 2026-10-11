@@ -848,3 +848,62 @@ export const goals = sqliteTable("goals", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/**
+ * Items in a collection account (trading cards, coins, ...): what each is, how many, and what one is
+ * worth. The account's balance is the sum of quantity × value, so the collection counts in net
+ * worth. `itemKey` identifies the same item across imports, so importing a newer export merges.
+ */
+export const collectionItems = sqliteTable(
+  "collection_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    name: text("name").notNull(),
+    /** A printing or version, such as "Poke Ball Pattern"; empty for the regular one. */
+    variant: text("variant").notNull().default(""),
+    /** For cards: the set code (PBL) and the number in the set (056/084). */
+    setCode: text("set_code").notNull().default(""),
+    number: text("number").notNull().default(""),
+    quantity: integer("quantity").notNull().default(1),
+    /** What one is worth now, in cents; null when not known yet (it then counts as nothing). */
+    unitValueMinor: integer("unit_value_minor"),
+    /** What one cost, in cents, when known. */
+    unitCostMinor: integer("unit_cost_minor"),
+    condition: text("condition"),
+    notes: text("notes"),
+    /** TCGplayer's product id, looked up from the set code and number (prices are fetched by it). */
+    tcgplayerId: text("tcgplayer_id"),
+    /** Where the value came from: typed in ("manual", kept as is) or the market price ("market"). */
+    valueSource: text("value_source"),
+    /** The JustTCG variant (card, condition, printing) this item is priced as, once matched. */
+    priceVariantId: text("price_variant_id"),
+    /** What it matched, for showing ("Pikachu · Near Mint · Holofoil"). */
+    priceMatchLabel: text("price_match_label"),
+    /** "matched", or "not_found" when a search found nothing; null before any search. */
+    priceMatchStatus: text("price_match_status"),
+    /** The latest market price of one, in cents, and when it was fetched. */
+    marketPriceMinor: integer("market_price_minor"),
+    priceUpdatedAt: text("price_updated_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("collection_items_account_key").on(table.accountId, table.itemKey)],
+);
+
+/** Market price history of a collection item: one price per day, from the price service. */
+export const collectionPriceHistory = sqliteTable(
+  "collection_price_history",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => collectionItems.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    priceMinor: integer("price_minor").notNull(),
+  },
+  (table) => [uniqueIndex("collection_price_history_item_day").on(table.itemId, table.day)],
+);

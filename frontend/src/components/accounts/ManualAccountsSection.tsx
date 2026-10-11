@@ -10,9 +10,11 @@ import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { CashbackSection } from "./CashbackSection";
 import { HiddenBadge, HideToggle } from "./HideToggle";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
+import { CollectionDialog, isCollection } from "./CollectionDialog";
 import { AddCreditsDialog, isStoreCredit, UseCreditsDialog } from "./StoreCreditDialogs";
 
-type Kind = "cash" | "checking" | "savings" | "credit_card" | "store_credit";
+type Kind =
+  "cash" | "checking" | "savings" | "credit_card" | "store_credit" | "pokemon_cards" | "collection";
 
 const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: string }> = [
   {
@@ -44,6 +46,18 @@ const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: str
     label: "Gift card / store credit",
     balanceLabel: "Credit on it right now",
     help: "Dollar credits with one business, such as a Dunkin gift card. Add credits, then record purchases paid with them, alone or with real money. Credits only count in this account: never in income, spending, or net worth.",
+  },
+  {
+    value: "pokemon_cards",
+    label: "Pokémon cards (collection)",
+    balanceLabel: "",
+    help: "Pokémon cards, each with its TCGplayer id and condition (Lightly Played unless you say otherwise). Import a TCGplayer export or add cards, and get market prices from JustTCG. The account is worth the total, which counts in net worth.",
+  },
+  {
+    value: "collection",
+    label: "Other collection (coins, stamps, collectibles)",
+    balanceLabel: "",
+    help: "Collectibles you value yourself. Add items, or import a TCGplayer export, and enter what each is worth. The account is worth the total, which counts in net worth.",
   },
 ];
 
@@ -131,24 +145,34 @@ function NewAccountDialog({
             autoFocus
             onChange={(e) => setName(e.target.value)}
             placeholder={
-              kind === "cash" ? "Wallet" : kind === "store_credit" ? "Dunkin" : "My account"
+              kind === "cash"
+                ? "Wallet"
+                : kind === "store_credit"
+                  ? "Dunkin"
+                  : kind === "pokemon_cards"
+                    ? "Pokémon cards"
+                    : kind === "collection"
+                      ? "Coins"
+                      : "My account"
             }
             className={inputClass}
           />
         </div>
-        <div>
-          <label htmlFor={`${id}-balance`} className="block font-medium">
-            {info.balanceLabel} (optional)
-          </label>
-          <input
-            id={`${id}-balance`}
-            inputMode="decimal"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-            placeholder="0.00"
-            className={inputClass}
-          />
-        </div>
+        {kind !== "collection" && kind !== "pokemon_cards" && (
+          <div>
+            <label htmlFor={`${id}-balance`} className="block font-medium">
+              {info.balanceLabel} (optional)
+            </label>
+            <input
+              id={`${id}-balance`}
+              inputMode="decimal"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              placeholder="0.00"
+              className={inputClass}
+            />
+          </div>
+        )}
         {kind === "credit_card" && (
           <div>
             <label htmlFor={`${id}-limit`} className="block font-medium">
@@ -192,6 +216,7 @@ export function ManualAccountsSection() {
   const [dialog, setDialog] = useState<"new" | null>(null);
   const [adding, setAdding] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
+  const [collection, setCollection] = useState<Account | null>(null);
   const [credits, setCredits] = useState<{ account: Account; action: "add" | "use" } | null>(null);
   const [notice, setNotice] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -205,6 +230,22 @@ export function ManualAccountsSection() {
     setNotice({ kind: "info", text });
     accounts.reload();
     announceDataChanged();
+  }
+
+  /** A collection exported from another copy of the app becomes a new account here. */
+  async function importCollectionFile(file: File): Promise<void> {
+    try {
+      const made = await api<{ name: string; items: unknown[] }>("/collections/import", {
+        method: "POST",
+        body: await file.text(),
+      });
+      changed(`${made.name} was imported with ${made.items.length} items.`);
+    } catch (e) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(e, "That file is not a collection exported from this app."),
+      });
+    }
   }
 
   async function remove(): Promise<void> {
@@ -227,13 +268,28 @@ export function ManualAccountsSection() {
         <div>
           <h2 className="text-lg font-semibold">Accounts you keep by hand</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Cash, gift cards and store credit, or an account at a bank that cannot be connected. You
-            enter the transactions; the balance is worked out from them.
+            Cash, gift cards and store credit, collections, or an account at a bank that cannot be
+            connected. You enter the transactions; the balance is worked out from them.
           </p>
         </div>
-        <button type="button" className={primaryClass} onClick={() => setDialog("new")}>
-          Add account by hand
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <label className={`${buttonClass} cursor-pointer`}>
+            Import collection file
+            <input
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void importCollectionFile(file);
+              }}
+            />
+          </label>
+          <button type="button" className={primaryClass} onClick={() => setDialog("new")}>
+            Add account by hand
+          </button>
+        </div>
       </div>
       {notice && (
         <p
@@ -288,7 +344,11 @@ export function ManualAccountsSection() {
                   onChanged={() => accounts.reload()}
                   onError={(text) => setNotice({ kind: "error", text })}
                 />
-                {isStoreCredit(a) ? (
+                {isCollection(a) ? (
+                  <button type="button" className={buttonClass} onClick={() => setCollection(a)}>
+                    Open collection
+                  </button>
+                ) : isStoreCredit(a) ? (
                   <>
                     <button
                       type="button"
@@ -353,6 +413,16 @@ export function ManualAccountsSection() {
           categories={categories ?? []}
           onSaved={changed}
           onClose={() => setCredits(null)}
+        />
+      )}
+      {collection && (
+        <CollectionDialog
+          account={collection}
+          onChanged={() => {
+            accounts.reload();
+            announceDataChanged();
+          }}
+          onClose={() => setCollection(null)}
         />
       )}
       {deleting && (

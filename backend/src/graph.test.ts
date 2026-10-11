@@ -33,6 +33,40 @@ describe("transaction graph", () => {
     expect(g.truncated).toBe(false);
   });
 
+  it("marks subcategories and the person on the other side of a payment", async () => {
+    const h = makeSyncHarness();
+    cleanups.push(h.cleanup);
+    const { item } = await linkDemoBank(h.call);
+    await h.sync.syncItem(item.id, "manual");
+    const db = h.sqlite;
+    const parent = db
+      .prepare(
+        "insert into categories (name, created_at, updated_at) values ('Test Parent', '2026-01-01', '2026-01-01') returning id",
+      )
+      .get() as { id: number };
+    const sub = db
+      .prepare(
+        "insert into categories (name, parent_id, created_at, updated_at) values ('Test Sub', ?, '2026-01-01', '2026-01-01') returning id",
+      )
+      .get(parent.id) as { id: number };
+    const [a, b] = db
+      .prepare("select id from transactions where amount_minor > 0 order by id limit 2")
+      .all() as Array<{ id: number }>;
+    db.prepare("update transactions set category_id = ? where id = ?").run(sub.id, a!.id);
+    db.prepare("update transactions set recipient_user = 'Sam Lee' where id = ?").run(b!.id);
+
+    const g = (
+      await h.call("get", "/api/graph/transactions?from=2000-01-01&to=2030-12-31").expect(200)
+    ).body;
+    const ta = g.transactions.find((t: { id: number }) => t.id === a!.id);
+    expect(ta).toMatchObject({
+      categoryId: parent.id,
+      subcategoryId: sub.id,
+      subcategoryName: "Test Sub",
+    });
+    expect(g.transactions.find((t: { id: number }) => t.id === b!.id).person).toBe("Sam Lee");
+  });
+
   it("refuses a backwards range", async () => {
     const t = makeTestApp();
     cleanups.push(t.cleanup);

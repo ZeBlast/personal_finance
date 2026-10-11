@@ -1,4 +1,18 @@
 import { eq } from "drizzle-orm";
+import {
+  addItem,
+  deleteItem,
+  getCollection,
+  importCollection,
+  updateItem,
+} from "../services/collection.service.js";
+import {
+  collectionFileSchema,
+  exportCollection,
+  importCollectionFile,
+} from "../services/collection-file.service.js";
+import { findTcgplayerIds } from "../services/tcgplayer-ids.service.js";
+import type { Fetch } from "../services/card-price.service.js";
 import { addCredits, useCredits } from "../services/store-credit.service.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -69,7 +83,7 @@ const useCreditsBody = z
   })
   .strict();
 
-export function accountsRoutes(db: AppDb): Router {
+export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
   const router = Router();
 
   // Accounts from connections in the active Plaid environment, plus manual accounts.
@@ -110,6 +124,71 @@ export function accountsRoutes(db: AppDb): Router {
     res
       .status(201)
       .json(useCredits(db, id, useCreditsBody.parse(req.body), new Date().toISOString()));
+  });
+
+  const itemBody = z
+    .object({
+      name: z.string().trim().min(1).max(200),
+      variant: z.string().max(200).optional(),
+      setCode: z.string().max(40).optional(),
+      number: z.string().max(40).optional(),
+      quantity: z.number().int().min(0).max(1_000_000),
+      unitValueMinor: z.number().int().min(0).max(10_000_000_000).nullable().optional(),
+      unitCostMinor: z.number().int().min(0).max(10_000_000_000).nullable().optional(),
+      condition: z.string().max(40).nullable().optional(),
+      notes: z.string().max(1000).nullable().optional(),
+      tcgplayerId: z.string().trim().max(20).nullable().optional(),
+    })
+    .strict();
+
+  /** A collection account's items and value. */
+  router.get("/accounts/:id/collection", (req, res) => {
+    res.json(getCollection(db, idParam.parse(req.params["id"])));
+  });
+  router.post("/accounts/:id/collection/items", (req, res) => {
+    res.status(201).json(addItem(db, idParam.parse(req.params["id"]), itemBody.parse(req.body)));
+  });
+  router.put("/accounts/:id/collection/items/:itemId", (req, res) => {
+    res.json(
+      updateItem(
+        db,
+        idParam.parse(req.params["id"]),
+        idParam.parse(req.params["itemId"]),
+        itemBody.parse(req.body),
+      ),
+    );
+  });
+  router.delete("/accounts/:id/collection/items/:itemId", (req, res) => {
+    res.json(deleteItem(db, idParam.parse(req.params["id"]), idParam.parse(req.params["itemId"])));
+  });
+  /** A TCGPlayer export, pasted; `preview` only reports what it would do. */
+  router.post("/accounts/:id/collection/import", async (req, res) => {
+    const body = z
+      .object({ text: z.string().min(1).max(2_000_000), preview: z.boolean().default(false) })
+      .strict()
+      .parse(req.body);
+    const id = idParam.parse(req.params["id"]);
+    const result = importCollection(db, id, body.text, { preview: body.preview });
+    // Pokemon cards get their TCGplayer ids right away (free; without them, prices cost more).
+    if (!body.preview && result.collection?.type === "pokemon") {
+      try {
+        const ids = await findTcgplayerIds(db, id, catalogFetch);
+        res.json({ ...result, idsFound: ids.found, collection: getCollection(db, id) });
+        return;
+      } catch {
+        // The catalog can't be reached: the ids are looked up at the next price update.
+      }
+    }
+    res.json(result);
+  });
+
+  /** A collection as a file (items, prices, history; never the price API key). */
+  router.get("/accounts/:id/collection/export", (req, res) => {
+    res.json(exportCollection(db, idParam.parse(req.params["id"])));
+  });
+  /** Makes a new collection account from an exported file. */
+  router.post("/collections/import", (req, res) => {
+    res.status(201).json(importCollectionFile(db, collectionFileSchema.parse(req.body)));
   });
 
   router.delete("/accounts/manual/:id", (req, res) => {

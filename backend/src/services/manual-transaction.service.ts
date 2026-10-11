@@ -34,15 +34,32 @@ export const MANUAL_ACCOUNT_KINDS = [
   "savings",
   "credit_card",
   "store_credit",
+  "collection",
+  "pokemon_cards",
 ] as const;
 export type ManualAccountKind = (typeof MANUAL_ACCOUNT_KINDS)[number];
 
-const KIND: Record<ManualAccountKind, { type: "depository" | "credit"; subtype: string }> = {
+/** The subtype of a collection account (cards and other collectibles, valued item by item). */
+export const COLLECTION_SUBTYPE = "collection";
+/** A collection of Pokemon cards: each card has a TCGplayer id and a condition, and market prices. */
+export const POKEMON_COLLECTION_SUBTYPE = "pokemon cards";
+export const COLLECTION_SUBTYPES: ReadonlySet<string> = new Set([
+  COLLECTION_SUBTYPE,
+  POKEMON_COLLECTION_SUBTYPE,
+]);
+
+const KIND: Record<
+  ManualAccountKind,
+  { type: "depository" | "credit" | "other"; subtype: string }
+> = {
   cash: { type: "depository", subtype: "cash" },
   checking: { type: "depository", subtype: "checking" },
   savings: { type: "depository", subtype: "savings" },
   credit_card: { type: "credit", subtype: "credit card" },
   store_credit: { type: "depository", subtype: STORE_CREDIT_SUBTYPE },
+  // Worth what its items are worth: no transactions, so no opening balance.
+  collection: { type: "other", subtype: COLLECTION_SUBTYPE },
+  pokemon_cards: { type: "other", subtype: POKEMON_COLLECTION_SUBTYPE },
 };
 
 const MAX_AMOUNT = 100_000_000_000;
@@ -131,6 +148,13 @@ export function createManualBankAccount(
   if (!Number.isInteger(opening) || Math.abs(opening) > MAX_AMOUNT) {
     throw new AppError(400, "invalid_amount", "The opening balance is not a valid amount.");
   }
+  if ((input.kind === "collection" || input.kind === "pokemon_cards") && opening !== 0) {
+    throw new AppError(
+      400,
+      "invalid_amount",
+      "A collection is worth what its items are worth; add the items instead of a balance.",
+    );
+  }
   if (input.creditLimitMinor !== undefined && input.kind !== "credit_card") {
     throw new AppError(400, "invalid_limit", "Only a credit card has a credit limit.");
   }
@@ -191,7 +215,14 @@ export function createManualBankAccount(
 
 /** Removes an account kept by hand, with its transactions and history. Connected accounts cannot be removed here. */
 export function deleteManualBankAccount(db: AppDb, accountId: number): void {
-  requireManualBankAccount(db, accountId);
+  const row = db
+    .select({ isManual: accounts.isManual, subtype: accounts.subtype })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .get();
+  // A collection (with its items) is removed the same way.
+  if (!(row?.isManual && COLLECTION_SUBTYPES.has(row.subtype ?? "")))
+    requireManualBankAccount(db, accountId);
   db.delete(accounts).where(eq(accounts.id, accountId)).run();
 }
 

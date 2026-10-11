@@ -24,6 +24,8 @@ import { plaidRoutes } from "./routes/plaid.routes.js";
 import { settingsRoutes } from "./routes/settings.routes.js";
 import { syncRoutes } from "./routes/sync.routes.js";
 import { transactionsRoutes } from "./routes/transactions.routes.js";
+import type { ClientOptions as CardPriceClientOptions } from "./services/card-price.service.js";
+import { collectionPricesRoutes } from "./routes/collection-prices.routes.js";
 import type { TokenCipher } from "./services/crypto.js";
 import { createPlaidService } from "./services/plaid.service.js";
 import { createSyncService, type SyncService } from "./services/sync.service.js";
@@ -48,6 +50,8 @@ export interface AppOptions {
   migrationsDir?: string | undefined;
   /** Built frontend folder, served so the UI can also be opened in a browser tab. */
   staticDir?: string | undefined;
+  /** How the card price client reaches JustTCG (tests pass a fake fetch and no pacing). */
+  cardPriceClient?: CardPriceClientOptions | undefined;
   /** Development only: also accept requests from the Vite dev server's origin. */
   allowDevOrigin?: boolean | undefined;
 }
@@ -65,6 +69,7 @@ export function createApp({
   allowDevOrigin,
   dataDir,
   migrationsDir,
+  cardPriceClient,
 }: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -81,14 +86,17 @@ export function createApp({
   const importJson = express.json({ limit: "8mb" });
   const json = express.json({ limit: "1mb" });
   app.use("/api", (req, res, next) =>
-    /^\/(tsp\/prices\/import|accounts\/\d+\/tsp\/activity\/import)$/.test(req.path)
+    /^\/(collections\/import|tsp\/prices\/import|accounts\/\d+\/tsp\/activity\/import)$/.test(
+      req.path,
+    )
       ? importJson(req, res, next)
       : json(req, res, next),
   );
   app.use("/api", healthRoutes(db, version));
   app.use("/api", settingsRoutes(db));
   app.use("/api", plaidRoutes({ db, cipher, plaid, getGateway }));
-  app.use("/api", accountsRoutes(db));
+  app.use("/api", accountsRoutes(db, cardPriceClient?.fetchImpl));
+  app.use("/api", collectionPricesRoutes(db, cipher, cardPriceClient));
   app.use("/api", syncRoutes(sync));
   app.use("/api", categoriesRoutes(db));
   app.use("/api", analyticsRoutes(db));

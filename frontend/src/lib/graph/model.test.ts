@@ -353,3 +353,109 @@ describe("opening a group", () => {
     }
   });
 });
+
+describe("category grouping and subcategories", () => {
+  const food = { categoryId: 1, categoryName: "Food & Drink", categoryColor: "#f59e0b" };
+  const spend: GraphData = {
+    ...data,
+    transactions: [
+      tx({ id: 1, accountId: 10, ...food, subcategoryId: 2, subcategoryName: "Groceries" }),
+      tx({ id: 2, accountId: 11, ...food, subcategoryId: 2, subcategoryName: "Groceries" }),
+      tx({ id: 3, accountId: 11, ...food, amountMinor: 500 }),
+    ],
+  };
+
+  it("gives each account its own category node, with subcategory nodes under it", () => {
+    const m = buildModel(spend, DEFAULT_OPTIONS);
+    const ids = m.nodes
+      .filter((n) => n.kind === "cluster")
+      .map((n) => n.id)
+      .sort();
+    expect(ids).toEqual(["cl:10:1", "cl:11:1", "sub:10:2", "sub:11:2"]);
+    expect(m.links.some((l) => l.source === "cl:10:1" && l.target === "sub:10:2")).toBe(true);
+    // The category counts everything in it, its subcategories included.
+    expect(m.nodes.find((n) => n.id === "cl:11:1")!.weightMinor).toBe(1500);
+  });
+
+  it("can group a category into one node for all accounts", () => {
+    const m = buildModel(spend, { ...DEFAULT_OPTIONS, groupCategories: true });
+    const clusters = m.nodes.filter((n) => n.kind === "cluster");
+    expect(clusters.map((n) => n.id).sort()).toEqual(["cl:all:1", "sub:all:2"]);
+    expect(clusters.find((n) => n.id === "cl:all:1")!.weightMinor).toBe(2500);
+    expect(clusters.find((n) => n.id === "sub:all:2")!.label).toBe("Groceries");
+    // Both accounts link to the one Food & Drink node.
+    const into = m.links
+      .filter((l) => l.target === "cl:all:1")
+      .map((l) => l.source)
+      .sort();
+    expect(into).toEqual([accountNode(10), accountNode(11)]);
+  });
+
+  it("shows a subcategory's transactions under it when opened", () => {
+    const m = buildModel(spend, {
+      ...DEFAULT_OPTIONS,
+      groupCategories: true,
+      openClusters: new Set(["sub:all:2"]),
+    });
+    expect(
+      m.links
+        .filter((l) => l.source === "sub:all:2")
+        .map((l) => l.target)
+        .sort(),
+    ).toEqual([txNode(1), txNode(2)]);
+  });
+});
+
+describe("transfers to and from people", () => {
+  const people: GraphData = {
+    ...data,
+    transactions: [
+      tx({
+        id: 1,
+        merchant: "Zelle to Sam",
+        person: "Sam Lee",
+        amountMinor: 4000,
+        categoryId: null,
+      }),
+      tx({
+        id: 2,
+        merchant: "Zelle from Sam",
+        person: "sam lee",
+        amountMinor: -1500,
+        categoryId: null,
+      }),
+      tx({ id: 3, merchant: "Zelle to Ana", person: "Ana", amountMinor: 900, isTransfer: true }),
+      // Income from a person stays income.
+      tx({ id: 4, person: "Boss", amountMinor: -90000, income: true, source: "Boss" }),
+    ],
+  };
+
+  it("gives each person a node, with arrows the way the money went", () => {
+    const m = buildModel(people, DEFAULT_OPTIONS);
+    const persons = m.nodes.filter((n) => n.kind === "person");
+    expect(persons.map((n) => n.label).sort()).toEqual(["Ana", "Sam Lee"]);
+    expect(persons.find((n) => n.label === "Sam Lee")!.transactionIds).toEqual([1, 2]);
+    const ext = m.links.filter((l) => l.kind === "external");
+    expect(ext).toContainEqual(
+      expect.objectContaining({
+        source: accountNode(10),
+        target: "person:sam lee",
+        weightMinor: 4000,
+      }),
+    );
+    expect(ext).toContainEqual(
+      expect.objectContaining({
+        source: "person:sam lee",
+        target: accountNode(10),
+        weightMinor: 1500,
+      }),
+    );
+    expect(m.nodes.some((n) => n.kind === "income" && n.label === "Boss")).toBe(true);
+  });
+
+  it("can be turned off, the payments going back to spending", () => {
+    const m = buildModel(people, { ...DEFAULT_OPTIONS, showExternal: false });
+    expect(m.nodes.some((n) => n.kind === "person")).toBe(false);
+    expect(m.nodes.some((n) => n.kind === "cluster" && n.transactionIds.includes(1))).toBe(true);
+  });
+});

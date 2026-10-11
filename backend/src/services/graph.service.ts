@@ -41,9 +41,18 @@ export interface GraphTransaction {
   categoryId: number | null;
   categoryName: string | null;
   categoryColor: string | null;
+  /** The subcategory, when the transaction has one (null when it is filed under a top category). */
+  subcategoryId: number | null;
+  subcategoryName: string | null;
+  subcategoryColor: string | null;
   isTransfer: boolean;
   /** The other side of a transfer between the user's own accounts, when it was matched. */
   transferPairId: number | null;
+  /**
+   * The person on the other side of a payment (Zelle and the like): who it was sent to, for money
+   * out, or who sent it, for money in. Names typed in by the user win.
+   */
+  person: string | null;
   /** Money in that counts as income; `source` is who paid it. */
   income: boolean;
   source: string | null;
@@ -72,6 +81,10 @@ interface Row {
   category_id: number | null;
   category_name: string | null;
   category_color: string | null;
+  sub_id: number | null;
+  sub_name: string | null;
+  sub_color: string | null;
+  person: string | null;
   is_transfer: number;
   transfer_pair_id: number | null;
   income: number;
@@ -108,9 +121,15 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
       coalesce(pc.id, c.id) as category_id,
       coalesce(pc.name, c.name) as category_name,
       coalesce(pc.color, c.color) as category_color,
+      (case when pc.id is not null then c.id end) as sub_id,
+      (case when pc.id is not null then c.name end) as sub_name,
+      (case when pc.id is not null then c.color end) as sub_color,
       t.is_transfer, t.transfer_pair_id,
       (case when t.amount_minor < 0 and t.is_transfer = 0 and ${IS_INCOME} then 1 else 0 end) as income,
-      coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) as source
+      coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) as source,
+      (case when t.amount_minor > 0
+        then coalesce(nullif(trim(t.recipient_user), ''), nullif(trim(t.recipient), ''))
+        else coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) end) as person
     from transactions t
       join accounts a on a.id = t.account_id
       left join categories c on c.id = t.category_id
@@ -147,8 +166,12 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
       categoryId: r.category_id,
       categoryName: r.category_name,
       categoryColor: r.category_color,
+      subcategoryId: r.sub_id,
+      subcategoryName: r.sub_name,
+      subcategoryColor: r.sub_color,
       isTransfer: r.is_transfer === 1,
       transferPairId: r.transfer_pair_id,
+      person: r.person,
       income: r.income === 1,
       source: r.income === 1 ? (r.source ?? r.merchant) : null,
     })),
