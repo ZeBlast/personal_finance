@@ -14,6 +14,8 @@ import {
   type ManualDraft,
 } from "./manualTransaction";
 import { CategorySelect } from "../common/CategorySelect";
+import { announceDataChanged } from "../../lib/syncEvents";
+import { MerchantGroupField } from "./MerchantGroupField";
 
 /**
  * Adds a transaction by hand to an account the user keeps by hand (cash, for example), or edits
@@ -195,6 +197,16 @@ export function ManualTransactionDialog({
               onChange={(e) => set({ merchant: e.target.value })}
               className={inputClass}
             />
+            {transaction && (
+              // The saved merchant's group (a new one has no merchant to group yet).
+              <div className="mt-2">
+                <MerchantGroupField
+                  merchant={transaction.merchantOriginal}
+                  group={transaction.merchantGroup}
+                  onChanged={announceDataChanged}
+                />
+              </div>
+            )}
           </div>
           <div>
             <label htmlFor={`${id}-category`} className="block font-medium">

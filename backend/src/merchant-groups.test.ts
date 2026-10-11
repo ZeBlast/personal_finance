@@ -50,6 +50,46 @@ describe("merchant groups", () => {
     expect((await h.call("get", "/api/merchant-groups").expect(200)).body).toEqual([]);
   });
 
+  it("group transactions added by hand and imported, like bank ones", async () => {
+    const h = makeSyncHarness();
+    cleanups.push(h.cleanup);
+    const account = (
+      await h
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Checking", kind: "checking" })
+        .expect(201)
+    ).body.id as number;
+    const byHand = (
+      await h
+        .call("post", "/api/transactions")
+        .send({
+          accountId: account,
+          date: "2026-09-01",
+          merchant: "Corner Store",
+          amountMinor: 500,
+          direction: "out",
+        })
+        .expect(201)
+    ).body.id as number;
+    await h
+      .call("post", `/api/accounts/manual/${account}/import-csv`)
+      .send({ csv: "Date,Description,Amount\n09/02/2026,CORNER STORE #1234,-3.00" })
+      .expect(200);
+
+    await h
+      .call("put", "/api/merchant-groups/membership")
+      .send({ merchant: "Corner Store", newGroup: "Snacks" })
+      .expect(200);
+    const items = (await h.call("get", `/api/transactions?accountId=${account}`).expect(200)).body
+      .items as Array<{ id: number; merchant: string; merchantOriginal: string }>;
+    expect(items.find((t) => t.id === byHand)).toMatchObject({
+      merchant: "Snacks",
+      merchantOriginal: "Corner Store",
+    });
+    // The imported spelling, with its store number, is the same merchant.
+    expect(items.find((t) => t.id !== byHand)).toMatchObject({ merchant: "Snacks" });
+  });
+
   it("need a name and merchants", async () => {
     const t = makeTestApp();
     cleanups.push(t.cleanup);
