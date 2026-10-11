@@ -457,6 +457,11 @@ export function deleteManualTransaction(
     tx.delete(transactions)
       .where(and(eq(transactions.id, id), eq(transactions.source, "manual")))
       .run();
+    // A transfer it was linked with by hand stays a transfer, just no longer linked.
+    tx.update(transactions)
+      .set({ transferPairId: null, updatedAt: now })
+      .where(and(eq(transactions.transferPairId, id), eq(transactions.transferSource, "manual")))
+      .run();
     recomputeManualBalance(tx, row.accountId, now);
   });
   detectInternalTransfers(db, now);

@@ -192,8 +192,15 @@ export const transactions = sqliteTable(
      * `system` (an opening balance), or null (never flagged).
      */
     transferSource: text("transfer_source"),
-    /** For an automatic match, the transaction on the other account. */
+    /** For an automatic match, the transaction on the other account (or one linked by hand). */
     transferPairId: integer("transfer_pair_id"),
+    /**
+     * Made by the app as the other side of a transfer the user linked to an account they keep by
+     * hand; unlinking removes it.
+     */
+    createdForTransfer: integer("created_for_transfer", { mode: "boolean" })
+      .notNull()
+      .default(false),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),
@@ -906,4 +913,27 @@ export const collectionPriceHistory = sqliteTable(
     priceMinor: integer("price_minor").notNull(),
   },
   (table) => [uniqueIndex("collection_price_history_item_day").on(table.itemId, table.day)],
+);
+
+/** Merchants the user grouped as one (several names for one place, such as Amazon's). */
+export const merchantGroups = sqliteTable("merchant_groups", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** The merchants in a group, by their normalized name (see merchantKey); one group each. */
+export const merchantGroupMembers = sqliteTable(
+  "merchant_group_members",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    groupId: integer("group_id")
+      .notNull()
+      .references(() => merchantGroups.id, { onDelete: "cascade" }),
+    merchantKey: text("merchant_key").notNull(),
+    /** The name as it was shown when added, for listing. */
+    merchantName: text("merchant_name").notNull(),
+  },
+  (table) => [uniqueIndex("merchant_group_members_key").on(table.merchantKey)],
 );

@@ -31,6 +31,19 @@ const CLOSE_AT = 1.4;
 /** A group with more transactions than this only opens when asked (double-click). */
 const AUTO_OPEN_MAX = 120;
 
+/** Institution logos, decoded once each; `onLoad` asks for a redraw when one is ready. */
+const logos = new Map<string, HTMLImageElement>();
+function logoImage(src: string, onLoad: () => void): HTMLImageElement | null {
+  let img = logos.get(src);
+  if (!img) {
+    img = new Image();
+    img.onload = onLoad;
+    img.src = src;
+    logos.set(src, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
 function radiusOf(n: GraphNode): number {
   const dollars = n.weightMinor / 100;
   switch (n.kind) {
@@ -43,8 +56,13 @@ function radiusOf(n: GraphNode): number {
       return Math.min(16, 6 + Math.sqrt(dollars) / 12);
     case "cluster":
       return Math.min(15, 4.5 + Math.sqrt(n.transactionIds.length) * 1.4);
-    default:
-      return Math.min(7, 2.5 + Math.sqrt(dollars) / 10);
+    default: {
+      // A transaction, or a merchant's transactions together: the money, and how many there are.
+      const count = n.transactionIds.length;
+      return count > 1
+        ? Math.min(13, 2.5 + Math.sqrt(dollars) / 10 + Math.sqrt(count - 1) * 1.3)
+        : Math.min(7, 2.5 + Math.sqrt(dollars) / 10);
+    }
   }
 }
 
@@ -118,11 +136,14 @@ export function NetworkGraph({ data }: { data: GraphData }) {
     showExternal: DEFAULT_OPTIONS.showExternal,
     showSpending: DEFAULT_OPTIONS.showSpending,
     groupCategories: DEFAULT_OPTIONS.groupCategories,
+    groupMerchants: DEFAULT_OPTIONS.groupMerchants,
     hideIdleAccounts: DEFAULT_OPTIONS.hideIdleAccounts,
     search: "",
   });
   const [forces, setForces] = useState<Forces>(DEFAULT_FORCES);
   const [textFade, setTextFade] = useState(1);
+  /** How far account rings sit from their node, and how thick they are (1 is the usual). */
+  const [ringSize, setRingSize] = useState(1);
   /** Groups opened by hand (double-click) and by zooming in. */
   const [pinnedOpen, setPinnedOpen] = useState<ReadonlySet<string>>(new Set());
   const [zoomOpen, setZoomOpen] = useState<ReadonlySet<string>>(new Set());
@@ -328,6 +349,41 @@ export function NetworkGraph({ data }: { data: GraphData }) {
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       }
       ctx.fill();
+      // An institution shows its logo, clipped to its circle, on a white disc.
+      const logo =
+        n.kind === "institution" && n.logo ? logoImage(n.logo, () => (dirty.current = true)) : null;
+      if (logo) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.clip();
+        const s = p.radius * 1.5;
+        ctx.drawImage(logo, p.x - s / 2, p.y - s / 2, s, s);
+        ctx.restore();
+      } else if (n.kind === "institution") {
+        // No logo: the institution's first letter, in white on its color.
+        const letter = n.label.trim().charAt(0).toUpperCase();
+        if (letter) {
+          ctx.save();
+          ctx.fillStyle = "#ffffff";
+          ctx.font = `600 ${Math.round(p.radius * 1.1)}px system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(letter, p.x, p.y + p.radius * 0.05);
+          ctx.restore();
+        }
+      }
+      // Accounts get a ring in their own color, to tell them apart from groups and transactions.
+      if (n.kind === "account") {
+        const width = (2.4 * ringSize) / Math.sqrt(scale);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius + (3 * ringSize) / Math.sqrt(scale) + width / 2, 0, Math.PI * 2);
+        ctx.strokeStyle = n.color;
+        ctx.lineWidth = width;
+        ctx.stroke();
+      }
       if (n.kind === "institution" || (n.kind === "cluster" && n.open) || n.id === focus) {
         ctx.lineWidth = 2 / scale;
         ctx.strokeStyle = n.id === focus ? "#a78bfa" : bg;
@@ -353,7 +409,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
       ctx.fillText(label, p.x, p.y + p.radius + 3 / scale);
     }
     ctx.globalAlpha = 1;
-  }, [dark, model, near, selected, textFade]);
+  }, [dark, model, near, selected, textFade, ringSize]);
 
   /** Frames every node in view (zoomed no closer than 1.2). */
   const fit = useCallback(() => {
@@ -497,7 +553,7 @@ export function NetworkGraph({ data }: { data: GraphData }) {
     const dbl = (e: MouseEvent) => {
       const w = toWorld(e);
       const n = sim.current.nodeAt(w.x, w.y, 4 / camera.current.scale);
-      if (!n || !n.id.startsWith("cl:")) return;
+      if (!n || !(n.id.startsWith("cl:") || n.id.startsWith("sub:"))) return;
       toggleRef.current(n.id);
     };
     canvas.addEventListener("pointerdown", down);
@@ -606,6 +662,11 @@ export function NetworkGraph({ data }: { data: GraphData }) {
                 onChange={(v) => setOptions((o) => ({ ...o, groupCategories: v }))}
               />
               <Toggle
+                label="One node per merchant in open groups"
+                checked={options.groupMerchants}
+                onChange={(v) => setOptions((o) => ({ ...o, groupMerchants: v }))}
+              />
+              <Toggle
                 label="Transfers between accounts"
                 checked={options.showTransfers}
                 onChange={(v) => setOptions((o) => ({ ...o, showTransfers: v }))}
@@ -622,6 +683,17 @@ export function NetworkGraph({ data }: { data: GraphData }) {
               />
             </Group>
             <Group title="Display">
+              <Slider
+                label="Account ring size"
+                min={0.4}
+                max={3}
+                step={0.1}
+                value={ringSize}
+                onChange={(v) => {
+                  setRingSize(v);
+                  dirty.current = true;
+                }}
+              />
               <Slider
                 label="Text fade"
                 min={0.3}

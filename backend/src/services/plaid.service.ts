@@ -25,6 +25,8 @@ export interface ItemSummary {
   id: number;
   institutionId: string | null;
   institutionName: string;
+  /** The institution's logo (an image data URL), when it has been looked up. */
+  logo: string | null;
   environment: string;
   status: string;
   lastErrorCode: string | null;
@@ -76,6 +78,7 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
       id: row.id,
       institutionId: row.institutionId,
       institutionName: row.institutionName,
+      logo: row.institutionLogo,
       environment: row.environment,
       status: row.status,
       lastErrorCode: row.lastErrorCode,
@@ -373,6 +376,22 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
         // A network blip says nothing about the connection itself, so leave its status alone.
         if (failure.code !== "NETWORK_ERROR") recordProblem(row, failure);
         else throw toAppError(failure);
+      }
+      // While at it, the institution's logo, if it was never found (best effort).
+      if (!row.institutionLogo && row.institutionId) {
+        try {
+          const branding = await gateway.getInstitutionBranding(row.institutionId);
+          db.update(plaidItems)
+            .set({
+              institutionLogo: branding.logo,
+              institutionColor: branding.color ?? row.institutionColor,
+              brandingCheckedAt: now(),
+            })
+            .where(eq(plaidItems.id, row.id))
+            .run();
+        } catch {
+          // No logo this time; the connection check itself stands.
+        }
       }
       return summarize(requireItem(id));
     },

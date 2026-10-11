@@ -273,7 +273,7 @@ export function ManualAccountsSection() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <label className={`${buttonClass} cursor-pointer`}>
+          <label className={`${buttonClass} relative cursor-pointer`}>
             Import collection file
             <input
               type="file"

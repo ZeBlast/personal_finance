@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import { buttonClass } from "../components/investments/styles";
+import { CategoryExplorer } from "../components/insights/CategoryExplorer";
 import { UtilizationChart } from "../components/insights/UtilizationChart";
 import { useApi } from "../hooks/useApi";
 import { CADENCE_LABEL, dueLabel } from "../lib/insights";
@@ -329,6 +330,7 @@ export function InsightsPage() {
           estimated beyond what is stated.
         </p>
       </div>
+      <CategoryExplorer />
       <RecurringSection />
       <UtilizationSection />
     </section>

@@ -1,3 +1,5 @@
+import { merchantGroupsByKey } from "./merchant-group.service.js";
+import { merchantKey } from "../utils/merchant.js";
 import {
   and,
   asc,
@@ -178,6 +180,8 @@ export interface TransactionQuery {
   q?: string | undefined;
   /** A category ID (including its subcategories) or "none" for uncategorized. */
   category?: number | "none" | undefined;
+  /** `unmatched`: only transfers with no other side, so where the money went or came from is unknown. */
+  transfer?: "unmatched" | undefined;
   /**
    * `amount_*` sorts by the amount as people read it: spending is negative, money in is positive,
    * so `amount_asc` puts the biggest purchases first.
@@ -209,6 +213,12 @@ export interface TransactionDto {
   /** The user's edit if there is one, else the provider's merchant, else the raw description. */
   merchant: string;
   merchantEdited: boolean;
+  /**
+   * The merchant before grouping: the same as `merchant` unless the merchant is in a group, when
+   * `merchant` shows the group's name instead.
+   */
+  merchantOriginal: string;
+  merchantGroup: { id: number; name: string } | null;
   /** What the bank supplied, for "reset to the bank's value". */
   providerMerchant: string;
   amountMinor: number;
@@ -245,7 +255,9 @@ export interface TransactionDto {
    */
   splits: SplitDto[];
   splitValid: boolean;
-  /** For an automatic match, the other side of the transfer. */
+  /** The app added this as the other side of a transfer the user linked by hand. */
+  createdForTransfer: boolean;
+  /** For an automatic match, or a link made by hand, the other side of the transfer. */
   transferWith: {
     id: number;
     accountName: string;
@@ -342,6 +354,7 @@ const selectColumns = {
   isTransfer: transactions.isTransfer,
   transferSource: transactions.transferSource,
   transferPairId: transactions.transferPairId,
+  createdForTransfer: transactions.createdForTransfer,
   paymentChannel: transactions.paymentChannel,
   counterpartyName: transactions.counterpartyName,
   counterpartyType: transactions.counterpartyType,
@@ -409,6 +422,8 @@ function toDto(r: Row): TransactionDto {
     name: r.name,
     merchant: manualMerchant ?? providerMerchant,
     merchantEdited: manualMerchant !== null,
+    merchantOriginal: manualMerchant ?? providerMerchant,
+    merchantGroup: null,
     providerMerchant,
     amountMinor: r.amountMinor,
     currency: r.currency,
@@ -435,6 +450,7 @@ function toDto(r: Row): TransactionDto {
     source: r.source === "manual" ? "manual" : "plaid",
     isTransfer: r.isTransfer,
     transferSource: r.transferSource as TransactionDto["transferSource"],
+    createdForTransfer: r.createdForTransfer,
     transferWith: null,
     splits: [],
     splitValid: true,
@@ -504,15 +520,29 @@ function detailsOf(r: Row): TransactionDetails {
 /** When the purchase was made: the authorized date, else the posted date. */
 const transactionDate = sql<string>`coalesce(${transactions.authorizedDate}, ${transactions.date})`;
 
+/**
+ * The order within a day: when it was added, except that a transaction the app added as the other
+ * side of a transfer linked by hand takes its partner's place, and comes after it in time: above
+ * it when the newest is first, below it when the oldest is first.
+ */
+const sequence = sql<number>`case when ${transactions.createdForTransfer} = 1 and ${transactions.transferPairId} is not null then ${transactions.transferPairId} else ${transactions.id} end`;
+const afterPartnerNewestFirst = desc(transactions.createdForTransfer);
+const afterPartnerOldestFirst = asc(transactions.createdForTransfer);
+
 function orderBy(sort: Sort): SQL[] {
-  const tieBreak = [desc(transactionDate), desc(transactions.date), desc(transactions.id)];
+  const tieBreak = [
+    desc(transactionDate),
+    desc(transactions.date),
+    desc(sequence),
+    afterPartnerNewestFirst,
+  ];
   switch (sort) {
     case "date_desc":
-      return [desc(transactions.date), desc(transactions.id)];
+      return [desc(transactions.date), desc(sequence), afterPartnerNewestFirst];
     case "txdate_asc":
-      return [asc(transactionDate), asc(transactions.date), asc(transactions.id)];
+      return [asc(transactionDate), asc(transactions.date), asc(sequence), afterPartnerOldestFirst];
     case "date_asc":
-      return [asc(transactions.date), asc(transactions.id)];
+      return [asc(transactions.date), asc(sequence), afterPartnerOldestFirst];
     case "amount_asc":
       return [desc(transactions.amountMinor), ...tieBreak]; // displayed amount = -amount_minor
     case "amount_desc":
@@ -562,6 +592,9 @@ export function listTransactions(
     const isOnline = sql`coalesce(${transactions.onlineUser}, ${transactions.paymentChannel} = 'online', 0)`;
     conditions.push(query.online ? sql`${isOnline} = 1` : sql`${isOnline} = 0`);
   }
+  if (query.transfer === "unmatched") {
+    conditions.push(eq(transactions.isTransfer, true), isNull(transactions.transferPairId));
+  }
   if (query.category === "none") conditions.push(isNull(transactions.categoryId));
   else if (query.category !== undefined) {
     // Choosing a parent category includes its subcategories.
@@ -599,6 +632,7 @@ export function listTransactions(
         matches(transactions.sender),
         matches(transactions.senderUser),
         matches(transactions.notesUser),
+        ...groupSearch(db, query.q.trim()),
         matches(categories.name),
         // A search that is an amount ("54.11", "$1,200") also finds that amount, either way.
         ...(amountQuery(query.q) === null
@@ -683,6 +717,27 @@ function splitsFor(db: AppDb, ids: number[]): Map<number, SplitDto[]> {
   return out;
 }
 
+/**
+ * A search for a merchant group's name also finds its merchants' transactions: the ids of those
+ * transactions, as one more condition (none when no group's name matches).
+ */
+function groupSearch(db: AppDb, q: string) {
+  const needle = q.toLowerCase();
+  const keys = new Set(
+    [...merchantGroupsByKey(db)]
+      .filter(([, g]) => g.name.toLowerCase().includes(needle))
+      .map(([key]) => key),
+  );
+  if (keys.size === 0) return [];
+  const ids = db
+    .all<{ id: number; merchant: string }>(
+      sql`select id, coalesce(nullif(trim(merchant_name_user), ''), merchant_name, name) as merchant from transactions`,
+    )
+    .filter((r) => keys.has(merchantKey(r.merchant)))
+    .map((r) => r.id);
+  return ids.length === 0 ? [] : [inArray(transactions.id, ids)];
+}
+
 function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
   const ids = [
     ...new Set(rows.map((r) => r.transferPairId).filter((id): id is number => id !== null)),
@@ -705,8 +760,15 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
     db,
     rows.map((r) => r.id),
   );
+  const groups = merchantGroupsByKey(db);
   return rows.map((r) => {
     const dto = toDto(r);
+    // A merchant in a group shows as the group; the original stays in merchantOriginal.
+    const group = groups.get(merchantKey(dto.merchantOriginal));
+    if (group) {
+      dto.merchantGroup = group;
+      dto.merchant = group.name;
+    }
     dto.transferWith = r.transferPairId === null ? null : (partners.get(r.transferPairId) ?? null);
     dto.splits = splits.get(r.id) ?? [];
     dto.splitValid =

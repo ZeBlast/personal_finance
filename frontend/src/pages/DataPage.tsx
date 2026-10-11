@@ -198,13 +198,6 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
         >
           {busy ? "Working..." : "Back up now"}
         </button>
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={() => void openFolder("backups", onNotice)}
-        >
-          Open backups folder
-        </button>
         {settings.data && (
           <>
             <label className="flex items-center gap-2">
@@ -517,7 +510,8 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
           </dl>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs break-all text-slate-500">
-              Data folder (the database and its backups): {data.dataDir}
+              Data folder (the database, and its backups in the backups folder inside):{" "}
+              {data.dataDir}
             </p>
             <button
               type="button"
@@ -525,13 +519,6 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
               onClick={() => void openFolder("data", onNotice)}
             >
               Open data folder
-            </button>
-            <button
-              type="button"
-              className={buttonClass}
-              onClick={() => void openFolder("backups", onNotice)}
-            >
-              Open backups folder
             </button>
           </div>
 

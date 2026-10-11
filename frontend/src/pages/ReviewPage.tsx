@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
 import { buttonClass, primaryClass } from "../components/investments/styles";
@@ -19,6 +20,7 @@ const REASONS: Record<ReviewReason, string> = {
 
 /** Tidying up: recent transactions worth a look, and possible duplicates. */
 export function ReviewPage() {
+  const navigate = useNavigate();
   const queue = useApi<ReviewQueue>("/review");
   const dupes = useApi<DuplicatePair[]>("/duplicates");
   const [error, setError] = useState<string | null>(null);
@@ -87,8 +89,13 @@ export function ReviewPage() {
               key={t.id}
               className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
             >
-              <div>
-                <div className="font-medium">
+              <button
+                type="button"
+                title="Show it on the Transactions page"
+                onClick={() => navigate(`/transactions?focus=${t.id}&account=${t.accountId}`)}
+                className="min-w-0 flex-1 rounded text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <div className="font-medium hover:underline">
                   {t.merchant}{" "}
                   <span className="font-normal text-slate-500">
                     {formatDay(t.authorizedDate ?? t.date)} ·{" "}
@@ -106,7 +113,7 @@ export function ReviewPage() {
                   ))}
                   {t.category && <span className="text-xs text-slate-500">{t.category.name}</span>}
                 </div>
-              </div>
+              </button>
               <div className="flex items-center gap-3">
                 <Amount t={t} />
                 <button

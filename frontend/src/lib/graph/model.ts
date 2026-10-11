@@ -15,7 +15,7 @@
  */
 
 export interface GraphData {
-  institutions: Array<{ id: string; name: string; color: string | null }>;
+  institutions: Array<{ id: string; name: string; color: string | null; logo?: string | null }>;
   accounts: Array<{
     id: number;
     institutionId: string;
@@ -33,6 +33,8 @@ export interface GraphTx {
   accountId: number;
   date: string;
   merchant: string;
+  /** The merchant group it belongs to (several merchants counted as one), if any. */
+  merchantGroup?: string | null;
   amountMinor: number;
   pending: boolean;
   categoryId: number | null;
@@ -65,6 +67,8 @@ export interface GraphNode {
   accountId?: number;
   /** For a cluster: whether it is open (its transactions are shown instead). */
   open?: boolean;
+  /** For an institution: its logo (an image data URL), drawn in the node. */
+  logo?: string | null;
 }
 
 export type LinkKind = "owns" | "spends" | "income" | "transfer" | "external";
@@ -94,6 +98,11 @@ export interface ModelOptions {
   showExternal: boolean;
   /** Show spending: the category groups and their transactions. */
   showSpending: boolean;
+  /**
+   * In an open group, one node per merchant (or merchant group) holding its transactions, instead
+   * of one per transaction.
+   */
+  groupMerchants: boolean;
   /** One node per category for all accounts, instead of one per account. */
   groupCategories: boolean;
   /** Leave out accounts with no transactions in the period. */
@@ -109,6 +118,7 @@ export const DEFAULT_OPTIONS: ModelOptions = {
   showExternal: true,
   showSpending: true,
   groupCategories: false,
+  groupMerchants: true,
   hideIdleAccounts: false,
   search: "",
 };
@@ -128,6 +138,9 @@ export const clusterNode = (accountId: number | null, categoryId: number | null)
 export const subclusterNode = (accountId: number | null, subcategoryId: number): string =>
   `sub:${accountId ?? "all"}:${subcategoryId}`;
 export const txNode = (id: number): string => `tx:${id}`;
+/** A merchant's transactions within an open group. */
+export const merchantNode = (group: string, merchant: string): string =>
+  `m:${group}:${merchant.trim().toLowerCase()}`;
 const incomeNode = (source: string): string => `inc:${source.trim().toLowerCase()}`;
 export const personNode = (name: string): string => `person:${name.trim().toLowerCase()}`;
 
@@ -150,8 +163,8 @@ export function groupOf(
 function matches(t: GraphTx, search: string): boolean {
   if (search === "") return true;
   const q = search.toLowerCase();
-  return [t.merchant, t.categoryName, t.subcategoryName, t.source, t.person].some((v) =>
-    v?.toLowerCase().includes(q),
+  return [t.merchant, t.merchantGroup, t.categoryName, t.subcategoryName, t.source, t.person].some(
+    (v) => v?.toLowerCase().includes(q),
   );
 }
 
@@ -203,6 +216,7 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
       color: inst.color ?? INSTITUTION_COLOR,
       weightMinor: 0,
       transactionIds: [],
+      logo: inst.logo ?? null,
     });
   }
   for (const a of accounts) {
@@ -224,7 +238,8 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
     nodes.set(txNode(t.id), {
       id: txNode(t.id),
       kind: "transaction",
-      label: t.merchant,
+      // A grouped merchant shows as its group, as on the Transactions page.
+      label: t.merchantGroup ?? t.merchant,
       color,
       weightMinor: Math.abs(t.amountMinor),
       transactionIds: [t.id],
@@ -319,8 +334,27 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
       addLink(cluster, sub, "spends", amount);
     }
     if (holder.open) {
-      addTx(t, txColor);
-      addLink(holder.id, txNode(t.id), "spends", amount);
+      if (options.groupMerchants) {
+        // One node per merchant (a merchant group counts as one) in the open group.
+        const name = t.merchantGroup ?? t.merchant;
+        const id = merchantNode(holder.id, name);
+        const m = nodes.get(id) ?? {
+          id,
+          kind: "transaction" as const,
+          label: name,
+          color: txColor,
+          weightMinor: 0,
+          transactionIds: [],
+          ...(owner === null ? {} : { accountId: owner }),
+        };
+        m.weightMinor += amount;
+        m.transactionIds.push(t.id);
+        nodes.set(id, m);
+        addLink(holder.id, id, "spends", amount);
+      } else {
+        addTx(t, txColor);
+        addLink(holder.id, txNode(t.id), "spends", amount);
+      }
     }
   }
 

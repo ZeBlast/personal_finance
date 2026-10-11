@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { MerchantGroupsDialog } from "../components/transactions/MerchantGroupsDialog";
 import { useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
@@ -21,6 +22,7 @@ interface Filters {
   category: string; // "" = all, "none" = uncategorized, or a category ID
   pending: string; // "" = all, "true", "false"
   online: string; // "" = all, "true" (bought online), "false" (not online)
+  transfer: string; // "" = all, "unmatched" = transfers with no other side
   institution: string; // "" = all, an institution's name, or "manual"
   from: string;
   to: string;
@@ -32,6 +34,7 @@ const NO_FILTERS: Filters = {
   category: "",
   pending: "",
   online: "",
+  transfer: "",
   institution: "",
   from: "",
   to: "",
@@ -90,6 +93,7 @@ export function TransactionsPage() {
   /** The transaction whose split is being edited. */
   const [splitting, setSplitting] = useState<Transaction | null>(null);
   const [reloads, setReloads] = useState(0);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const synced = useSyncFinishedCount();
   /** The row clicked last; double-clicking a row opens it. */
   const [highlight, setHighlight] = useState<number | null>(null);
@@ -104,19 +108,28 @@ export function TransactionsPage() {
   const tableRef = useRef<HTMLDivElement>(null);
 
   // Links from elsewhere (search, the graph), also while already on this page:
-  // `?focus=<id>&account=<id>` opens a transaction; `?account=<id>` or `?category=<id>` filters.
+  // `?focus=<id>&account=<id>` opens a transaction; `?account=<id>`, `?category=<id>`, and
+  // `?from=<day>&to=<day>` filter.
   useEffect(() => {
     const focusId = Number(searchParams.get("focus"));
     const account = searchParams.get("account");
     const category = searchParams.get("category");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
     if (Number.isInteger(focusId) && focusId > 0) {
       setFilters(NO_FILTERS);
       setSearch("");
       setFocus((f) => (f?.id === focusId ? f : { id: focusId, accountId: account }));
       return;
     }
-    if (account || category) {
-      setFilters({ ...NO_FILTERS, accountId: account ?? "", category: category ?? "" });
+    if (account || category || from || to) {
+      setFilters({
+        ...NO_FILTERS,
+        accountId: account ?? "",
+        category: category ?? "",
+        from: from ?? "",
+        to: to ?? "",
+      });
       setSearch("");
       setPage(1);
       setSearchParams({}, { replace: true });
@@ -156,6 +169,7 @@ export function TransactionsPage() {
     if (filters.category) params.set("category", filters.category);
     if (filters.pending) params.set("pending", filters.pending);
     if (filters.online) params.set("online", filters.online);
+    if (filters.transfer) params.set("transfer", filters.transfer);
     if (filters.institution) params.set("institution", filters.institution);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
@@ -267,20 +281,35 @@ export function TransactionsPage() {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setManualDialog("new")}
-          disabled={handAccounts.length === 0}
-          title={
-            handAccounts.length === 0
-              ? "Add a cash or other account by hand on the Accounts page first"
-              : undefined
-          }
-          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          Add transaction
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setGroupsOpen(true)}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"
+          >
+            Merchant groups
+          </button>
+          <button
+            type="button"
+            onClick={() => setManualDialog("new")}
+            disabled={handAccounts.length === 0}
+            title={
+              handAccounts.length === 0
+                ? "Add a cash or other account by hand on the Accounts page first"
+                : undefined
+            }
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            Add transaction
+          </button>
+        </div>
       </div>
+      {groupsOpen && (
+        <MerchantGroupsDialog
+          onChanged={announceDataChanged}
+          onClose={() => setGroupsOpen(false)}
+        />
+      )}
 
       <div className="flex flex-wrap items-end gap-2" role="search">
         <input
@@ -351,6 +380,15 @@ export function TransactionsPage() {
           <option value="">Online and not online</option>
           <option value="true">Online only</option>
           <option value="false">Not online</option>
+        </select>
+        <select
+          aria-label="Transfers"
+          value={filters.transfer}
+          onChange={(e) => setFilter("transfer", e.target.value)}
+          className={controlClass}
+        >
+          <option value="">All transactions</option>
+          <option value="unmatched">Transfers missing the other side</option>
         </select>
         <label className="text-xs text-slate-500">
           From

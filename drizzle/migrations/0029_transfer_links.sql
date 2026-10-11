@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `created_for_transfer` integer DEFAULT false NOT NULL;

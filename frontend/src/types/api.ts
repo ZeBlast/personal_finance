@@ -15,6 +15,8 @@ export interface Settings {
   plaidDaysRequested: number;
   autoBackupEnabled: boolean;
   backupsToKeep: number;
+  /** The sidebar's pages in the user's order (paths); empty is the usual order. */
+  navOrder: string[];
 }
 
 export interface PlaidStatus {
@@ -109,6 +111,9 @@ export interface Transaction {
   /** What is shown: the user's edit, else the bank's merchant, else the description. */
   merchant: string;
   merchantEdited: boolean;
+  /** The merchant's own name; `merchant` shows its group's name when it is in a group. */
+  merchantOriginal: string;
+  merchantGroup: { id: number; name: string } | null;
   providerMerchant: string;
   /** Positive = money left the account; negative = money came in. */
   amountMinor: number;
@@ -152,6 +157,8 @@ export interface Transaction {
   /** False when the parts no longer add up to the amount (it then counts whole). */
   splitValid: boolean;
   /** For an automatic match, the other side of the transfer. */
+  /** The app added this as the other side of a transfer linked by hand to this account. */
+  createdForTransfer: boolean;
   transferWith: {
     id: number;
     accountName: string;
@@ -262,6 +269,8 @@ export interface PlaidItem {
   id: number;
   institutionId: string | null;
   institutionName: string;
+  /** The institution's logo (an image data URL), when it has been looked up. */
+  logo: string | null;
   environment: PlaidEnvironment;
   status: ItemStatus;
   lastErrorCode: string | null;

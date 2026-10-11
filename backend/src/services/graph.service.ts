@@ -5,6 +5,8 @@ import { isRealDate } from "../utils/dates.js";
 import { listAccounts } from "./account.service.js";
 import { IS_INCOME } from "./analytics.service.js";
 import { getSettings } from "./settings.service.js";
+import { merchantGroupNames } from "./merchant-group.service.js";
+import { merchantKey } from "../utils/merchant.js";
 
 /**
  * Everything the network graph draws for a period: institutions, their accounts, and the accounts'
@@ -34,6 +36,8 @@ export interface GraphTransaction {
   accountId: number;
   date: string;
   merchant: string;
+  /** The merchant group it belongs to (several merchants counted as one), if any. */
+  merchantGroup: string | null;
   /** Plaid's sign: positive is money out. */
   amountMinor: number;
   pending: boolean;
@@ -143,6 +147,7 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
     limit ${MAX_GRAPH_TRANSACTIONS + 1}`);
 
   const truncated = rows.length > MAX_GRAPH_TRANSACTIONS;
+  const groups = merchantGroupNames(db);
   return {
     from,
     to,
@@ -161,6 +166,7 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
       accountId: r.account_id,
       date: r.date,
       merchant: r.merchant,
+      merchantGroup: groups.get(merchantKey(r.merchant)) ?? null,
       amountMinor: r.amount_minor,
       pending: r.pending === 1,
       categoryId: r.category_id,

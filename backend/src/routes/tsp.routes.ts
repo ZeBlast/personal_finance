@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { exportTspAccount, importTspFile, tspFileSchema } from "../services/tsp-file.service.js";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
 import {
@@ -103,6 +104,16 @@ export function tspRoutes(db: AppDb): Router {
   router.post("/tsp/accounts", (req, res) => {
     const body = createAccountBody.parse(req.body);
     const id = createTspAccount(db, body, now());
+    res.status(201).json({ id, settings: getTspSettings(db, id) });
+  });
+
+  /** A TSP account as a file, to move it to another copy of the app. */
+  router.get("/accounts/:id/tsp/export", (req, res) => {
+    res.json(exportTspAccount(db, idParam.parse(req.params["id"])));
+  });
+  /** Makes a new TSP account from an exported file. */
+  router.post("/tsp/import", (req, res) => {
+    const id = importTspFile(db, tspFileSchema.parse(req.body));
     res.status(201).json({ id, settings: getTspSettings(db, id) });
   });
 

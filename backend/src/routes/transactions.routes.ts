@@ -10,6 +10,12 @@ import {
 } from "../services/manual-transaction.service.js";
 import { transactionCashback } from "../services/cashback.service.js";
 import { transactionGraph } from "../services/graph.service.js";
+import {
+  linkTransferToAccount,
+  pairTransfers,
+  transferCandidates,
+  unlinkTransfer,
+} from "../services/transfer-link.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
@@ -29,6 +35,7 @@ const listQuery = z.object({
   dateBasis: z.enum(["transaction", "posted"]).optional(),
   q: z.string().max(200).optional(),
   category: z.union([z.literal("none"), z.coerce.number().int().positive()]).optional(),
+  transfer: z.literal("unmatched").optional(),
   sort: z.enum(SORTS).optional(),
 });
 
@@ -145,6 +152,32 @@ export function transactionsRoutes(db: AppDb): Router {
       ...updated,
       cashback: transactionCashback(db, [updated.id]).get(updated.id) ?? null,
     });
+  });
+
+  /**
+   * Links a transfer with an account the user keeps by hand, adding the other side there (for a
+   * transfer that matched nothing, such as cash taken out into a wallet).
+   */
+  router.post("/transactions/:id/transfer-account", (req, res) => {
+    const body = z.object({ accountId: z.number().int().positive() }).strict().parse(req.body);
+    res.json(linkTransferToAccount(db, idParam.parse(req.params["id"]), body.accountId));
+  });
+  /** Undoes that link, removing the transaction it added. */
+  router.delete("/transactions/:id/transfer-account", (req, res) => {
+    res.json(unlinkTransfer(db, idParam.parse(req.params["id"])));
+  });
+  /** Transactions on other accounts that could be the other side of this transfer. */
+  router.get("/transactions/:id/transfer-candidates", (req, res) => {
+    res.json(transferCandidates(db, idParam.parse(req.params["id"])));
+  });
+  /** Pairs this transaction with another as the two sides of one transfer, replacing any pair. */
+  router.post("/transactions/:id/transfer-pair", (req, res) => {
+    const body = z.object({ otherId: idParam }).strict().parse(req.body);
+    res.json(pairTransfers(db, idParam.parse(req.params["id"]), body.otherId));
+  });
+  /** Undoes this transaction's pair, whoever made it; it stays a transfer, one-sided. */
+  router.delete("/transactions/:id/transfer-pair", (req, res) => {
+    res.json(unlinkTransfer(db, idParam.parse(req.params["id"])));
   });
 
   /** Adds a transaction by hand, to an account the user keeps by hand (cash, for example). */

@@ -3,13 +3,15 @@ import { api, errorMessage } from "../../api/client";
 import { categoryOptions } from "../../hooks/useCategories";
 import { cashbackBadge, formatRate } from "../../lib/cashback";
 import { Attachments } from "./Attachments";
-import { transferLabel } from "../../lib/transferLabel";
 import { formatMinor } from "../../lib/money";
 import { categoryLabel, formatDay } from "../../lib/time";
 import type { Category, Rule, RulePreview, Transaction } from "../../types/api";
 import { Modal } from "../common/Modal";
 import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
+import { TransferLink } from "./TransferLink";
+import { MerchantGroupField } from "./MerchantGroupField";
+import { announceDataChanged } from "../../lib/syncEvents";
 import { CategorySelect } from "../common/CategorySelect";
 
 type TransferChoice = "auto" | "yes" | "no";
@@ -60,7 +62,7 @@ export function TransactionDetail({
 }: Props) {
   const transaction = t;
   const id = useId();
-  const [merchant, setMerchant] = useState(t.merchantEdited ? t.merchant : "");
+  const [merchant, setMerchant] = useState(t.merchantEdited ? t.merchantOriginal : "");
   // The other party is a recipient when money went out and a sender when it came in.
   const incoming = t.amountMinor < 0;
   const detectedPerson = incoming ? t.providerSender : t.providerRecipient;
@@ -84,7 +86,7 @@ export function TransactionDetail({
   const categoryChanged = categoryId !== (t.category ? String(t.category.id) : "");
   const chosenName = options.find((o) => String(o.id) === categoryId)?.name;
   const dirty =
-    merchant !== (t.merchantEdited ? t.merchant : "") ||
+    merchant !== (t.merchantEdited ? t.merchantOriginal : "") ||
     person !== (personWasEdited ? personOnRecord : "") ||
     notes !== (t.notes ?? "") ||
     transfer !== initialTransfer ||
@@ -118,7 +120,7 @@ export function TransactionDetail({
     try {
       const patch: Record<string, unknown> = {};
       if (categoryChanged) patch["categoryId"] = categoryId === "" ? null : Number(categoryId);
-      if (merchant.trim() !== (t.merchantEdited ? t.merchant : ""))
+      if (merchant.trim() !== (t.merchantEdited ? t.merchantOriginal : ""))
         patch["merchant"] = merchant.trim() || null;
       if (person.trim() !== (personWasEdited ? personOnRecord : "")) {
         patch[incoming ? "sender" : "recipient"] = person.trim() || null;
@@ -249,6 +251,12 @@ export function TransactionDetail({
           </p>
         </div>
 
+        <MerchantGroupField
+          merchant={t.merchantOriginal}
+          group={t.merchantGroup}
+          onChanged={announceDataChanged}
+        />
+
         <div>
           <label htmlFor={`${id}-category`} className="block text-sm font-medium">
             Category
@@ -335,6 +343,7 @@ export function TransactionDetail({
             id={`${id}-transfer`}
             value={transfer}
             onChange={(e) => setTransfer(e.target.value as TransferChoice)}
+            disabled={t.transferWith !== null && t.transferSource === "manual"}
             className={inputClass}
           >
             <option value="auto">
@@ -345,12 +354,14 @@ export function TransactionDetail({
             <option value="no">No, this is income or spending</option>
           </select>
           <p className="mt-1 text-xs text-slate-500">
-            {t.transferWith && t.transferSource === "auto"
-              ? `${transferLabel(t)}, ${formatDay(t.transferWith.transactionDate)}. `
-              : ""}
             Transfers between your own accounts are left out of income and spending. Money sent to
             or received from another person counts.
           </p>
+          <TransferLink
+            transaction={t}
+            transferChosen={transfer === "yes"}
+            onChanged={(updated) => onSaved(updated)}
+          />
         </div>
 
         <div>

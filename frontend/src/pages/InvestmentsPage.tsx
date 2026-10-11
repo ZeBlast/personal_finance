@@ -154,6 +154,37 @@ export function InvestmentsPage() {
   const selected = accounts.find((a) => String(a.id) === accountId) ?? null;
   const manualSelected = selected?.isManual ? selected : null;
 
+  /** A TSP account exported from another copy of the app becomes a new account here. */
+  async function importTsp(file: File): Promise<void> {
+    try {
+      await api("/tsp/import", { method: "POST", body: await file.text() });
+      setNotice({ kind: "info", text: "The TSP account was imported, with its history." });
+      reloadAll();
+      announceDataChanged();
+    } catch (e) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(e, "That file is not a TSP account exported from this app."),
+      });
+    }
+  }
+
+  async function exportTsp(id: number, name: string): Promise<void> {
+    try {
+      const data = await api<unknown>(`/accounts/${id}/tsp/export`);
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(data)], { type: "application/json" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name.replace(/[^\w -]+/g, "").trim() || "tsp"}.tsp.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setNotice({ kind: "error", text: errorMessage(e, "Could not export the TSP account.") });
+    }
+  }
+
   function reloadAll(): void {
     all.reload();
     scopedOverview.reload();
@@ -234,6 +265,22 @@ export function InvestmentsPage() {
           <button type="button" className={buttonClass} onClick={() => setDialog("new-tsp")}>
             Add TSP account
           </button>
+          <label
+            className={`${buttonClass} relative cursor-pointer`}
+            title="A TSP account exported from another copy of this app, with its history"
+          >
+            Import TSP file
+            <input
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void importTsp(file);
+              }}
+            />
+          </label>
           <button type="button" className={primaryClass} onClick={() => setDialog("new-account")}>
             Add account by hand
           </button>
@@ -333,6 +380,18 @@ export function InvestmentsPage() {
             </div>
           )}
 
+          {manualSelected && manualSelected.subtype === TSP_SUBTYPE && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className={buttonClass}
+                title="Save this TSP account, with its contributions, holdings, activity, balance history and fund prices, to a file to import in another copy of the app"
+                onClick={() => void exportTsp(manualSelected.id, manualSelected.name)}
+              >
+                Export TSP to file
+              </button>
+            </div>
+          )}
           {manualSelected && manualSelected.subtype === TSP_SUBTYPE && (
             <TspPanel
               accountId={manualSelected.id}

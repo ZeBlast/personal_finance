@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { categoryTrends, TREND_INTERVALS } from "../services/category-trends.service.js";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
 import {
@@ -57,6 +58,35 @@ export function analyticsRoutes(db: AppDb): Router {
    * institution. Most widgets are just a view of this one query, so a new chart rarely needs a new
    * endpoint.
    */
+  /** Spending by category over time, for the category explorer. */
+  router.get("/analytics/category-trends", (req, res) => {
+    const ids = z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.split(",").filter(Boolean).map(Number) : []))
+      .pipe(z.array(z.number().int().min(0)).max(200));
+    const q = z
+      .object({
+        from: z.string(),
+        to: z.string(),
+        interval: z.enum(TREND_INTERVALS).default("month"),
+        categories: ids,
+        accounts: ids,
+        split: z.enum(["0", "1"]).default("0"),
+        pending: z.enum(["0", "1"]).default("1"),
+        dateBasis: z.enum(DATE_BASES).optional(),
+      })
+      .parse(req.query);
+    res.json(
+      categoryTrends(db, {
+        ...q,
+        splitSubcategories: q.split === "1",
+        includePending: q.pending === "1",
+        environment: getSettings(db).plaidEnvironment,
+      }),
+    );
+  });
+
   router.get("/analytics/summary", (req, res) => {
     const q = summaryQuery.parse(req.query);
     res.json(

@@ -285,7 +285,23 @@ export function AccountsPage() {
           >
             <header className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-medium">{item.institutionName}</h2>
+                <h2 className="flex items-center gap-2 text-lg font-medium">
+                  {item.logo ? (
+                    <img
+                      src={item.logo}
+                      alt=""
+                      className="h-7 w-7 shrink-0 rounded-full bg-white object-contain p-0.5 ring-1 ring-slate-200 dark:ring-slate-600"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                    >
+                      {item.institutionName.trim().charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  {item.institutionName}
+                </h2>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${label.className}`}>
                   {label.text}
                 </span>

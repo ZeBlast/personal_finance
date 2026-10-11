@@ -1,7 +1,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
-import { notFound } from "../utils/errors.js";
+import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
 
 /**
@@ -85,7 +85,9 @@ export function matchCardPayments(
 }
 
 const CATEGORY = /^(TRANSFER_|LOAN_PAYMENTS)/;
-const WORDS = /\b(transfer|xfer|trnsfr|payment|pmt|zelle|ach|funds|online banking|mobile)\b/i;
+// "mobile" only as banking: alone it matches "T-Mobile", whose bill and refund could pair up.
+const WORDS =
+  /\b(transfer|xfer|trnsfr|payment|pmt|zelle|ach|funds|online banking|mobile (banking|transfer|xfer))\b/i;
 
 interface Candidate {
   id: number;
@@ -147,6 +149,13 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
       .set({ isTransfer: false, transferSource: null, transferPairId: null })
       .where(inArray(transactions.transferSource, ["auto", "category"]))
       .run();
+    // A link the user made whose other side is gone (removed by a sync, or its account deleted)
+    // stays a transfer, just no longer linked, so it shows up as one-sided rather than pointing
+    // at nothing.
+    tx.run(sql`update transactions set transfer_pair_id = null
+      where transfer_source = 'manual' and transfer_pair_id is not null
+        and not exists (select 1 from transactions p
+          where p.id = transactions.transfer_pair_id and p.transfer_pair_id = transactions.id)`);
 
     const rows = tx.all<{
       id: number;
@@ -257,10 +266,27 @@ export function setTransferFlag(
     .where(eq(transactions.id, id))
     .get();
   if (!row) throw notFound("That transaction");
+  if (row.source === "manual" && row.pairId !== null) {
+    // Already a transfer the user linked: saying so again keeps the link.
+    if (value === true) return;
+    throw new AppError(
+      409,
+      "linked_transfer",
+      "This transfer is linked with a transaction on another account. Unlink it first.",
+    );
+  }
 
   db.transaction((tx) => {
-    // An automatic partner loses its flag; detection below may match it with something else.
     if (row.source === "auto" && row.pairId !== null) {
+      // Saying yes to a match confirms it: both sides become the user's decision, still paired.
+      if (value === true) {
+        tx.update(transactions)
+          .set({ transferSource: "manual", updatedAt: now })
+          .where(inArray(transactions.id, [id, row.pairId]))
+          .run();
+        return;
+      }
+      // Otherwise the partner loses its flag; detection below may match it with something else.
       tx.update(transactions)
         .set({ isTransfer: false, transferSource: null, transferPairId: null })
         .where(eq(transactions.id, row.pairId))

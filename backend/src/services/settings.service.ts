@@ -32,6 +32,8 @@ export const settingsSchema = z.object({
   backupsToKeep: z.number().int().min(1).max(50),
   /** The dashboard being shown (see the dashboards table). Falls back to the first if it is gone. */
   activeDashboardId: z.number().int().min(1),
+  /** The sidebar's pages in the order the user dragged them into (paths); empty is the usual order. */
+  navOrder: z.array(z.string().max(60)).max(60),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoBackupEnabled: true,
   backupsToKeep: 10,
   activeDashboardId: 1,
+  navOrder: [],
 };
 
 export function getSettings(db: AppDb): Settings {

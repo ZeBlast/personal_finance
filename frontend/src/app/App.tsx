@@ -8,7 +8,7 @@ export function App() {
   const status = useBackendStatus();
 
   return (
-    <div className="flex h-screen bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+    <div className="relative flex h-screen overflow-hidden bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <StatusBanner status={status} />

@@ -158,7 +158,7 @@ export function dataRoutes(options: {
           ? exportDir(dataDir)
           : dataDir;
     openFolder(dir);
-    res.json({ folder, path: dir });
+    res.json({ folder, path: path.resolve(dir) });
   });
 
   /** The thorough check (verifies every index too). */

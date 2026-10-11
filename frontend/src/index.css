@@ -31,8 +31,16 @@
   }
 }
 
+/* The page behind the app matches it (slate-900 in dark mode), so nothing black ever shows. */
 body {
   margin: 0;
+  background-color: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #0f172a;
+  }
 }
 
 /* The calendar slides to the next or previous month. */

@@ -137,6 +137,7 @@ describe("settings", () => {
       autoBackupEnabled: true,
       backupsToKeep: 10,
       activeDashboardId: 1,
+      navOrder: [],
     });
   });
 

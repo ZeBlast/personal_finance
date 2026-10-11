@@ -124,7 +124,11 @@ describe("graph model", () => {
   });
 
   it("shows an open cluster's transactions one by one", () => {
-    const m = buildModel(data, { ...DEFAULT_OPTIONS, openClusters: new Set([clusterNode(10, 5)]) });
+    const m = buildModel(data, {
+      ...DEFAULT_OPTIONS,
+      groupMerchants: false,
+      openClusters: new Set([clusterNode(10, 5)]),
+    });
     expect(m.nodes.filter((n) => n.kind === "transaction").map((n) => n.id)).toEqual([
       txNode(1),
       txNode(2),
@@ -395,6 +399,7 @@ describe("category grouping and subcategories", () => {
     const m = buildModel(spend, {
       ...DEFAULT_OPTIONS,
       groupCategories: true,
+      groupMerchants: false,
       openClusters: new Set(["sub:all:2"]),
     });
     expect(
@@ -457,5 +462,46 @@ describe("transfers to and from people", () => {
     const m = buildModel(people, { ...DEFAULT_OPTIONS, showExternal: false });
     expect(m.nodes.some((n) => n.kind === "person")).toBe(false);
     expect(m.nodes.some((n) => n.kind === "cluster" && n.transactionIds.includes(1))).toBe(true);
+  });
+});
+
+describe("merchant nodes", () => {
+  const shop: GraphData = {
+    ...data,
+    transactions: [
+      tx({ id: 1, merchant: "AMZN Mktp", merchantGroup: "Amazon" }),
+      tx({ id: 2, merchant: "Amazon.com", merchantGroup: "Amazon", amountMinor: 500 }),
+      tx({ id: 3, merchant: "Kroger" }),
+      tx({ id: 4, merchant: "kroger " }),
+    ],
+  };
+  const open = { ...DEFAULT_OPTIONS, openClusters: new Set([clusterNode(10, 5)]) };
+
+  it("show one node per merchant (a group counting as one) in an open group", () => {
+    const m = buildModel(shop, open);
+    const kids = m.nodes.filter((n) => n.kind === "transaction");
+    expect(kids.map((n) => n.label).sort()).toEqual(["Amazon", "Kroger"]);
+    expect(kids.find((n) => n.label === "Amazon")!).toMatchObject({
+      transactionIds: [1, 2],
+      weightMinor: 1500,
+    });
+  });
+
+  it("can show each transaction instead", () => {
+    const m = buildModel(shop, { ...open, groupMerchants: false });
+    expect(m.nodes.filter((n) => n.kind === "transaction")).toHaveLength(4);
+  });
+
+  it("carry institution logos", () => {
+    const m = buildModel(
+      {
+        ...shop,
+        institutions: [
+          { id: "item-1", name: "Bank", color: null, logo: "data:image/png;base64,AA" },
+        ],
+      },
+      DEFAULT_OPTIONS,
+    );
+    expect(m.nodes.find((n) => n.kind === "institution")!.logo).toBe("data:image/png;base64,AA");
   });
 });
