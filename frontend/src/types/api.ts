@@ -143,7 +143,18 @@ export interface Transaction {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | "category" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | null;
+  /**
+   * The same purchase on another account (PayPal and the card that paid): `copy` when this row is
+   * left out of totals, `counts` when this row counts and `with` is the copy.
+   */
+  mirror: {
+    role: "copy" | "counts";
+    source: "auto" | "manual";
+    with: NonNullable<Transaction["transferWith"]>;
+  } | null;
+  /** A PayPal transaction older than every other connected account's history. */
+  beforeOtherHistory: boolean;
   /** The parts it is split into across categories (empty when not split). */
   splits: Array<{
     id: number;

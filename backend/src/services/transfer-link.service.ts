@@ -181,6 +181,13 @@ export function pairTransfers(
       "That transaction was added for a link. Unlink it instead.",
     );
   }
+  if (a.transferSource === "mirror" || b.transferSource === "mirror") {
+    throw new AppError(
+      409,
+      "mirror_linked",
+      "That transaction is a copy of a purchase another account shows. Unlink it first.",
+    );
+  }
 
   db.transaction((tx) => {
     if (a.transferPairId !== b.id) {
@@ -265,6 +272,7 @@ export function transferCandidates(db: AppDb, id: number, limit = 10): TransferC
     from transactions c join accounts a on a.id = c.account_id
     where c.account_id <> ${t.accountId} and c.id <> ${id} and c.currency = ${t.currency}
       and c.created_for_transfer = 0 and a.hidden = 0
+      and coalesce(c.transfer_source, '') <> 'mirror'
       and coalesce(a.subtype, '') <> ${STORE_CREDIT_SUBTYPE}
       and (c.amount_minor > 0) = ${t.amountMinor < 0 ? 1 : 0} and c.amount_minor <> 0
       and abs(julianday(coalesce(c.authorized_date, c.date)) - julianday(${day}))

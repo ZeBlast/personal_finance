@@ -513,8 +513,14 @@ export function TransactionsPage() {
                     setHighlight(t.id);
                     open(t);
                   }}
-                  title="Click to select, double-click to edit"
+                  title={
+                    t.beforeOtherHistory
+                      ? "Older than the history of your other accounts, so what paid for it can't be matched. Click to select, double-click to edit"
+                      : "Click to select, double-click to edit"
+                  }
                   className={`cursor-default transition-colors duration-700 ${
+                    t.beforeOtherHistory ? "opacity-50 " : ""
+                  }${
                     flash === t.id
                       ? "bg-amber-200 dark:bg-amber-700/50"
                       : highlight === t.id
@@ -540,6 +546,14 @@ export function TransactionsPage() {
                     >
                       {t.merchant}
                     </button>
+                    {t.mirror?.role === "copy" && (
+                      <span
+                        title={`Same purchase as on ${t.mirror.with.accountName}, which counts it. Left out of totals here.`}
+                        className="ml-1 rounded bg-slate-100 px-1 text-xs text-slate-500 dark:bg-slate-800"
+                      >
+                        Copy · {t.mirror.with.accountName}
+                      </span>
+                    )}
                     {t.notes && (
                       <span
                         title={t.notes}

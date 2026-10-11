@@ -31,6 +31,7 @@ import { toMinorUnits } from "../utils/money.js";
 import { extractRecipient } from "./recipient.js";
 import { applyRules, getDiningSplit, isOnline, splitCategory } from "./rule.service.js";
 import { setTransferFlag, syncCategoryTransfers } from "./transfer.service.js";
+import { otherHistoryStart } from "./paypal-mirror.service.js";
 
 type Db = Pick<AppDb, "select" | "insert" | "update" | "delete">;
 
@@ -248,7 +249,7 @@ export interface TransactionDto {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | "category" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | null;
   /**
    * The parts it is split into across categories (empty when it is not split). `valid` is false when
    * they no longer add up to the amount (the bank changed it), and the transaction counts whole.
@@ -269,6 +270,21 @@ export interface TransactionDto {
     transactionDate: string;
     merchant: string;
   } | null;
+  /**
+   * The same purchase shown on another account (PayPal and the card that paid): `copy` when this
+   * row is the copy left out of totals, `counts` when this is the row that counts and `with` the
+   * copy. `source`: `auto` (detection) or `manual` (the user).
+   */
+  mirror: {
+    role: "copy" | "counts";
+    source: "auto" | "manual";
+    with: NonNullable<TransactionDto["transferWith"]>;
+  } | null;
+  /**
+   * A PayPal transaction dated before every other connected card or bank account's history, so
+   * what paid for it cannot be known.
+   */
+  beforeOtherHistory: boolean;
   /** `credit`, `loan`, `depository`, ... of this transaction's account. */
   accountType: string;
   paymentChannel: string | null;
@@ -355,6 +371,8 @@ const selectColumns = {
   transferSource: transactions.transferSource,
   transferPairId: transactions.transferPairId,
   createdForTransfer: transactions.createdForTransfer,
+  mirrorOfId: transactions.mirrorOfId,
+  mirrorSource: transactions.mirrorSource,
   paymentChannel: transactions.paymentChannel,
   counterpartyName: transactions.counterpartyName,
   counterpartyType: transactions.counterpartyType,
@@ -452,6 +470,8 @@ function toDto(r: Row): TransactionDto {
     transferSource: r.transferSource as TransactionDto["transferSource"],
     createdForTransfer: r.createdForTransfer,
     transferWith: null,
+    mirror: null,
+    beforeOtherHistory: false,
     splits: [],
     splitValid: true,
     paymentChannel: r.paymentChannel,
@@ -593,7 +613,11 @@ export function listTransactions(
     conditions.push(query.online ? sql`${isOnline} = 1` : sql`${isOnline} = 0`);
   }
   if (query.transfer === "unmatched") {
-    conditions.push(eq(transactions.isTransfer, true), isNull(transactions.transferPairId));
+    conditions.push(
+      eq(transactions.isTransfer, true),
+      isNull(transactions.transferPairId),
+      sql`coalesce(${transactions.transferSource}, '') <> 'mirror'`,
+    );
   }
   if (query.category === "none") conditions.push(isNull(transactions.categoryId));
   else if (query.category !== undefined) {
@@ -738,10 +762,39 @@ function groupSearch(db: AppDb, q: string) {
   return ids.length === 0 ? [] : [inArray(transactions.id, ids)];
 }
 
+const isPaypalRow = (r: Pick<Row, "institutionName" | "accountName">): boolean =>
+  /paypal/i.test(`${r.institutionName ?? ""} ${r.accountName}`);
+
 function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
+  // Copies of these rows' purchases on other accounts (these rows being the ones that count).
+  const copies =
+    rows.length === 0
+      ? []
+      : db
+          .select({
+            id: transactions.id,
+            of: transactions.mirrorOfId,
+            source: transactions.mirrorSource,
+          })
+          .from(transactions)
+          .where(
+            inArray(
+              transactions.mirrorOfId,
+              rows.map((r) => r.id),
+            ),
+          )
+          .all();
+  const copyOf = new Map(copies.map((c) => [c.of!, c]));
   const ids = [
-    ...new Set(rows.map((r) => r.transferPairId).filter((id): id is number => id !== null)),
+    ...new Set(
+      [
+        ...rows.map((r) => r.transferPairId),
+        ...rows.map((r) => r.mirrorOfId),
+        ...copies.map((c) => c.id),
+      ].filter((id): id is number => id !== null),
+    ),
   ];
+  const historyStart = rows.some(isPaypalRow) ? otherHistoryStart(db) : null;
   const partners = new Map<number, NonNullable<TransactionDto["transferWith"]>>();
   if (ids.length > 0) {
     for (const p of selectTransactions(db).where(inArray(transactions.id, ids)).all()) {
@@ -770,6 +823,21 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       dto.merchant = group.name;
     }
     dto.transferWith = r.transferPairId === null ? null : (partners.get(r.transferPairId) ?? null);
+    const copy = copyOf.get(r.id);
+    const mirrorWith =
+      r.mirrorOfId !== null ? partners.get(r.mirrorOfId) : copy ? partners.get(copy.id) : undefined;
+    dto.mirror = mirrorWith
+      ? {
+          role: r.mirrorOfId !== null ? "copy" : "counts",
+          source:
+            (r.mirrorOfId !== null ? r.mirrorSource : copy!.source) === "manual"
+              ? "manual"
+              : "auto",
+          with: mirrorWith,
+        }
+      : null;
+    dto.beforeOtherHistory =
+      historyStart !== null && isPaypalRow(r) && (r.authorizedDate ?? r.date) < historyStart;
     dto.splits = splits.get(r.id) ?? [];
     dto.splitValid =
       dto.splits.length === 0 ||

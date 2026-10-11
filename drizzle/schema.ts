@@ -201,6 +201,16 @@ export const transactions = sqliteTable(
     createdForTransfer: integer("created_for_transfer", { mode: "boolean" })
       .notNull()
       .default(false),
+    /**
+     * This row is a copy of one purchase that another account also shows: a PayPal purchase and
+     * the card charge that paid for it. The copy points at the row that counts
+     * (`transfer_source = 'mirror'` keeps the copy out of income and spending).
+     */
+    mirrorOfId: integer("mirror_of_id"),
+    /** Who linked the copy: `auto` (detection; redone on every run) or `manual` (the user). */
+    mirrorSource: text("mirror_source"),
+    /** The user unlinked a copy: detection never links this row as a copy again. */
+    mirrorBlocked: integer("mirror_blocked", { mode: "boolean" }).notNull().default(false),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),

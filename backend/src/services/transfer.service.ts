@@ -3,6 +3,7 @@ import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
+import { detectMirrors, resetMirrors } from "./paypal-mirror.service.js";
 
 /**
  * Transfers between the user's own accounts.
@@ -156,6 +157,9 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
       where transfer_source = 'manual' and transfer_pair_id is not null
         and not exists (select 1 from transactions p
           where p.id = transactions.transfer_pair_id and p.transfer_pair_id = transactions.id)`);
+    // Copies of one purchase on two accounts (PayPal and the card that paid) are found again
+    // after transfers, from what is left.
+    resetMirrors(tx, now);
 
     const rows = tx.all<{
       id: number;
@@ -217,6 +221,7 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
     }
     // What found no match, but sits in a category that moves the user's own money, is a transfer.
     syncCategoryTransfers(tx, now);
+    detectMirrors(tx, now);
     return pairs.length;
   });
 }
@@ -266,6 +271,13 @@ export function setTransferFlag(
     .where(eq(transactions.id, id))
     .get();
   if (!row) throw notFound("That transaction");
+  if (row.source === "mirror") {
+    throw new AppError(
+      409,
+      "mirror_linked",
+      "This is a copy of a purchase another account shows. Unlink it first.",
+    );
+  }
   if (row.source === "manual" && row.pairId !== null) {
     // Already a transfer the user linked: saying so again keeps the link.
     if (value === true) return;

@@ -16,6 +16,7 @@ import {
   transferCandidates,
   unlinkTransfer,
 } from "../services/transfer-link.service.js";
+import { linkMirror, mirrorCandidates, unlinkMirror } from "../services/paypal-mirror.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
@@ -178,6 +179,19 @@ export function transactionsRoutes(db: AppDb): Router {
   /** Undoes this transaction's pair, whoever made it; it stays a transfer, one-sided. */
   router.delete("/transactions/:id/transfer-pair", (req, res) => {
     res.json(unlinkTransfer(db, idParam.parse(req.params["id"])));
+  });
+  /** Transactions on other accounts that could be the same purchase (PayPal and its card). */
+  router.get("/transactions/:id/mirror-candidates", (req, res) => {
+    res.json(mirrorCandidates(db, idParam.parse(req.params["id"])));
+  });
+  /** Links this and another transaction as one purchase; one counts, the other is a copy. */
+  router.post("/transactions/:id/mirror", (req, res) => {
+    const body = z.object({ otherId: idParam }).strict().parse(req.body);
+    res.json(linkMirror(db, idParam.parse(req.params["id"]), body.otherId));
+  });
+  /** Undoes that link: both count again, and neither is linked automatically again. */
+  router.delete("/transactions/:id/mirror", (req, res) => {
+    res.json(unlinkMirror(db, idParam.parse(req.params["id"])));
   });
 
   /** Adds a transaction by hand, to an account the user keeps by hand (cash, for example). */

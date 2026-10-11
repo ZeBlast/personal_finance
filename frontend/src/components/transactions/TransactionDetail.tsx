@@ -10,6 +10,7 @@ import { Modal } from "../common/Modal";
 import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
 import { TransferLink } from "./TransferLink";
+import { MirrorLink } from "./MirrorLink";
 import { MerchantGroupField } from "./MerchantGroupField";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { CategorySelect } from "../common/CategorySelect";
@@ -343,7 +344,10 @@ export function TransactionDetail({
             id={`${id}-transfer`}
             value={transfer}
             onChange={(e) => setTransfer(e.target.value as TransferChoice)}
-            disabled={t.transferWith !== null && t.transferSource === "manual"}
+            disabled={
+              (t.transferWith !== null && t.transferSource === "manual") ||
+              t.transferSource === "mirror"
+            }
             className={inputClass}
           >
             <option value="auto">
@@ -357,11 +361,24 @@ export function TransactionDetail({
             Transfers between your own accounts are left out of income and spending. Money sent to
             or received from another person counts.
           </p>
-          <TransferLink
-            transaction={t}
-            transferChosen={transfer === "yes"}
-            onChanged={(updated) => onSaved(updated)}
-          />
+          {t.transferSource !== "mirror" && (
+            <TransferLink
+              transaction={t}
+              transferChosen={transfer === "yes"}
+              onChanged={(updated) => onSaved(updated)}
+            />
+          )}
+        </div>
+
+        <div>
+          <p className="block text-sm font-medium">Same purchase on another account</p>
+          {t.beforeOtherHistory && (
+            <p className="text-xs text-slate-500">
+              This is older than the history of your other connected accounts, so what paid for it
+              can't be found.
+            </p>
+          )}
+          <MirrorLink transaction={t} onChanged={(updated) => onSaved(updated)} />
         </div>
 
         <div>
