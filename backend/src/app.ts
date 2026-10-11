@@ -86,7 +86,7 @@ export function createApp({
   const importJson = express.json({ limit: "8mb" });
   const json = express.json({ limit: "1mb" });
   app.use("/api", (req, res, next) =>
-    /^\/(collections\/import|tsp\/import|tsp\/prices\/import|accounts\/\d+\/tsp\/activity\/import)$/.test(
+    /^\/(collections\/import|tsp\/import|tsp\/prices\/import|accounts\/\d+\/tsp\/activity\/import|accounts\/manual\/\d+\/import-csv)$/.test(
       req.path,
     )
       ? importJson(req, res, next)

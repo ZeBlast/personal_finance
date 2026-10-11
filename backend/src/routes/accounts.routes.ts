@@ -31,6 +31,7 @@ import {
   MANUAL_ACCOUNT_KINDS,
 } from "../services/manual-transaction.service.js";
 import { getSettings } from "../services/settings.service.js";
+import { importBankCsv } from "../services/bank-csv-import.service.js";
 import { notFound } from "../utils/errors.js";
 
 const idParam = z.coerce.number().int().positive();
@@ -189,6 +190,24 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
   /** Makes a new collection account from an exported file. */
   router.post("/collections/import", (req, res) => {
     res.status(201).json(importCollectionFile(db, collectionFileSchema.parse(req.body)));
+  });
+
+  /**
+   * Imports a bank's CSV export into an account kept by hand. With `dryRun`, only reads the file
+   * and reports what would be added (for a preview).
+   */
+  router.post("/accounts/manual/:id/import-csv", (req, res) => {
+    const body = z
+      .object({
+        csv: z.string().min(1).max(5_000_000),
+        flip: z.boolean().optional(),
+        keepBalance: z.boolean().optional(),
+        dryRun: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const { csv, ...options } = body;
+    res.json(importBankCsv(db, idParam.parse(req.params["id"]), csv, options));
   });
 
   router.delete("/accounts/manual/:id", (req, res) => {

@@ -8,6 +8,7 @@ import type { Account } from "../../types/api";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { CashbackSection } from "./CashbackSection";
+import { BankCsvImportDialog } from "./BankCsvImportDialog";
 import { HiddenBadge, HideToggle } from "./HideToggle";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
 import { CollectionDialog, isCollection } from "./CollectionDialog";
@@ -215,6 +216,7 @@ export function ManualAccountsSection() {
   const { categories } = useCategories();
   const [dialog, setDialog] = useState<"new" | null>(null);
   const [adding, setAdding] = useState<Account | null>(null);
+  const [importing, setImporting] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
   const [collection, setCollection] = useState<Account | null>(null);
   const [credits, setCredits] = useState<{ account: Account; action: "add" | "use" } | null>(null);
@@ -226,6 +228,7 @@ export function ManualAccountsSection() {
   function changed(text: string): void {
     setDialog(null);
     setAdding(null);
+    setImporting(null);
     setCredits(null);
     setNotice({ kind: "info", text });
     accounts.reload();
@@ -366,9 +369,14 @@ export function ManualAccountsSection() {
                     </button>
                   </>
                 ) : (
-                  <button type="button" className={buttonClass} onClick={() => setAdding(a)}>
-                    Add transaction
-                  </button>
+                  <>
+                    <button type="button" className={buttonClass} onClick={() => setAdding(a)}>
+                      Add transaction
+                    </button>
+                    <button type="button" className={buttonClass} onClick={() => setImporting(a)}>
+                      Import CSV
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
@@ -397,6 +405,13 @@ export function ManualAccountsSection() {
           defaultAccountId={adding.id}
           onSaved={changed}
           onClose={() => setAdding(null)}
+        />
+      )}
+      {importing && (
+        <BankCsvImportDialog
+          account={importing}
+          onDone={changed}
+          onClose={() => setImporting(null)}
         />
       )}
       {credits?.action === "add" && (
