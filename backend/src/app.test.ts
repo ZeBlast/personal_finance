@@ -128,7 +128,7 @@ describe("settings", () => {
   it("returns defaults on a fresh database", async () => {
     const res = await authed("get").expect(200);
     expect(res.body).toEqual({
-      syncCooldownMinutes: 30,
+      syncCooldownMinutes: 5,
       theme: "system",
       currency: "USD",
       autoSyncIntervalMinutes: 0,

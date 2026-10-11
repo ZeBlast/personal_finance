@@ -461,8 +461,10 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
   }): Promise<SyncAllResult> {
     const result: SyncAllResult = { runs: [], skipped: [] };
     for (const item of itemsForActiveEnvironment()) {
-      // The minimum gap applies to every sync, the button's too (a running one is joined instead).
-      const notBefore = inFlight.has(item.id) ? null : nextAllowedAt(item.id);
+      // The minimum gap applies to automatic syncs; the Sync button may sync any time (a running
+      // one is joined instead).
+      const notBefore =
+        inFlight.has(item.id) || options.trigger === "manual" ? null : nextAllowedAt(item.id);
       if (notBefore) {
         result.skipped.push({
           itemId: item.id,

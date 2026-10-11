@@ -608,9 +608,16 @@ describe("launch sync and the editable cooldown", () => {
     expect(result.runs[0]).toMatchObject({ trigger: "launch", status: "success" });
   });
 
-  it("skips connections synced within the cooldown, even after relaunching", async () => {
+  it("defaults to a 5-minute cooldown", async () => {
     await h.sync.runLaunchSync();
-    h.advanceMinutes(10); // default cooldown is 30 minutes
+    h.advanceMinutes(5);
+    expect((await h.sync.runLaunchSync()).runs).toHaveLength(1);
+  });
+
+  it("skips connections synced within the cooldown, even after relaunching", async () => {
+    await h.setSetting({ syncCooldownMinutes: 30 });
+    await h.sync.runLaunchSync();
+    h.advanceMinutes(10);
     const result = await h.sync.runLaunchSync();
     expect(result.runs).toHaveLength(0);
     expect(result.skipped).toEqual([
@@ -625,6 +632,7 @@ describe("launch sync and the editable cooldown", () => {
   });
 
   it("uses the cooldown stored in the database, so a new service instance behaves the same", async () => {
+    await h.setSetting({ syncCooldownMinutes: 30 });
     await h.sync.runLaunchSync();
     h.advanceMinutes(10);
     const relaunched = createSyncService({
@@ -637,6 +645,7 @@ describe("launch sync and the editable cooldown", () => {
   });
 
   it("applies an edited cooldown immediately: shorter makes it due, longer makes it wait", async () => {
+    await h.setSetting({ syncCooldownMinutes: 30 });
     await h.sync.runLaunchSync();
     h.advanceMinutes(10);
     expect((await h.sync.runLaunchSync()).runs).toHaveLength(0); // 10 < 30
@@ -657,8 +666,9 @@ describe("launch sync and the editable cooldown", () => {
   });
 
   it("the Sync button ignores the cooldown", async () => {
+    await h.setSetting({ syncCooldownMinutes: 30 });
     await h.sync.runLaunchSync();
-    h.advanceMinutes(5); // past the minimum gap, well inside the 30-minute cooldown
+    h.advanceMinutes(1); // inside both the minimum gap and the cooldown
     const res = await h.ctx.call("post", "/api/sync").send({}).expect(200);
     expect(res.body.runs).toHaveLength(1);
     expect(res.body.runs[0]).toMatchObject({ trigger: "manual", status: "success" });
@@ -764,12 +774,13 @@ describe("the editable sync interval while the app is open", () => {
 });
 
 describe("the minimum gap between syncs", () => {
-  it("applies to the Sync button too, and says when it can sync again", async () => {
+  it("holds back launch syncs, and says when one can run again", async () => {
+    await h.setSetting({ syncCooldownMinutes: 0 });
     await h.sync.runLaunchSync();
     h.advanceMinutes(2);
-    const soon = await h.ctx.call("post", "/api/sync").send({}).expect(200);
-    expect(soon.body.runs).toHaveLength(0);
-    expect(soon.body.skipped).toEqual([
+    const soon = await h.sync.runLaunchSync();
+    expect(soon.runs).toHaveLength(0);
+    expect(soon.skipped).toEqual([
       {
         itemId,
         institutionName: "First Platypus Bank",
@@ -779,19 +790,19 @@ describe("the minimum gap between syncs", () => {
     ]);
     expect(h.sync.status().items[0]!.nextAllowedAt).toBe("2026-09-01T12:05:00.000Z");
     h.advanceMinutes(3);
-    expect((await h.ctx.call("post", "/api/sync").send({}).expect(200)).body.runs).toHaveLength(1);
+    expect((await h.sync.runLaunchSync()).runs).toHaveLength(1);
     expect(h.sync.status().items[0]!.nextAllowedAt).toBe("2026-09-01T12:10:00.000Z");
   });
 
-  it("refuses syncing one connection again too soon, and counts failed attempts", async () => {
+  it("does not hold back the Sync button, for all connections or one", async () => {
+    await h.sync.runLaunchSync();
+    h.advanceMinutes(1);
+    expect((await h.ctx.call("post", "/api/sync").send({}).expect(200)).body.runs).toHaveLength(1);
     h.gateway.failWith = new PlaidGatewayError("NETWORK_ERROR", "NETWORK", "offline");
     await h.ctx.call("post", "/api/sync").send({ itemId }).expect(200);
     h.gateway.failWith = null;
-    h.advanceMinutes(1);
-    const res = await h.ctx.call("post", "/api/sync").send({ itemId }).expect(429);
-    expect(res.body.error).toBe("sync_too_soon");
-    h.advanceMinutes(4);
-    await h.ctx.call("post", "/api/sync").send({ itemId }).expect(200);
+    const again = await h.ctx.call("post", "/api/sync").send({ itemId }).expect(200);
+    expect(again.body.runs[0]).toMatchObject({ trigger: "manual", status: "success" });
   });
 });
 
@@ -800,7 +811,7 @@ describe("sync status and the API", () => {
     expect(h.sync.status()).toMatchObject({
       environment: "fake",
       syncing: false,
-      cooldownMinutes: 30,
+      cooldownMinutes: 5,
       intervalMinutes: 0,
       items: [
         {
@@ -816,7 +827,7 @@ describe("sync status and the API", () => {
     await h.setSetting({ autoSyncIntervalMinutes: 15 });
     const item = h.sync.status().items[0]!;
     expect(item.lastRun).toMatchObject({ status: "success", trigger: "manual" });
-    expect(item.launchSyncEligibleAt).toBe("2026-09-01T12:30:00.000Z");
+    expect(item.launchSyncEligibleAt).toBe("2026-09-01T12:05:00.000Z");
     expect(item.nextAutoSyncAt).toBe("2026-09-01T12:15:00.000Z");
   });
 

@@ -42,7 +42,7 @@ export const settingsPatchSchema = settingsSchema.partial().strict();
 export type SettingsPatch = z.infer<typeof settingsPatchSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
-  syncCooldownMinutes: 30,
+  syncCooldownMinutes: 5,
   theme: "system",
   currency: "USD",
   autoSyncIntervalMinutes: 0,
