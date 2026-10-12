@@ -6,6 +6,8 @@ import { LimitHistory } from "../components/accounts/LimitHistory";
 import { CashbackSection } from "../components/accounts/CashbackSection";
 import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
 import { ManualAccountsSection } from "../components/accounts/ManualAccountsSection";
+import { AccountCardsView } from "../components/accounts/cards/AccountCardsView";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { formatMinor } from "../lib/money";
 import { announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
@@ -93,6 +95,8 @@ export function AccountsPage() {
   /** Why the last disconnect attempt failed, to explain the "delete local copy" option. */
   const [disconnectCause, setDisconnectCause] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
+  /** The experimental card view, remembered between visits. */
+  const [cardView, setCardView] = usePersistentState("pf.accounts.cardView", false);
 
   const load = useCallback(async (): Promise<PlaidItem[]> => {
     try {
@@ -217,6 +221,46 @@ export function AccountsPage() {
   const demo = status?.environment === "fake";
   const needsSignIn = items?.filter((i) => i.status === "login_required") ?? [];
 
+  const viewSwitch = (
+    <label className="flex w-fit items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        checked={cardView}
+        onChange={(e) => setCardView(e.target.checked)}
+        className="h-4 w-4"
+      />
+      Card view{" "}
+      <span className="rounded bg-violet-100 px-1.5 text-xs text-violet-800">experimental</span>
+    </label>
+  );
+
+  if (cardView) {
+    return (
+      <section className="max-w-6xl space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Accounts</h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Click a card to turn it over. Connections are managed in the classic view.
+            </p>
+          </div>
+          {viewSwitch}
+        </div>
+        {notice && (
+          <div
+            role={notice.kind === "error" ? "alert" : "status"}
+            className={`rounded-md px-3 py-2 text-sm ${
+              notice.kind === "error" ? "bg-red-100 text-red-900" : "bg-blue-100 text-blue-900"
+            }`}
+          >
+            {notice.text}
+          </div>
+        )}
+        <AccountCardsView items={items ?? []} />
+      </section>
+    );
+  }
+
   return (
     <section className="max-w-3xl space-y-5">
       <div className="flex items-start justify-between gap-4">
@@ -229,6 +273,7 @@ export function AccountsPage() {
                 : `Connected through Plaid (${status.environment}).`}
             </p>
           )}
+          <div className="mt-2">{viewSwitch}</div>
         </div>
         <ConnectButton
           label="Connect an account"

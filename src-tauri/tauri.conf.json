@@ -12,7 +12,7 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' https://cdn.plaid.com; frame-src https://cdn.plaid.com https://secure.plaid.com; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* https://*.plaid.com; img-src 'self' data: https://*.plaid.com; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; script-src 'self' https://cdn.plaid.com; frame-src https://cdn.plaid.com https://secure.plaid.com; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* https://*.plaid.com; img-src 'self' data: https://*.plaid.com https://tcgplayer-cdn.tcgplayer.com; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
