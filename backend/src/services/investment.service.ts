@@ -329,21 +329,30 @@ export function applyInvestmentTransactions(
   const accountIds = accountIdsByPlaidId(db, itemRowId);
   const secIds = new Map<string, number>();
   for (const s of result.securities) secIds.set(s.securityId, upsertPlaidSecurity(db, s, now));
+  // Plaid sends newest first, so a cancellation usually precedes the purchase it cancels.
+  const cancelled = new Set<string>();
   for (const t of result.transactions) {
+    if (t.cancelTransactionId) {
+      cancelled.add(t.cancelTransactionId);
+      cancelled.add(t.transactionId);
+    }
+  }
+  const cancelledIds = [...cancelled];
+  for (let i = 0; i < cancelledIds.length; i += 400) {
+    db.delete(investmentTransactions)
+      .where(
+        inArray(
+          investmentTransactions.plaidInvestmentTransactionId,
+          cancelledIds.slice(i, i + 400),
+        ),
+      )
+      .run();
+  }
+  for (const t of result.transactions) {
+    if (cancelled.has(t.transactionId)) continue;
     const accountId = accountIds.get(t.accountId);
     const amountMinor = toMinorUnits(t.amount, t.currency);
     if (accountId === undefined || amountMinor === null) continue;
-    if (t.cancelTransactionId) {
-      // A cancellation undoes an earlier transaction: both are dropped, so the history shows
-      // what actually happened rather than a purchase and its reversal.
-      db.delete(investmentTransactions)
-        .where(eq(investmentTransactions.plaidInvestmentTransactionId, t.cancelTransactionId))
-        .run();
-      db.delete(investmentTransactions)
-        .where(eq(investmentTransactions.plaidInvestmentTransactionId, t.transactionId))
-        .run();
-      continue;
-    }
     const values = {
       accountId,
       securityId: t.securityId ? (secIds.get(t.securityId) ?? null) : null,

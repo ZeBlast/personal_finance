@@ -418,47 +418,51 @@ describe("everything Plaid provides for an investment account", () => {
     await t.call("get", "/api/investments/securities/99999").expect(404);
   });
 
-  it("drops a transaction and its cancellation, so the history shows what really happened", async () => {
-    const t = app();
-    const { gateway, itemId, accountId } = await loadFromPlaid(t);
-    applyInvestmentTransactions(
-      t.db,
-      itemId,
-      await gateway.getInvestmentTransactions("t", "a", "b"),
-      "2026-10-01T00:00:00Z",
-    );
-    expect(
-      (await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200)).body
-        .total,
-    ).toBe(2);
-    // Later, Plaid reports that the purchase was cancelled.
-    const cancelled = [
-      ...PLAID_TRANSACTIONS,
-      {
-        ...PLAID_TRANSACTIONS[1],
-        investment_transaction_id: "itx-3",
-        cancel_transaction_id: "itx-2",
-        type: "cancel",
-        subtype: "cancel",
-        amount: -314,
-      },
-    ];
-    const next = await new RealPlaidGateway(
-      "sandbox",
-      plaidApi(cancelled) as never,
-    ).getInvestmentTransactions("t", "a", "b");
-    applyInvestmentTransactions(t.db, itemId, next, "2026-10-02T00:00:00Z");
-    const list = (
-      await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200)
-    ).body.rows;
-    expect(list.map((r: { name: string }) => r.name)).toEqual(["Agency matching contribution"]);
-    // Running it again changes nothing.
-    applyInvestmentTransactions(t.db, itemId, next, "2026-10-03T00:00:00Z");
-    expect(
-      (await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200)).body
-        .total,
-    ).toBe(1);
-  });
+  it.each([false, true])(
+    "drops cancelled purchases in either provider order (newest first: %s)",
+    async (newestFirst) => {
+      const t = app();
+      const { gateway, itemId, accountId } = await loadFromPlaid(t);
+      applyInvestmentTransactions(
+        t.db,
+        itemId,
+        await gateway.getInvestmentTransactions("t", "a", "b"),
+        "2026-10-01T00:00:00Z",
+      );
+      expect(
+        (await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200))
+          .body.total,
+      ).toBe(2);
+      // Later, Plaid reports that the purchase was cancelled.
+      const cancelled = [
+        ...PLAID_TRANSACTIONS,
+        {
+          ...PLAID_TRANSACTIONS[1],
+          investment_transaction_id: "itx-3",
+          cancel_transaction_id: "itx-2",
+          type: "cancel",
+          subtype: "cancel",
+          amount: -314,
+        },
+      ];
+      if (newestFirst) cancelled.reverse();
+      const next = await new RealPlaidGateway(
+        "sandbox",
+        plaidApi(cancelled) as never,
+      ).getInvestmentTransactions("t", "a", "b");
+      applyInvestmentTransactions(t.db, itemId, next, "2026-10-02T00:00:00Z");
+      const list = (
+        await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200)
+      ).body.rows;
+      expect(list.map((r: { name: string }) => r.name)).toEqual(["Agency matching contribution"]);
+      // Running it again changes nothing.
+      applyInvestmentTransactions(t.db, itemId, next, "2026-10-03T00:00:00Z");
+      expect(
+        (await t.call("get", `/api/investments/transactions?accountId=${accountId}`).expect(200))
+          .body.total,
+      ).toBe(1);
+    },
+  );
 });
 
 describe("the same data for an account kept by hand (the Thrift Savings Plan)", () => {

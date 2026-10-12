@@ -13,6 +13,14 @@ import { pageLedger } from "./plaid/fake-ledger.js";
 import { PlaidGatewayError, type PlaidGateway, type TransactionSyncPage } from "./plaid/gateway.js";
 import { createSyncService, type SyncService } from "./services/sync.service.js";
 import { linkDemoBank, makeTestApp } from "./test-helpers.js";
+import {
+  upsertTransaction,
+  updateTransaction,
+  getTransaction,
+} from "./services/transaction.service.js";
+import { addAttachment, listAttachments } from "./services/attachment.service.js";
+import { setSplits } from "./services/split.service.js";
+import type { GatewayTransaction } from "./plaid/gateway.js";
 
 /** A demo gateway whose behaviour tests can bend: record calls, fail, corrupt, or pause. */
 class TestGateway extends FakePlaidGateway {
@@ -426,16 +434,143 @@ describe("credit limits", () => {
   });
 });
 
-describe("safety of each page", () => {
-  it("stores a page and moves the cursor together, never one without the other", async () => {
+describe("safety of each paginated update", () => {
+  async function pendingWithEdits() {
+    const account = h.ctx.db.select().from(accounts).where(eq(accounts.plaidItemId, itemId)).get()!;
+    const pending: GatewayTransaction = {
+      transactionId: "pending-probe",
+      accountId: account.plaidAccountId!,
+      pendingTransactionId: null,
+      date: "2026-09-01",
+      authorizedDate: null,
+      name: "Coffee",
+      merchantName: "Coffee",
+      amount: 10,
+      currency: "USD",
+      pending: true,
+      paymentChannel: "in store",
+      categoryPrimary: null,
+      categoryDetailed: null,
+      counterparties: [],
+      paymentPayee: null,
+      paymentPayer: null,
+    };
+    const original = upsertTransaction(h.ctx.db, account.id, pending, START.toISOString());
+    updateTransaction(h.ctx.db, original.id, {
+      notes: "Keep this receipt",
+      merchant: "Edited merchant",
+    });
+    setSplits(h.ctx.db, original.id, [
+      { categoryId: null, amountMinor: 600 },
+      { categoryId: null, amountMinor: 400 },
+    ]);
+    addAttachment(h.ctx.db, original.id, {
+      name: "receipt.txt",
+      mime: "text/plain",
+      data: Buffer.from("receipt"),
+    });
+    return { pending, original };
+  }
+
+  it.each([true, false])(
+    "preserves edits, splits and receipts across posting pages (removal first: %s)",
+    async (removalFirst) => {
+      const { pending, original } = await pendingWithEdits();
+      const removal: TransactionSyncPage = {
+        added: [],
+        modified: [],
+        removedIds: [pending.transactionId],
+        nextCursor: "page-1",
+        hasMore: true,
+      };
+      const posting: TransactionSyncPage = {
+        added: [
+          {
+            ...pending,
+            transactionId: "posted-probe",
+            pendingTransactionId: pending.transactionId,
+            pending: false,
+          },
+        ],
+        modified: [],
+        removedIds: [],
+        nextCursor: "page-1",
+        hasMore: true,
+      };
+      const pages = removalFirst ? [removal, posting] : [posting, removal];
+      pages[1] = { ...pages[1]!, nextCursor: "complete", hasMore: false };
+      h.gateway.syncTransactions = async () => pages.shift()!;
+      expect((await h.sync.syncItem(itemId, "manual")).status).toBe("success");
+      expect(getTransaction(h.ctx.db, original.id)).toMatchObject({
+        pending: false,
+        notes: "Keep this receipt",
+        merchant: "Edited merchant",
+        splits: [{ amountMinor: 600 }, { amountMinor: 400 }],
+      });
+      expect(listAttachments(h.ctx.db, original.id)).toHaveLength(1);
+      expect(h.item(itemId).syncCursor).toBe("complete");
+    },
+  );
+
+  it("preserves a pending row when a later page fails, then safely retries the complete update", async () => {
+    const { pending, original } = await pendingWithEdits();
+    let calls = 0;
+    h.gateway.syncTransactions = async () => {
+      if (++calls === 1)
+        return {
+          added: [],
+          modified: [],
+          removedIds: [pending.transactionId],
+          nextCursor: "page-1",
+          hasMore: true,
+        };
+      throw new PlaidGatewayError("NETWORK_ERROR", "NETWORK", "Offline");
+    };
+    expect((await h.sync.syncItem(itemId, "manual")).status).toBe("offline");
+    expect(h.item(itemId).syncCursor).toBeNull();
+    expect(getTransaction(h.ctx.db, original.id).notes).toBe("Keep this receipt");
+    expect(listAttachments(h.ctx.db, original.id)).toHaveLength(1);
+    h.gateway.syncTransactions = async () => ({
+      added: [
+        {
+          ...pending,
+          transactionId: "posted-probe",
+          pendingTransactionId: pending.transactionId,
+          pending: false,
+        },
+      ],
+      modified: [],
+      removedIds: [pending.transactionId],
+      nextCursor: "complete",
+      hasMore: false,
+    });
+    expect((await h.sync.syncItem(itemId, "manual")).status).toBe("success");
+    expect(getTransaction(h.ctx.db, original.id).pending).toBe(false);
+    expect(listAttachments(h.ctx.db, original.id)).toHaveLength(1);
+  });
+
+  it("still deletes a genuinely removed pending transaction after a complete update", async () => {
+    const { pending, original } = await pendingWithEdits();
+    h.gateway.syncTransactions = async () => ({
+      added: [],
+      modified: [],
+      removedIds: [pending.transactionId],
+      nextCursor: "complete",
+      hasMore: false,
+    });
+    expect((await h.sync.syncItem(itemId, "manual")).removed).toBe(1);
+    expect(() => getTransaction(h.ctx.db, original.id)).toThrow();
+    expect(listAttachments(h.ctx.db, original.id)).toHaveLength(0);
+  });
+  it("stores all pages and moves the cursor together, never one without the other", async () => {
     h.gateway.corruptCall = 2; // the second page contains an unusable amount
     const run = await h.sync.syncItem(itemId, "manual");
     expect(run.status).toBe("error");
     expect(run.errorMessage).toMatch(/no valid amount/i);
 
-    // The first page is fully stored with its cursor; the second left no trace at all.
-    expect(h.txCount()).toBe(25);
-    expect(h.item(itemId).syncCursor).toBe("fake~2026-09-01~25~none");
+    // No part of an incomplete update is stored, so pending replacements cannot lose user data.
+    expect(h.txCount()).toBe(0);
+    expect(h.item(itemId).syncCursor).toBeNull();
     expect(h.item(itemId).lastSuccessfulSyncAt).toBeNull();
     expect(h.ctx.db.select().from(balanceSnapshots).all()).toHaveLength(0);
   });

@@ -6,6 +6,7 @@ import { AppError, notFound } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
 import { getSettings } from "./settings.service.js";
 import { isCardPayment } from "./transfer.service.js";
+import { pendingManualTransactions } from "./pending-manual.service.js";
 
 /**
  * Credit card bills. The user says on which day of the month each card's statement closes and on
@@ -190,7 +191,16 @@ export function listBills(
       closesOn: next,
       dueOn: dueAfter(next, s.dueDay),
       // What has been charged this cycle, less anything paid beyond the last statement.
-      balanceSoFarMinor: Math.max(0, card.currentBalanceMinor - remaining),
+      balanceSoFarMinor: Math.max(
+        0,
+        card.currentBalanceMinor -
+          remaining +
+          pendingManualTransactions(db, {
+            to: next,
+            currency: card.currency,
+            accountId: card.id,
+          }).reduce((sum, t) => sum + t.amountMinor, 0),
+      ),
     };
     return base;
   });

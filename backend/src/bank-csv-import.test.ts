@@ -122,7 +122,7 @@ describe("importing into an account kept by hand", () => {
       added: 0,
       duplicates: 0,
       balanceBeforeMinor: 0,
-      balanceAfterMinor: 107575,
+      balanceAfterMinor: 108000,
     });
     expect(preview.rows).toHaveLength(4);
     expect(await list()).toEqual([]);
@@ -136,7 +136,7 @@ describe("importing into an account kept by hand", () => {
       amountMinor: -125000,
     });
     expect(rows.find((r) => r.merchant === "COFFEE SHOP")).toMatchObject({ pending: true });
-    expect(await balance()).toBe(107575);
+    expect(await balance()).toBe(108000);
 
     expect((await importCsv({})).body).toMatchObject({ added: 0, duplicates: 4 });
     expect(await list()).toHaveLength(4);
@@ -153,7 +153,7 @@ describe("importing into an account kept by hand", () => {
     expect(await balance()).toBe(500_000);
     // The opening balance now starts the day before the first imported row.
     const opening = (await list()).find((r) => r.merchant === "Opening balance")!;
-    expect(opening).toMatchObject({ date: "2026-09-09", amountMinor: -(500_000 - 107_575) });
+    expect(opening).toMatchObject({ date: "2026-09-09", amountMinor: -(500_000 - 108_000) });
   });
 
   it("refuses connected and store credit accounts", async () => {

@@ -258,7 +258,7 @@ export function importBankCsv(
   });
   const fresh = rows.filter((r) => !r.duplicate);
   // Money in raises a deposit account and lowers what a card owes.
-  const net = fresh.reduce((n, r) => n + r.amountMinor, 0);
+  const net = fresh.filter((r) => !r.pending).reduce((n, r) => n + r.amountMinor, 0);
   const change = options.keepBalance ? 0 : account.type === "credit" ? -net : net;
   const balanceBefore = account.balance ?? 0;
   const result: BankCsvResult = {

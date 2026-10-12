@@ -78,7 +78,7 @@ export function rebuildManualBalanceHistory(db: Tx, accountId: number): void {
   const flows = db
     .select({ date: transactions.date, amount: transactions.amountMinor })
     .from(transactions)
-    .where(eq(transactions.accountId, accountId))
+    .where(and(eq(transactions.accountId, accountId), eq(transactions.pending, false)))
     .orderBy(asc(transactions.date))
     .all();
   const snapshots = db
@@ -116,7 +116,17 @@ export function repairManualBalanceHistories(db: AppDb): void {
       .from(accounts)
       .where(and(eq(accounts.isManual, true), sql`${accounts.type} in ('depository', 'credit')`))
       .all();
-    for (const row of rows) rebuildManualBalanceHistory(tx, row.id);
+    for (const row of rows) {
+      rebuildManualBalanceHistory(tx, row.id);
+      // Older versions included pending charges in the current balance as well as its history.
+      tx.update(accounts)
+        .set({
+          currentBalanceMinor: sql`(case when ${accounts.type} = 'credit' then 1 else -1 end) *
+        (select coalesce(sum(amount_minor), 0) from transactions where account_id = ${row.id} and pending = 0)`,
+        })
+        .where(eq(accounts.id, row.id))
+        .run();
+    }
   });
 }
 
@@ -161,7 +171,7 @@ export function recomputeManualBalance(db: Tx, accountId: number, now: string): 
     db
       .select({ sum: sql<number>`coalesce(sum(${transactions.amountMinor}), 0)` })
       .from(transactions)
-      .where(eq(transactions.accountId, accountId))
+      .where(and(eq(transactions.accountId, accountId), eq(transactions.pending, false)))
       .get()?.sum ?? 0;
   // Money in raises a deposit account; a purchase raises what is owed on a card.
   const balance = account.type === "credit" ? total : -total;

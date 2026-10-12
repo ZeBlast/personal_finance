@@ -31,6 +31,7 @@ import { createManualTransaction } from "./manual-transaction.service.js";
 import type { TransactionDto } from "./transaction.service.js";
 import { getSettings } from "./settings.service.js";
 import { accountScope } from "./account-scope.js";
+import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
 
 /**
  * The calendar: a note for any day, transactions the user expects (once or on a schedule), and for
@@ -527,12 +528,26 @@ export function calendarOverlay(db: AppDb, month: string, accountId?: number): C
   for (const n of listNotes(db, from, to)) notes[n.date] = n.note;
 
   const byDate = new Map<string, { count: number; outflowMinor: number; inflowMinor: number }>();
+  const pending = pendingManualTransactions(db, {
+    from,
+    to,
+    currency: getSettings(db).currency,
+    accountId,
+  });
   for (const o of listOccurrences(db, from, to, { accountId })) {
+    if (matchesPendingManual(pending, o)) continue;
     const day = byDate.get(o.date) ?? { count: 0, outflowMinor: 0, inflowMinor: 0 };
     day.count += 1;
     if (o.direction === "out") day.outflowMinor += o.amountMinor;
     else day.inflowMinor += o.amountMinor;
     byDate.set(o.date, day);
+  }
+  for (const t of pending) {
+    const day = byDate.get(t.date) ?? { count: 0, outflowMinor: 0, inflowMinor: 0 };
+    day.count += 1;
+    if (t.amountMinor > 0) day.outflowMinor += t.amountMinor;
+    else day.inflowMinor -= t.amountMinor;
+    byDate.set(t.date, day);
   }
   return {
     month,
@@ -638,8 +653,17 @@ export function periodSummary(
   };
 
   // Expected money between today and a future day, as its effect on the balance.
+  const pending = pendingManualTransactions(db, { to, currency, accountId });
   const futureOccurrences =
-    to > today ? listOccurrences(db, addDays(today, 1), to, { accountId }) : [];
+    to > today
+      ? listOccurrences(db, addDays(today, 1), to, { accountId }).filter(
+          (o) => !matchesPendingManual(pending, o),
+        )
+      : [];
+  const pendingEffect = (upTo: string, accountIds: number[]): number =>
+    pending
+      .filter((t) => t.date <= upTo && accountIds.includes(t.accountId))
+      .reduce((sum, t) => sum - t.amountMinor, 0);
   const expectedEffect = (upTo: string): number =>
     futureOccurrences
       .filter((o) => o.date <= upTo)
@@ -649,7 +673,7 @@ export function periodSummary(
     if (ids.length === 0) return null;
     // Net now, minus the net change since `day` (which is minus the amounts, per the sign rule).
     const base = currentNet + postedAfter(day);
-    return day > today ? currentNet + expectedEffect(day) : base;
+    return day > today ? currentNet + expectedEffect(day) + pendingEffect(day, ids) : base;
   };
 
   const startMinor = balanceAt(addDays(from, -1));
@@ -672,7 +696,7 @@ export function periodSummary(
       const added = futureOccurrences
         .filter((o) => o.date <= day && o.accountId !== null && debtIds.includes(o.accountId))
         .reduce((sum, o) => sum + (o.direction === "out" ? o.amountMinor : -o.amountMinor), 0);
-      return owedNow + added;
+      return owedNow + added - pendingEffect(day, debtIds);
     }
     const row = db.get<{ s: number | null }>(sql`
       select sum(amount_minor) as s from transactions
@@ -713,7 +737,10 @@ export function periodSummary(
   const all = summarize(db, { ...base, groupBy: "none" });
   const byCategory = summarize(db, { ...base, groupBy: "category", limit: 6 });
 
-  const expected = listOccurrences(db, from, to, { accountId });
+  const expected = listOccurrences(db, from, to, { accountId }).filter(
+    (o) => !matchesPendingManual(pending, o),
+  );
+  const pendingInPeriod = pending.filter((t) => t.date >= from);
 
   return {
     from,
@@ -747,13 +774,13 @@ export function periodSummary(
       .slice(0, 5)
       .map((r) => ({ label: r.label, color: r.color, spendingMinor: r.spendingMinor })),
     expected: {
-      count: expected.length,
-      outflowMinor: expected
-        .filter((o) => o.direction === "out")
-        .reduce((s, o) => s + o.amountMinor, 0),
-      inflowMinor: expected
-        .filter((o) => o.direction === "in")
-        .reduce((s, o) => s + o.amountMinor, 0),
+      count: expected.length + pendingInPeriod.length,
+      outflowMinor:
+        expected.filter((o) => o.direction === "out").reduce((s, o) => s + o.amountMinor, 0) +
+        pendingInPeriod.filter((t) => t.amountMinor > 0).reduce((s, t) => s + t.amountMinor, 0),
+      inflowMinor:
+        expected.filter((o) => o.direction === "in").reduce((s, o) => s + o.amountMinor, 0) -
+        pendingInPeriod.filter((t) => t.amountMinor < 0).reduce((s, t) => s + t.amountMinor, 0),
     },
     notes: listNotes(db, from, to),
   };

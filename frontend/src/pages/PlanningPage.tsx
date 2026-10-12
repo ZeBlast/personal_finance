@@ -70,7 +70,12 @@ export function PlanningPage() {
 
 // ---- Forecast ----------------------------------------------------------------------------------
 
-const SOURCE_LABEL = { expected: "Expected", recurring: "Recurring", card_bill: "Card bill" };
+const SOURCE_LABEL = {
+  expected: "Expected",
+  recurring: "Recurring",
+  card_bill: "Card bill",
+  pending: "Pending",
+};
 
 function ForecastTab() {
   const [days, setDays] = useState(60);

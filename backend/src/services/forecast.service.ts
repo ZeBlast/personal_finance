@@ -2,10 +2,11 @@ import type { AppDb } from "../db/client.js";
 import { addDays, isRealDate } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
-import { listBills } from "./bills.service.js";
+import { closingDates, dueAfter, listBills } from "./bills.service.js";
 import { listOccurrences } from "./calendar.service.js";
 import { nextAfter, recurringReport } from "./recurring.service.js";
 import { getSettings } from "./settings.service.js";
+import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
 
 /**
  * A forecast of the cash in the user's bank accounts (checking, savings, cash) day by day: today's
@@ -30,7 +31,7 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill";
+  source: "expected" | "recurring" | "card_bill" | "pending";
 }
 
 export interface ForecastDay {
@@ -75,16 +76,25 @@ export function cashForecast(
   const start = cash.reduce((n, a) => n + a.currentBalanceMinor!, 0);
 
   const events = new Map<string, ForecastEvent[]>();
+  const allPending = pendingManualTransactions(db, { to: end, currency: settings.currency });
+  const pending = allPending.filter((t) => t.accountType === "depository");
+  // An overdue pending entry is still outstanding: project it on the first future day.
+  const pendingDate = (date: string): string => (date > today ? date : addDays(today, 1));
+  const projectedPending = pending.map((t) => ({ ...t, date: pendingDate(t.date) }));
   const add = (date: string, e: ForecastEvent): void => {
     if (date <= today || date > end || e.amountMinor === 0) return;
     events.set(date, [...(events.get(date) ?? []), e]);
   };
+  for (const t of pending) {
+    add(pendingDate(t.date), { label: t.merchant, amountMinor: -t.amountMinor, source: "pending" });
+  }
 
   // 1. What the user expects.
   const planned = listOccurrences(db, addDays(today, 1), end).filter(
     (o) => o.status === "expected" && (o.accountType === null || o.accountType === "depository"),
   );
   for (const o of planned) {
+    if (matchesPendingManual(projectedPending, o)) continue;
     const amount = Math.abs(o.amountMinor);
     add(o.date, {
       label: o.merchant,
@@ -101,6 +111,16 @@ export function cashForecast(
     const amount = s.typicalAmountMinor;
     for (let d = s.nextExpected, guard = 0; d <= end && guard < 400; d = nextAfter(d, s.cadence)) {
       guard += 1;
+      if (
+        matchesPendingManual(projectedPending, {
+          date: d,
+          merchant: s.merchant,
+          amountMinor: amount,
+          direction: s.direction,
+          accountId: null,
+        })
+      )
+        continue;
       add(d, {
         label: s.merchant,
         amountMinor: s.direction === "in" ? amount : -amount,
@@ -123,6 +143,19 @@ export function cashForecast(
         amountMinor: -bill.next.balanceSoFarMinor,
         source: "card_bill",
       });
+      // Pending card entries beyond the next closing date belong to a later bill. Charge cash
+      // on that bill's due date rather than on the purchase date, and do not count them twice.
+      for (const t of allPending.filter(
+        (t) => t.accountId === bill.accountId && t.date > bill.next!.closesOn,
+      )) {
+        const closes = closingDates(bill.settings!.closingDay, t.date);
+        const closedOn = closes.last === t.date ? closes.last : closes.next;
+        add(dueAfter(closedOn, bill.settings!.dueDay), {
+          label: `${bill.name} pending charges`,
+          amountMinor: -t.amountMinor,
+          source: "pending",
+        });
+      }
     }
   }
 

@@ -386,7 +386,7 @@ describe("editing and deleting", () => {
       source: "manual",
     });
     expect(await balanceOf(t, wallet)).toBe(10000); // the purchase left this account
-    expect(await balanceOf(t, jar)).toBe(900);
+    expect(await balanceOf(t, jar)).toBe(0); // the deposit is pending, so it has not changed the balance
   });
 
   it("changes only the amount while keeping the direction, and only the direction while keeping the amount", async () => {

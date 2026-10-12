@@ -220,17 +220,10 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
       store(() => upsertItemAccounts(db, item.id, gatewayAccounts, iso()));
       const accountIds = accountIdsByPlaidId(db, item.id);
 
-      const saveCursor = (cursor: string | null): void => {
-        db.update(plaidItems)
-          .set({ syncCursor: cursor, updatedAt: iso() })
-          .where(eq(plaidItems.id, item.id))
-          .run();
-      };
-
-      const applyPage = (page: TransactionSyncPage): void => {
+      const applyUpdate = (pages: TransactionSyncPage[], nextCursor: string): void => {
         const stamp = iso();
-        // One database transaction per page: the changes and the new cursor commit together, so
-        // the cursor never moves past changes that were not stored.
+        // Pending removals and their posted replacements can be on different pages. Apply the
+        // complete update before removing rows, and commit its cursor in the same transaction.
         const outcome = db.transaction((tx) => {
           const added: string[] = [];
           const modified: string[] = [];
@@ -242,14 +235,18 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
             (result.kind === "added" ? added : modified).push(t.transactionId);
             touched.push(result.id);
           };
-          page.added.forEach(apply);
-          page.modified.forEach(apply);
-          // Categorize what just arrived or changed, in the same database transaction as the
-          // page. Categories the user chose by hand are never touched.
+          for (const page of pages) {
+            page.added.forEach(apply);
+            page.modified.forEach(apply);
+          }
+          // Categorize the complete update. Categories the user chose by hand are never touched.
           applyRules(tx, touched);
-          const removed = removeTransactions(tx, page.removedIds);
+          const removed = removeTransactions(
+            tx,
+            pages.flatMap((page) => page.removedIds),
+          );
           tx.update(plaidItems)
-            .set({ syncCursor: page.nextCursor, updatedAt: stamp })
+            .set({ syncCursor: nextCursor, updatedAt: stamp })
             .where(eq(plaidItems.id, item.id))
             .run();
           return { added, modified, removed };
@@ -266,6 +263,7 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
       let restarts = 0;
       let reconcile = false;
       const seen = new Map<string, string>(); // provider ID -> date, only used when reconciling
+      const pages: TransactionSyncPage[] = [];
       const hasInvestments = store(() => hasInvestmentAccounts(db, item.id));
 
       for (;;) {
@@ -282,11 +280,11 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
             failure.code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" &&
             restarts < MAX_RESTARTS
           ) {
-            // Data changed while paging: start the whole pass again from where it began.
-            // Re-applying pages is safe because storing a transaction is idempotent.
+            // Discard the incomplete update and restart at the beginning of this pass.
             restarts += 1;
-            cursor = startCursor;
-            saveCursor(startCursor);
+            cursor = reconcile ? null : startCursor;
+            pages.length = 0;
+            seen.clear();
             continue;
           }
           if (failure.code === "INVALID_CURSOR" && !reconcile) {
@@ -294,19 +292,20 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
             // everything again and reconcile, instead of failing forever.
             reconcile = true;
             cursor = null;
-            saveCursor(null);
+            pages.length = 0;
             seen.clear();
             continue;
           }
           throw failure;
         }
-        store(() => applyPage(page));
+        pages.push(page);
         if (reconcile) {
           for (const t of [...page.added, ...page.modified]) seen.set(t.transactionId, t.date);
         }
         cursor = page.nextCursor;
         if (!page.hasMore) break;
       }
+      if (pages.length > 0 && cursor !== null) store(() => applyUpdate(pages, cursor));
 
       if (reconcile && seen.size > 0) {
         // After a full re-pull, delete local transactions the provider no longer returns, but only

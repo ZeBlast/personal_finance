@@ -30,6 +30,12 @@ import {
   transactions,
   transactionSplits,
   goals,
+  collectionItems,
+  collectionPriceHistory,
+  merchantGroups,
+  merchantGroupMembers,
+  dashboards,
+  recurringDismissed,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { toCsv, type CsvCell } from "../utils/csv-write.js";
@@ -238,6 +244,12 @@ function everythingJson(db: AppDb, now: Date): { text: string; rows: number } {
     transactions: db.select().from(transactions).all(),
     transactionSplits: db.select().from(transactionSplits).all(),
     goals: db.select().from(goals).all(),
+    collectionItems: db.select().from(collectionItems).all(),
+    collectionPriceHistory: db.select().from(collectionPriceHistory).all(),
+    merchantGroups: db.select().from(merchantGroups).all(),
+    merchantGroupMembers: db.select().from(merchantGroupMembers).all(),
+    dashboards: db.select().from(dashboards).all(),
+    recurringDismissed: db.select().from(recurringDismissed).all(),
     categories: db.select().from(categories).all(),
     rules: db.select().from(transactionRules).all(),
     budgets: db.select().from(budgets).all(),

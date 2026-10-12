@@ -93,7 +93,9 @@ straight away. Two settings control this, both in **Settings → Syncing**, and 
 
 Syncing works from wherever you left off, so after days or months away it simply catches up. If
 you are offline, nothing breaks: the app keeps showing your last synced data and tries again next
-time. Each sync is saved page by page, so an interruption never leaves half-written data.
+time. Each complete paginated update is saved with its sync position in one database transaction,
+so an interruption preserves the previous update and the next sync safely retries. Pending
+transactions keep their edits, splits, and receipts when their posted replacements arrive on another page.
 
 ### What is kept from each transaction
 
@@ -171,6 +173,11 @@ subcategories), and "Copy from last month" carries them forward.
   cannot be matched, so open it on the Transactions page and choose **Transfer between my own
   accounts: Yes**. You can also say **No** for a wrongly matched one, or **Let the app decide**.
 - Refunds reduce spending, and pending transactions are included.
+- A pending transaction entered by hand does not change the posted balance or its history. It
+  still counts in spending and budgets for its date and in expected calendar amounts and forecasts.
+  Outstanding entries dated today or earlier are projected on the next day; future entries use
+  their own date. Pending card charges are included in the estimated upcoming bill. Mark an entry
+  posted when it clears to move it from the projection into the balance.
 
 ### Adding your own widget
 
@@ -231,7 +238,7 @@ can be added from **Edit dashboard → + Add widget**.
 
 Fund prices: **Fetch prices** downloads from the Max TSP API (api.maxtsp.com, no key needed) or from tsp.gov (which refused scripted downloads with a 403 in testing; the app does not try to get around that). Choose how far back to go: the last month, 3 months, a year, 5 years, since the day you got the funds, or everything (back to 2003); every day in that range is saved. You can also **Import price file** (CSV from tsp.gov) or **Add a price** by hand. Prices you type are never overwritten by a download.
 
-**Past activity:** import the *Investment Activity Detail* CSV from tsp.gov to record your real contributions (yours, plus the agency's automatic and matching amounts) with the units and unit price of each day. The prices also fill the fund price table, and re-importing is safe. The option to add the units to the holdings is off by default, so history is not counted twice if you already entered today's holdings. The *chart* CSV (one fund's price history) imports through **Import price file**.
+**Past activity:** import the _Investment Activity Detail_ CSV from tsp.gov to record your real contributions (yours, plus the agency's automatic and matching amounts) with the units and unit price of each day. The prices also fill the fund price table, and re-importing is safe. The option to add the units to the holdings is off by default, so history is not counted twice if you already entered today's holdings. The _chart_ CSV (one fund's price history) imports through **Import price file**.
 
 ### Income, credits, and refunds
 
@@ -287,7 +294,7 @@ On a credit card (Accounts page) set a default rate plus rates for specific cate
 - Collections: accounts kept by hand (Accounts → Add account by hand), opened with "Open collection". Two types:
   - **Pokémon cards**: each card has its TCGplayer id (required when adding one; the number in its tcgplayer.com/product/ link, or paste the link) and a condition (NM, LP, MP, HP, DMG; Lightly Played by default; the same card in two conditions is two items). Pasting a TCGplayer export imports cards as LP and looks up their TCGplayer ids by set code and number from tcgcsv.com (free, no key). "Market prices" gets prices from JustTCG with your own API key (stored encrypted, never shown or exported): cards are priced 20 per request, at their condition, at most once a day, with the price history the plan allows (7 days on the free plan; every fetch is kept, so the history grows). The free plan allows 100 requests a day and 1,000 a month; runs show their cost first, stop at either limit, and carry on next time. A market price fills the card's value unless you typed one in. "Clear prices" undoes price lookups (keeping ids and typed values). Click a market price for its history; sort the table by any column.
   - **Other collection**: items valued by hand, no ids, conditions, or prices.
-  The account is worth quantity × value summed (items without a value count as nothing yet), recorded in its balance history and counted in net worth as other assets. "Export to file" saves a collection (items, ids, conditions, prices, and their history, never the API key) and "Import collection file" (Accounts, under accounts kept by hand) makes it a new account in another copy of the app, with nothing to look up again.
+    The account is worth quantity × value summed (items without a value count as nothing yet), recorded in its balance history and counted in net worth as other assets. "Export to file" saves a collection (items, ids, conditions, prices, and their history, never the API key) and "Import collection file" (Accounts, under accounts kept by hand) makes it a new account in another copy of the app, with nothing to look up again.
 - TSP: import the price chart download (`chart.csv`: a date range and fund name as the header, then one price a day) and the Investment Activity Detail file. Together they bring the holdings up to date and rebuild the account's daily balance history for the net worth chart. Contributions can be one-time as well as recurring, and can include employer money: the federal (FERS) 1% automatic plus up-to-4% match, or a custom match (x% of what you put in, up to y% of pay, plus z% of pay). Employer money is recorded as its own activity. Past balances are rebuilt at launch, each new day, and after contributions are applied.
 - Taxes: finds the year's income and Transfers > Credit transactions, grouped by source. For each source you can enter its annual income, pre-tax 401(k)/TSP and health/HSA/FSA amounts, and whether it is exempt from FICA. Add your filing status, state (MD, DC or VA), Maryland county, any other local rate and what was withheld, and it estimates federal tax, FICA, and state and local taxes. Answers are saved per year.
 - Calendar: on the chosen day, click the empty dashed box to type a note right in it (Enter or clicking away saves; it then shows as a white bar). Clicking a transaction in the side panel opens a table of the selected days' transactions, with expected ones listed first.

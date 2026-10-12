@@ -1,6 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  collectionItems,
+  collectionPriceHistory,
+  dashboards,
+  merchantGroups,
+  merchantGroupMembers,
+  recurringDismissed,
+} from "../../drizzle/schema.js";
+import { createManualBankAccount } from "./services/manual-transaction.service.js";
+import { addItem } from "./services/collection.service.js";
 import { createDb, runMigrations } from "./db/client.js";
 import os from "node:os";
 import {
@@ -549,6 +559,45 @@ describe("exports", () => {
   it("rejects an unknown kind", async () => {
     const t = app();
     await t.call("post", "/api/exports").send({ kind: "passwords" }).expect(400);
+  });
+
+  it("includes collections and prices, merchant groups, dashboards and recurring dismissals in everything", async () => {
+    const t = app();
+    const now = "2026-10-01T12:00:00Z";
+    const accountId = createManualBankAccount(t.db, { name: "Coins", kind: "collection" }, now);
+    addItem(t.db, accountId, { name: "Coin", quantity: 2, unitValueMinor: 10000 }, now);
+    const item = t.db.select().from(collectionItems).get()!;
+    t.db
+      .insert(collectionPriceHistory)
+      .values({ itemId: item.id, day: "2026-10-01", priceMinor: 10000 })
+      .run();
+    const group = t.db
+      .insert(merchantGroups)
+      .values({ name: "Coffee shops", createdAt: now, updatedAt: now })
+      .returning()
+      .get();
+    t.db
+      .insert(merchantGroupMembers)
+      .values({ groupId: group.id, merchantKey: "coffee", merchantName: "Coffee" })
+      .run();
+    t.db.insert(dashboards).values({ name: "Investments", createdAt: now, updatedAt: now }).run();
+    t.db
+      .insert(recurringDismissed)
+      .values({ key: "coffee", merchant: "Coffee", createdAt: now })
+      .run();
+    const res = await t.call("post", "/api/exports").send({ kind: "everything" }).expect(201);
+    const data = JSON.parse(fs.readFileSync(res.body.path, "utf8"));
+    for (const [name, table] of Object.entries({
+      collectionItems,
+      collectionPriceHistory,
+      merchantGroups,
+      merchantGroupMembers,
+      dashboards,
+      recurringDismissed,
+    })) {
+      expect(data[name], name).toEqual(t.db.select().from(table).all());
+      expect(data[name].length, name).toBeGreaterThan(0);
+    }
   });
 });
 
