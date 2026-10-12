@@ -121,13 +121,16 @@ export type Group = (typeof GROUPS)[number];
 export type DateBasis = "transaction" | "posted";
 export const DATE_BASES = ["transaction", "posted"] as const;
 
-/** The SQL date of a transaction (alias `t`) on a basis; summaries default to the posted date. */
+/**
+ * The SQL date of a transaction (alias `t`) on a basis. Charts and summaries default to the
+ * transaction date, so a purchase counts in the day, week or month it was made in.
+ */
 export function dateOf(basis: DateBasis | undefined): SQL {
-  return basis === "transaction" ? sql`coalesce(t.authorized_date, t.date)` : sql`t.date`;
+  return basis === "posted" ? sql`t.date` : sql`coalesce(t.authorized_date, t.date)`;
 }
 
 export interface SummaryQuery {
-  /** Which date places a transaction in the period (default: the posted date). */
+  /** Which date places a transaction in the period and its day/week/month (default: transaction). */
   dateBasis?: DateBasis | undefined;
   from: string;
   to: string;
@@ -171,20 +174,21 @@ interface GroupSql {
   extraJoin?: SQL;
 }
 
-function groupSql(group: Group, rollup: boolean): GroupSql {
+/** `day` is the transaction's date on the query's basis, the same one that places it in the period. */
+function groupSql(group: Group, rollup: boolean, day: SQL): GroupSql {
   switch (group) {
     case "none":
       return { key: sql`'all'`, label: sql`'All'`, color: sql`null` };
     case "day":
-      return { key: sql`t.date`, label: sql`t.date`, color: sql`null` };
+      return { key: day, label: day, color: sql`null` };
     case "week":
       return {
-        key: sql`date(t.date, 'weekday 0', '-6 days')`,
-        label: sql`date(t.date, 'weekday 0', '-6 days')`,
+        key: sql`date(${day}, 'weekday 0', '-6 days')`,
+        label: sql`date(${day}, 'weekday 0', '-6 days')`,
         color: sql`null`,
       };
     case "month":
-      return { key: sql`substr(t.date, 1, 7)`, label: sql`substr(t.date, 1, 7)`, color: sql`null` };
+      return { key: sql`substr(${day}, 1, 7)`, label: sql`substr(${day}, 1, 7)`, color: sql`null` };
     case "category":
       return rollup
         ? {
@@ -286,7 +290,7 @@ const fromTransactions = sql`from transaction_lines t
 /** Spending and income for any period, grouped any of the ways above. This one query feeds most widgets. */
 export function summarize(db: AppDb, q: SummaryQuery): Summary {
   validateRange(q.from, q.to, q.groupBy);
-  const g = groupSql(q.groupBy, q.rollupToParent ?? false);
+  const g = groupSql(q.groupBy, q.rollupToParent ?? false, dateOf(q.dateBasis));
   const raw = db.all<RawRow>(sql`
     select ${g.key} as key, max(${g.label}) as label, max(${g.color}) as color,
       sum(case when ${IS_INCOME} then 0 else t.amount_minor end) as spending,

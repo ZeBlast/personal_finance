@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { summarize } from "./services/analytics.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -76,5 +77,36 @@ describe("transaction date and posted date", () => {
         .body.moneyOutMinor as number;
     expect(await out("")).toBe(2000);
     expect(await out("&dateBasis=posted")).toBe(1000);
+  });
+
+  it("groups charts by transaction date: a purchase counts in the month it was made", async () => {
+    const t = await setup();
+    const rows = async (q: string) =>
+      (await t.call("get", `/api/analytics/summary?${q}`).expect(200)).body.rows as Array<{
+        key: string;
+        spendingMinor: number;
+      }>;
+    expect(await rows("from=2026-09-01&to=2026-10-31&groupBy=month")).toEqual([
+      expect.objectContaining({ key: "2026-09", spendingMinor: 2000 }),
+    ]);
+    expect((await rows("from=2026-09-01&to=2026-10-31&groupBy=day")).map((r) => r.key)).toEqual([
+      "2026-09-28",
+      "2026-09-30",
+    ]);
+    // The posted date is still there for views that offer the choice.
+    const posted = summarize(t.db, {
+      from: "2026-09-01",
+      to: "2026-10-31",
+      groupBy: "month",
+      dateBasis: "posted",
+      includeTransfers: false,
+      includePending: true,
+      fill: false,
+      environment: "fake",
+    });
+    expect(posted.rows.map((r) => [r.key, r.spendingMinor])).toEqual([
+      ["2026-09", 1000],
+      ["2026-10", 1000],
+    ]);
   });
 });

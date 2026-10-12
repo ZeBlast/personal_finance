@@ -477,7 +477,7 @@ export function cashbackSummary(
     from transactions t
       join accounts a on a.id = t.account_id
       left join categories c on c.id = t.category_id
-    where t.date >= ${from} and t.date <= ${to}
+    where coalesce(t.authorized_date, t.date) between ${from} and ${to}
       and t.account_id in (${sql.join(
         ids.map((id) => sql`${id}`),
         sql`, `,

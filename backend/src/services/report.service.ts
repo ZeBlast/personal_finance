@@ -95,13 +95,14 @@ export function monthReport(db: AppDb, month: string): MonthReport {
     amountMinor: number;
     accountName: string;
   }>(sql`
-    select t.id as id, t.date as date,
+    select t.id as id, coalesce(t.authorized_date, t.date) as date,
       coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name) as merchant,
       t.amount_minor as amountMinor, a.name as accountName
     from transactions t
       join accounts a on a.id = t.account_id
       left join plaid_items p on p.id = a.plaid_item_id
-    where t.date >= ${from} and t.date <= ${to} and t.amount_minor > 0 and ${countedAccount()}
+    where coalesce(t.authorized_date, t.date) between ${from} and ${to}
+      and t.amount_minor > 0 and ${countedAccount()}
       and (p.environment = ${environment} or a.plaid_item_id is null)
       and a.type <> 'investment'
       and ${NOT_TRANSFER}
