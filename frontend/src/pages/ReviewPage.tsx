@@ -4,6 +4,8 @@ import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
 import { buttonClass, primaryClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
+import { categoryOptions, useCategories } from "../hooks/useCategories";
+import { CategorySelect } from "../components/common/CategorySelect";
 import { formatMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
@@ -23,6 +25,9 @@ export function ReviewPage() {
   const navigate = useNavigate();
   const queue = useApi<ReviewQueue>("/review");
   const dupes = useApi<DuplicatePair[]>("/duplicates");
+  const loose = useApi<{ items: Transaction[]; total: number }>("/review/uncategorized");
+  const { categories } = useCategories();
+  const categoryChoices = categoryOptions((categories ?? []).filter((c) => c.active));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,6 +38,7 @@ export function ReviewPage() {
       setError(null);
       queue.reload();
       dupes.reload();
+      loose.reload();
       announceDataChanged();
     } catch (e) {
       setError(errorMessage(e, failure));
@@ -129,6 +135,65 @@ export function ReviewPage() {
           ))}
           {queue.data && items.length === 0 && (
             <li className="px-3 py-4 text-sm text-slate-500">Nothing to review. All caught up.</li>
+          )}
+        </ul>
+      </div>
+
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">
+          Uncategorized{loose.data ? ` (${loose.data.total})` : ""}
+        </h2>
+        <p className="text-xs text-slate-500">
+          Every transaction without a category, however old. Pick one to file it; it then counts in
+          that category everywhere. Transfers between your own accounts need no category.
+          {loose.data && loose.data.total > loose.data.items.length
+            ? ` Showing the newest ${loose.data.items.length}.`
+            : ""}
+        </p>
+        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+          {(loose.data?.items ?? []).map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+              <button
+                type="button"
+                title="Show it on the Transactions page"
+                onClick={() => navigate(`/transactions?focus=${t.id}&account=${t.accountId}`)}
+                className="min-w-0 flex-1 rounded text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <div className="font-medium hover:underline">{t.merchant}</div>
+                <div className="text-xs text-slate-500">
+                  {formatDay(t.authorizedDate ?? t.date)} ·{" "}
+                  <AccountName name={t.accountName} institutionName={t.institutionName} />
+                </div>
+              </button>
+              <Amount t={t} />
+              <CategorySelect
+                aria-label={`Category for ${t.merchant}`}
+                value=""
+                disabled={busy}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  void run(
+                    () =>
+                      api(`/transactions/${t.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ categoryId: Number(e.target.value) }),
+                      }),
+                    "Could not set the category.",
+                  );
+                }}
+                className="w-52 rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
+              >
+                <option value="">Choose a category...</option>
+                {categoryChoices.map((o) => (
+                  <option key={o.id} value={o.id} data-depth={o.depth}>
+                    {o.label}
+                  </option>
+                ))}
+              </CategorySelect>
+            </li>
+          ))}
+          {loose.data && loose.data.items.length === 0 && (
+            <li className="px-3 py-4 text-sm text-slate-500">Everything has a category.</li>
           )}
         </ul>
       </div>

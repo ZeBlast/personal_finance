@@ -195,3 +195,28 @@ export function isReviewed(db: AppDb, id: number): boolean {
       .get()?.at != null
   );
 }
+
+/** At most this many uncategorized transactions are listed at once (the newest). */
+export const UNCATEGORIZED_LIMIT = 300;
+
+/**
+ * Every transaction without a category, newest first, whenever it happened: transfers between the
+ * user's own accounts and accounts left out (hidden, investments) are not listed, since they need
+ * no category. `total` counts them all; `items` holds the newest UNCATEGORIZED_LIMIT.
+ */
+export function uncategorized(db: AppDb): { items: TransactionDto[]; total: number } {
+  const environment = getSettings(db).plaidEnvironment;
+  const ids = db.all<{ id: number }>(sql`
+    select t.id from transactions t
+      join accounts acc on acc.id = t.account_id
+      left join plaid_items p on p.id = acc.plaid_item_id
+    where t.category_id is null and t.is_transfer = 0 and t.amount_minor <> 0
+      and acc.hidden = 0 and acc.type <> 'investment'
+      and (p.environment = ${environment} or acc.plaid_item_id is null)
+      and not exists (select 1 from transaction_splits s where s.transaction_id = t.id)
+    order by coalesce(t.authorized_date, t.date) desc, t.id desc`);
+  return {
+    items: ids.slice(0, UNCATEGORIZED_LIMIT).map((r) => getTransaction(db, r.id)),
+    total: ids.length,
+  };
+}

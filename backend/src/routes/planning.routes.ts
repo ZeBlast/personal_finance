@@ -17,6 +17,7 @@ import {
   dismissDuplicate,
   listDuplicates,
   reviewQueue,
+  uncategorized,
   setReviewed,
 } from "../services/review.service.js";
 import {
@@ -175,6 +176,11 @@ export function planningRoutes(db: AppDb): Router {
 
   router.get("/review", (_req, res) => {
     res.json(reviewQueue(db));
+  });
+
+  /** Every transaction without a category (not just recent ones), to categorize from Review. */
+  router.get("/review/uncategorized", (_req, res) => {
+    res.json(uncategorized(db));
   });
 
   router.post("/review/mark", (req, res) => {
