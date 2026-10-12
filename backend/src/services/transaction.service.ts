@@ -285,6 +285,10 @@ export interface TransactionDto {
    * what paid for it cannot be known.
    */
   beforeOtherHistory: boolean;
+  /** For a refund linked to the charge it gives back: that charge. */
+  refundOf: (NonNullable<TransactionDto["transferWith"]> & { amountMinor: number }) | null;
+  /** For a charge: how much linked refunds have given back (cents, positive; 0 when none). */
+  refundedMinor: number;
   /** `credit`, `loan`, `depository`, ... of this transaction's account. */
   accountType: string;
   paymentChannel: string | null;
@@ -373,6 +377,7 @@ const selectColumns = {
   createdForTransfer: transactions.createdForTransfer,
   mirrorOfId: transactions.mirrorOfId,
   mirrorSource: transactions.mirrorSource,
+  refundOfId: transactions.refundOfId,
   paymentChannel: transactions.paymentChannel,
   counterpartyName: transactions.counterpartyName,
   counterpartyType: transactions.counterpartyType,
@@ -472,6 +477,8 @@ function toDto(r: Row): TransactionDto {
     transferWith: null,
     mirror: null,
     beforeOtherHistory: false,
+    refundOf: null,
+    refundedMinor: 0,
     splits: [],
     splitValid: true,
     paymentChannel: r.paymentChannel,
@@ -790,14 +797,37 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       [
         ...rows.map((r) => r.transferPairId),
         ...rows.map((r) => r.mirrorOfId),
+        ...rows.map((r) => r.refundOfId),
         ...copies.map((c) => c.id),
       ].filter((id): id is number => id !== null),
     ),
   ];
   const historyStart = rows.some(isPaypalRow) ? otherHistoryStart(db) : null;
+  // How much linked refunds have given back of each of these rows.
+  const refunded = new Map(
+    rows.length === 0
+      ? []
+      : db
+          .select({
+            id: transactions.refundOfId,
+            back: sql<number>`-sum(${transactions.amountMinor})`,
+          })
+          .from(transactions)
+          .where(
+            inArray(
+              transactions.refundOfId,
+              rows.map((r) => r.id),
+            ),
+          )
+          .groupBy(transactions.refundOfId)
+          .all()
+          .map((r) => [r.id!, r.back]),
+  );
   const partners = new Map<number, NonNullable<TransactionDto["transferWith"]>>();
+  const partnerAmounts = new Map<number, number>();
   if (ids.length > 0) {
     for (const p of selectTransactions(db).where(inArray(transactions.id, ids)).all()) {
+      partnerAmounts.set(p.id, p.amountMinor);
       partners.set(p.id, {
         id: p.id,
         accountName: p.accountName,
@@ -838,6 +868,11 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       : null;
     dto.beforeOtherHistory =
       historyStart !== null && isPaypalRow(r) && (r.authorizedDate ?? r.date) < historyStart;
+    const original = r.refundOfId === null ? undefined : partners.get(r.refundOfId);
+    dto.refundOf = original
+      ? { ...original, amountMinor: partnerAmounts.get(original.id) ?? 0 }
+      : null;
+    dto.refundedMinor = refunded.get(r.id) ?? 0;
     dto.splits = splits.get(r.id) ?? [];
     dto.splitValid =
       dto.splits.length === 0 ||

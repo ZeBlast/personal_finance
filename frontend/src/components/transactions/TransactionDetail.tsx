@@ -11,6 +11,7 @@ import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
 import { TransferLink } from "./TransferLink";
 import { MirrorLink } from "./MirrorLink";
+import { RefundLink } from "./RefundLink";
 import { MerchantGroupField } from "./MerchantGroupField";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { CategorySelect } from "../common/CategorySelect";
@@ -380,6 +381,8 @@ export function TransactionDetail({
           )}
           <MirrorLink transaction={t} onChanged={(updated) => onSaved(updated)} />
         </div>
+
+        <RefundLink transaction={t} onChanged={(updated) => onSaved(updated)} />
 
         <div>
           <label htmlFor={`${id}-online`} className="block text-sm font-medium">

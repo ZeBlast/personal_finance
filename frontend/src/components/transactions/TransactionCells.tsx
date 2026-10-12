@@ -71,6 +71,20 @@ export function TransactionTags({ t }: { t: Transaction }) {
       title: "Money moved between your own accounts. It is left out of income and spending.",
     });
   }
+  if (t.refundOf) {
+    tags.push({
+      text: `Refund of ${t.refundOf.merchant}`,
+      className: "bg-emerald-100 text-emerald-900",
+      title: "Counted against that purchase, in its category and month, not as income.",
+    });
+  }
+  if (t.refundedMinor > 0) {
+    tags.push({
+      text: `Refunded ${formatMinor(t.refundedMinor, t.currency)}`,
+      className: "bg-emerald-100 text-emerald-900",
+      title: "Linked refunds give this much back. Totals count only what was kept.",
+    });
+  }
   if (t.splits.length > 0) {
     tags.push({
       text: t.splitValid ? `Split ${t.splits.length} ways` : "Split (no longer adds up)",

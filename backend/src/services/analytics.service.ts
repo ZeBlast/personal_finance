@@ -29,7 +29,7 @@ import { accountScope, countsInNetWorth, STORE_CREDIT_SUBTYPE } from "./account-
  *   counting as income, so a returned purchase nets out.
  * - Pending transactions are included unless asked otherwise.
  */
-export const IS_INCOME = sql`(coalesce(c.income_treatment, '') <> 'refund' and (
+export const IS_INCOME = sql`(t.refund_of_id is null and coalesce(c.income_treatment, '') <> 'refund' and (
   (c.income_treatment = 'income' and t.amount_minor < 0)
   or t.plaid_category_primary = 'INCOME'
   or lower(coalesce(c.name, '')) = 'income'

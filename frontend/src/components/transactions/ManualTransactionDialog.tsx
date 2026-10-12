@@ -16,6 +16,7 @@ import {
 import { CategorySelect } from "../common/CategorySelect";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { MerchantGroupField } from "./MerchantGroupField";
+import { RefundLink } from "./RefundLink";
 
 /**
  * Adds a transaction by hand to an account the user keeps by hand (cash, for example), or edits
@@ -47,6 +48,8 @@ export function ManualTransactionDialog({
 }) {
   const id = useId();
   const editing = transaction !== undefined;
+  /** The saved transaction as the refund link last left it (refund links apply at once). */
+  const [refundView, setRefundView] = useState<Transaction | undefined>(transaction);
   // What the form started with, to tell whether anything was changed.
   const [initial] = useState<ManualDraft>(() =>
     transaction
@@ -204,6 +207,17 @@ export function ManualTransactionDialog({
                   merchant={transaction.merchantOriginal}
                   group={transaction.merchantGroup}
                   onChanged={announceDataChanged}
+                />
+              </div>
+            )}
+            {refundView && (
+              <div className="mt-2">
+                <RefundLink
+                  transaction={refundView}
+                  onChanged={(updated) => {
+                    setRefundView(updated);
+                    announceDataChanged();
+                  }}
                 />
               </div>
             )}

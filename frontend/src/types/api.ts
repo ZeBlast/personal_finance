@@ -155,6 +155,10 @@ export interface Transaction {
   } | null;
   /** A PayPal transaction older than every other connected account's history. */
   beforeOtherHistory: boolean;
+  /** For a refund linked to the charge it gives back: that charge. */
+  refundOf: (NonNullable<Transaction["transferWith"]> & { amountMinor: number }) | null;
+  /** For a charge: how much linked refunds have given back (cents, positive). */
+  refundedMinor: number;
   /** The parts it is split into across categories (empty when not split). */
   splits: Array<{
     id: number;

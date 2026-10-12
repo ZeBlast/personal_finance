@@ -17,6 +17,7 @@ import {
   unlinkTransfer,
 } from "../services/transfer-link.service.js";
 import { linkMirror, mirrorCandidates, unlinkMirror } from "../services/paypal-mirror.service.js";
+import { refundCandidates, setRefundOf } from "../services/refund.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
@@ -192,6 +193,15 @@ export function transactionsRoutes(db: AppDb): Router {
   /** Undoes that link: both count again, and neither is linked automatically again. */
   router.delete("/transactions/:id/mirror", (req, res) => {
     res.json(unlinkMirror(db, idParam.parse(req.params["id"])));
+  });
+  /** Charges this refund could give back, the likeliest first. */
+  router.get("/transactions/:id/refund-candidates", (req, res) => {
+    res.json(refundCandidates(db, idParam.parse(req.params["id"])));
+  });
+  /** Links this refund with the charge it gives back (null unlinks it). */
+  router.put("/transactions/:id/refund-of", (req, res) => {
+    const body = z.object({ originalId: idParam.nullable() }).strict().parse(req.body);
+    res.json(setRefundOf(db, idParam.parse(req.params["id"]), body.originalId));
   });
 
   /** Adds a transaction by hand, to an account the user keeps by hand (cash, for example). */

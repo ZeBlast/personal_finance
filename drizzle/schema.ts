@@ -211,6 +211,11 @@ export const transactions = sqliteTable(
     mirrorSource: text("mirror_source"),
     /** The user unlinked a copy: detection never links this row as a copy again. */
     mirrorBlocked: integer("mirror_blocked", { mode: "boolean" }).notNull().default(false),
+    /**
+     * For a refund (money back), the charge it gives back, chosen by the user. Totals then count it
+     * against that charge: in its category, on its date, and never as income.
+     */
+    refundOfId: integer("refund_of_id"),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),
