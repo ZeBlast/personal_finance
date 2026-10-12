@@ -5,6 +5,7 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
+      ".claude/**",
       "**/node_modules/**",
       "**/dist/**",
       "**/build/**",
@@ -19,7 +20,10 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },

@@ -22,6 +22,7 @@ import {
 import { getSettings } from "./services/settings.service.js";
 import { createPlaidService } from "./services/plaid.service.js";
 import { createSyncService } from "./services/sync.service.js";
+import { repairManualBalanceHistories } from "./services/manual-transaction.service.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -145,6 +146,7 @@ async function main(): Promise<void> {
     // Then sync on launch, in the background so the window is usable immediately. Connections
     // synced within the cooldown (Settings) are skipped, so relaunching does not re-sync needlessly.
     backedUp
+      .then(() => repairManualBalanceHistories(db))
       .then(() => sync.runLaunchSync())
       .then((result) =>
         console.log(`launch sync: ${result.runs.length} run(s), ${result.skipped.length} skipped`),

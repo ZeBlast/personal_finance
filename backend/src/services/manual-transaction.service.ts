@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { accounts, balanceSnapshots, categories, transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { isRealDate } from "../utils/dates.js";
@@ -67,6 +67,59 @@ export const OPENING_BALANCE_NAME = "Opening balance";
 
 type Tx = Pick<AppDb, "select" | "insert" | "update" | "delete">;
 
+/** Manual balance observations are derived from the editable ledger, not independent bank readings. */
+export function rebuildManualBalanceHistory(db: Tx, accountId: number): void {
+  const account = db
+    .select({ type: accounts.type })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .get();
+  if (!account) return;
+  const flows = db
+    .select({ date: transactions.date, amount: transactions.amountMinor })
+    .from(transactions)
+    .where(eq(transactions.accountId, accountId))
+    .orderBy(asc(transactions.date))
+    .all();
+  const snapshots = db
+    .select({
+      id: balanceSnapshots.id,
+      observedAt: balanceSnapshots.observedAt,
+      balance: balanceSnapshots.currentBalanceMinor,
+    })
+    .from(balanceSnapshots)
+    .where(eq(balanceSnapshots.accountId, accountId))
+    .orderBy(asc(balanceSnapshots.observedAt))
+    .all();
+  let total = 0;
+  let position = 0;
+  for (const snapshot of snapshots) {
+    const day = snapshot.observedAt.slice(0, 10);
+    while (position < flows.length && flows[position]!.date <= day) {
+      total += flows[position++]!.amount;
+    }
+    const balance = account.type === "credit" ? total : -total;
+    if (snapshot.balance !== balance) {
+      db.update(balanceSnapshots)
+        .set({ currentBalanceMinor: balance })
+        .where(eq(balanceSnapshots.id, snapshot.id))
+        .run();
+    }
+  }
+}
+
+/** Repairs observations left by earlier versions, without changing investment or collection history. */
+export function repairManualBalanceHistories(db: AppDb): void {
+  db.transaction((tx) => {
+    const rows = tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.isManual, true), sql`${accounts.type} in ('depository', 'credit')`))
+      .all();
+    for (const row of rows) rebuildManualBalanceHistory(tx, row.id);
+  });
+}
+
 interface ManualBankAccount {
   id: number;
   type: string;
@@ -125,6 +178,7 @@ export function recomputeManualBalance(db: Tx, accountId: number, now: string): 
       currency: account.currency,
     })
     .run();
+  rebuildManualBalanceHistory(db, accountId);
 }
 
 export interface ManualBankAccountInput {
@@ -350,6 +404,10 @@ function requireManualRow(db: Pick<AppDb, "select">, id: number) {
       source: transactions.source,
       accountId: transactions.accountId,
       amountMinor: transactions.amountMinor,
+      date: transactions.date,
+      pending: transactions.pending,
+      transferSource: transactions.transferSource,
+      transferPairId: transactions.transferPairId,
     })
     .from(transactions)
     .where(eq(transactions.id, id))
@@ -368,6 +426,18 @@ export function updateAnyTransaction(
   id: number,
   patch: ManualTransactionPatch,
   now: string = new Date().toISOString(),
+): TransactionDto {
+  // Include category/transfer validation and detection in the same commit as ledger and balance edits.
+  return db.transaction((tx) =>
+    updateAnyTransactionInTransaction(tx as unknown as AppDb, id, patch, now),
+  );
+}
+
+function updateAnyTransactionInTransaction(
+  db: AppDb,
+  id: number,
+  patch: ManualTransactionPatch,
+  now: string,
 ): TransactionDto {
   const row = requireManualRow(db, id);
   const wantsManualOnly = MANUAL_ONLY_FIELDS.some((f) => patch[f] !== undefined);
@@ -405,6 +475,20 @@ export function updateAnyTransaction(
     checkAmount(amount);
     const direction = patch.direction ?? (row.amountMinor > 0 ? "out" : "in");
     changes.amountMinor = direction === "out" ? amount : -amount;
+  }
+  if (
+    row.transferSource === "manual" &&
+    row.transferPairId !== null &&
+    ((changes.accountId !== undefined && changes.accountId !== row.accountId) ||
+      (changes.date !== undefined && changes.date !== row.date) ||
+      (changes.amountMinor !== undefined && changes.amountMinor !== row.amountMinor) ||
+      (changes.pending !== undefined && changes.pending !== row.pending))
+  ) {
+    throw new AppError(
+      409,
+      "linked_transfer",
+      "Unlink this transfer before changing its account, date, amount, direction, or pending status.",
+    );
   }
   // For a transaction entered by hand the merchant is simply its name, not an override of a bank's.
   if (patch.merchant !== undefined) {
