@@ -546,14 +546,6 @@ export function TransactionsPage() {
                     >
                       {t.merchant}
                     </button>
-                    {t.mirror?.role === "copy" && (
-                      <span
-                        title={`Same purchase as on ${t.mirror.with.accountName}, which counts it. Left out of totals here.`}
-                        className="ml-1 rounded bg-slate-100 px-1 text-xs text-slate-500 dark:bg-slate-800"
-                      >
-                        Copy · {t.mirror.with.accountName}
-                      </span>
-                    )}
                     {t.notes && (
                       <span
                         title={t.notes}

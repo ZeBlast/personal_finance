@@ -36,11 +36,35 @@ function CashbackBadge({ cashback }: { cashback: NonNullable<Transaction["cashba
   );
 }
 
+const isPaypal = (other: { accountName: string; institutionName: string | null }): boolean =>
+  /paypal/i.test(`${other.institutionName ?? ""} ${other.accountName}`);
+
+/**
+ * For one purchase shown on two accounts (a PayPal purchase and what paid it): on the PayPal row,
+ * "Paid using Visa" (the paying account's own name, without its institution); on the paying
+ * row, "Paid via PayPal".
+ */
+export function mirrorLabel(t: Pick<Transaction, "mirror">): string | null {
+  if (!t.mirror) return null;
+  const other = t.mirror.with;
+  return isPaypal(other) ? `Paid via ${other.accountName}` : `Paid using ${other.accountName}`;
+}
+
 /** Pending, a transfer and where it went or came from, and "entered by hand", as small tags. */
 export function TransactionTags({ t }: { t: Transaction }) {
   const tags: Array<{ text: string; className: string; title?: string }> = [];
   if (t.pending) tags.push({ text: "Pending", className: "bg-amber-100 text-amber-900" });
-  if (t.isTransfer) {
+  const mirrorTag = mirrorLabel(t);
+  if (mirrorTag) {
+    tags.push({
+      text: mirrorTag,
+      className: "bg-sky-100 text-sky-900",
+      title:
+        t.mirror!.role === "copy"
+          ? `The same purchase as on ${t.mirror!.with.accountName}, which counts it. It is left out of totals here.`
+          : `The same purchase also shows on ${t.mirror!.with.accountName}. This one counts it.`,
+    });
+  } else if (t.isTransfer) {
     tags.push({
       text: transferLabel(t) ?? "Own-account transfer",
       className: "bg-blue-100 text-blue-900",
