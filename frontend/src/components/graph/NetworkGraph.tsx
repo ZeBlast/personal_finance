@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePersistentState } from "../../hooks/usePersistentState";
 import { useNavigate } from "react-router-dom";
 import { formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
@@ -130,28 +131,32 @@ export function NetworkGraph({ data }: { data: GraphData }) {
   /** Whether the view has been framed since the data arrived. */
   const framed = useRef(false);
 
-  const [options, setOptions] = useState<Omit<ModelOptions, "openClusters">>({
-    showIncome: DEFAULT_OPTIONS.showIncome,
-    showTransfers: DEFAULT_OPTIONS.showTransfers,
-    showExternal: DEFAULT_OPTIONS.showExternal,
-    showSpending: DEFAULT_OPTIONS.showSpending,
-    groupCategories: DEFAULT_OPTIONS.groupCategories,
-    groupInstitutions: DEFAULT_OPTIONS.groupInstitutions,
-    groupMerchants: DEFAULT_OPTIONS.groupMerchants,
-    hideIdleAccounts: DEFAULT_OPTIONS.hideIdleAccounts,
-    search: "",
-  });
-  const [forces, setForces] = useState<Forces>(DEFAULT_FORCES);
-  const [textFade, setTextFade] = useState(1);
+  // The filters and display settings are remembered, so they stay when you leave the page.
+  const [options, setOptions] = usePersistentState<Omit<ModelOptions, "openClusters">>(
+    "pf.network.options",
+    {
+      showIncome: DEFAULT_OPTIONS.showIncome,
+      showTransfers: DEFAULT_OPTIONS.showTransfers,
+      showExternal: DEFAULT_OPTIONS.showExternal,
+      showSpending: DEFAULT_OPTIONS.showSpending,
+      groupCategories: DEFAULT_OPTIONS.groupCategories,
+      groupInstitutions: DEFAULT_OPTIONS.groupInstitutions,
+      groupMerchants: DEFAULT_OPTIONS.groupMerchants,
+      hideIdleAccounts: DEFAULT_OPTIONS.hideIdleAccounts,
+      search: "",
+    },
+  );
+  const [forces, setForces] = usePersistentState<Forces>("pf.network.forces", DEFAULT_FORCES);
+  const [textFade, setTextFade] = usePersistentState("pf.network.textFade", 1);
   /** How far account rings sit from their node, and how thick they are (1 is the usual). */
-  const [ringSize, setRingSize] = useState(1);
+  const [ringSize, setRingSize] = usePersistentState("pf.network.ringSize", 1);
   /** Groups opened by hand (double-click) and by zooming in. */
   const [pinnedOpen, setPinnedOpen] = useState<ReadonlySet<string>>(new Set());
   const [zoomOpen, setZoomOpen] = useState<ReadonlySet<string>>(new Set());
   /** Groups closed by hand, which zooming does not open again. */
   const [keptShut, setKeptShut] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
-  const [panel, setPanel] = useState(true);
+  const [panel, setPanel] = usePersistentState("pf.network.panel", true);
   const [dark, setDark] = useState(prefersDark);
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { NetworkGraph } from "../components/graph/NetworkGraph";
 import { useApi } from "../hooks/useApi";
 import type { GraphData } from "../lib/graph/model";
@@ -27,8 +28,13 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Institutions, accounts, and transactions as a graph you can explore, after Obsidian's graph view. */
 export function NetworkPage() {
-  const [range, setRange] = useState<RangeId>("30");
-  const [custom, setCustom] = useState(() => ({ from: daysAgo(29), to: today() }));
+  // Remembered, so leaving the page and coming back keeps the same view.
+  const [savedRange, setRange] = usePersistentState<RangeId>("pf.network.range", "30");
+  const range: RangeId = RANGES.some((r) => r.id === savedRange) ? savedRange : "30";
+  const [custom, setCustom] = usePersistentState("pf.network.custom", () => ({
+    from: daysAgo(29),
+    to: today(),
+  }));
 
   const preset = RANGES.find((r) => r.id === range)!;
   const customOk = DATE.test(custom.from) && DATE.test(custom.to) && custom.from <= custom.to;
