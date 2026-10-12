@@ -76,7 +76,12 @@ export function RefundLink({
             Gives back <strong>{t.refundOf.merchant}</strong> (
             {formatMinor(t.refundOf.amountMinor, t.currency)},{" "}
             {formatDay(t.refundOf.transactionDate)}, {t.refundOf.accountName}). It counts against
-            that purchase&apos;s category and month.
+            that purchase&apos;s category and month.{" "}
+            <span className="text-xs text-slate-500">
+              {t.refundOf.source === "auto"
+                ? "Found by the app (same merchant and amount)."
+                : "Linked by you."}
+            </span>
           </span>
           <button
             type="button"
@@ -91,6 +96,7 @@ export function RefundLink({
             className={buttonClass}
             disabled={busy}
             onClick={() => void link(null)}
+            title="Count it as money in again. The app won't link it automatically again."
           >
             Not a refund
           </button>

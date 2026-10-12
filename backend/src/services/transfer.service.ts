@@ -4,6 +4,7 @@ import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
 import { detectMirrors, resetMirrors } from "./paypal-mirror.service.js";
+import { detectRefunds, resetRefunds } from "./refund.service.js";
 
 /**
  * Transfers between the user's own accounts.
@@ -160,6 +161,8 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
     // Copies of one purchase on two accounts (PayPal and the card that paid) are found again
     // after transfers, from what is left.
     resetMirrors(tx, now);
+    // Refunds linked by the app are worked out again at the end, once copies are known.
+    resetRefunds(tx);
 
     const rows = tx.all<{
       id: number;
@@ -177,7 +180,7 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
         coalesce(t.plaid_category_detailed, '') || ' ' || t.name as name,
         a.type as account_type, coalesce(t.authorized_date, t.date) as transaction_date
       from transactions t join accounts a on a.id = t.account_id
-      where t.transfer_source is null and t.amount_minor <> 0
+      where t.transfer_source is null and t.amount_minor <> 0 and t.refund_of_id is null
         and coalesce(a.subtype, '') <> ${STORE_CREDIT_SUBTYPE}`);
     const toCandidate = (r: (typeof rows)[number], useTransactionDate = false): Candidate => ({
       id: r.id,
@@ -222,6 +225,7 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
     // What found no match, but sits in a category that moves the user's own money, is a transfer.
     syncCategoryTransfers(tx, now);
     detectMirrors(tx, now);
+    detectRefunds(tx, now);
     return pairs.length;
   });
 }

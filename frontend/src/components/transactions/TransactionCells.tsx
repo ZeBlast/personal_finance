@@ -44,9 +44,13 @@ const isPaypal = (other: { accountName: string; institutionName: string | null }
  * "Paid using Visa" (the paying account's own name, without its institution); on the paying
  * row, "Paid via PayPal".
  */
-export function mirrorLabel(t: Pick<Transaction, "mirror">): string | null {
+export function mirrorLabel(t: Pick<Transaction, "mirror" | "amountMinor">): string | null {
   if (!t.mirror) return null;
   const other = t.mirror.with;
+  // Money back (a refund): where PayPal paid it out to, or that it came through PayPal.
+  if (t.amountMinor < 0) {
+    return isPaypal(other) ? `Refund via ${other.accountName}` : `Refunded to ${other.accountName}`;
+  }
   return isPaypal(other) ? `Paid via ${other.accountName}` : `Paid using ${other.accountName}`;
 }
 
@@ -75,7 +79,9 @@ export function TransactionTags({ t }: { t: Transaction }) {
     tags.push({
       text: `Refund of ${t.refundOf.merchant}`,
       className: "bg-emerald-100 text-emerald-900",
-      title: "Counted against that purchase, in its category and month, not as income.",
+      title: `${
+        t.refundOf.source === "auto" ? "Found by the app. " : ""
+      }Counted against that purchase, in its category and month, not as income.`,
     });
   }
   if (t.refundedMinor > 0) {

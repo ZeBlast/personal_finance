@@ -11,23 +11,29 @@ const other = (accountName: string, institutionName: string | null) => ({
   merchant: "Whatnot",
 });
 
+const visa = other("Customized Cash Rewards Visa Signature", "Bank of America");
+const paypal = other("PayPal", "PayPal");
+
 describe("tags for a purchase shown on PayPal and on what paid it", () => {
   it("says which account paid, without its institution, on the PayPal row", () => {
     expect(
-      mirrorLabel({
-        mirror: {
-          role: "copy",
-          source: "auto",
-          with: other("Customized Cash Rewards Visa Signature", "Bank of America"),
-        },
-      }),
+      mirrorLabel({ amountMinor: 1999, mirror: { role: "copy", source: "auto", with: visa } }),
     ).toBe("Paid using Customized Cash Rewards Visa Signature");
   });
 
   it("says PayPal on the paying row, and nothing without a link", () => {
     expect(
-      mirrorLabel({ mirror: { role: "counts", source: "auto", with: other("PayPal", "PayPal") } }),
+      mirrorLabel({ amountMinor: 1999, mirror: { role: "counts", source: "auto", with: paypal } }),
     ).toBe("Paid via PayPal");
-    expect(mirrorLabel({ mirror: null })).toBeNull();
+    expect(mirrorLabel({ amountMinor: 1999, mirror: null })).toBeNull();
+  });
+
+  it("says where a PayPal refund was paid out to, and that the card's credit came via PayPal", () => {
+    expect(
+      mirrorLabel({ amountMinor: -1999, mirror: { role: "copy", source: "auto", with: visa } }),
+    ).toBe("Refunded to Customized Cash Rewards Visa Signature");
+    expect(
+      mirrorLabel({ amountMinor: -1999, mirror: { role: "counts", source: "auto", with: paypal } }),
+    ).toBe("Refund via PayPal");
   });
 });

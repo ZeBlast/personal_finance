@@ -63,6 +63,10 @@ const NOISE = new Set([
   "card",
   "online",
   "and",
+  // Words a refund adds, which say nothing about who the merchant is.
+  "refund",
+  "return",
+  "credit",
 ]);
 
 function words(text: string): string[] {
@@ -89,11 +93,12 @@ export const readsPaypal = (c: Pick<MirrorCandidate, "text">): boolean => READS_
 const dayNumber = (day: string): number => Date.parse(`${day}T00:00:00Z`) / 86_400_000;
 
 /**
- * Pairs PayPal purchases with the card or bank charges that paid them: money leaving both, the same
- * amount and currency, the charge from MIRROR_DAYS_BEFORE days before to MIRROR_DAYS_AFTER days
- * after, and either the same merchant name or a charge that says PayPal. Each row is used once;
- * the best match is one that names the merchant, then the closest date. Returns
- * `{ copy, counts }` per pair. Pure, for testing.
+ * Pairs PayPal purchases with the card or bank charges that paid them, and PayPal refunds with the
+ * card or bank credits they were paid out to: money going the same way on both, the same amount
+ * and currency, the card or bank row from MIRROR_DAYS_BEFORE days before to MIRROR_DAYS_AFTER days
+ * after, and either the same merchant name or a row that says PayPal. Each row is used once; the
+ * best match is one that names the merchant, then the closest date. Returns `{ copy, counts }`
+ * per pair. Pure, for testing.
  */
 export function matchMirrors(
   paypal: MirrorCandidate[],
@@ -103,7 +108,7 @@ export function matchMirrors(
   const pairs: Array<{ copy: number; counts: number }> = [];
   const ordered = [...paypal].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   for (const p of ordered) {
-    if (p.amount <= 0) continue;
+    if (p.amount === 0) continue;
     let best: MirrorCandidate | null = null;
     let bestScore = Infinity;
     for (const o of others) {
@@ -204,7 +209,7 @@ export function detectMirrors(tx: Tx, now: string): number {
     from transactions t join accounts a on a.id = t.account_id
       left join plaid_items pi on pi.id = a.plaid_item_id
     where t.transfer_source is null and t.mirror_blocked = 0 and t.pending = 0
-      and t.amount_minor > 0 and t.created_for_transfer = 0
+      and t.amount_minor <> 0 and t.created_for_transfer = 0
       and a.type in ('credit', 'depository') and coalesce(a.subtype, '') <> ${STORE_CREDIT_SUBTYPE}
       and not exists (select 1 from transactions c where c.mirror_of_id = t.id)`);
   const toCandidate = (r: (typeof rows)[number]): MirrorCandidate => ({

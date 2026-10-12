@@ -216,6 +216,10 @@ export const transactions = sqliteTable(
      * against that charge: in its category, on its date, and never as income.
      */
     refundOfId: integer("refund_of_id"),
+    /** Who linked the refund: `auto` (detection; redone on every run) or `manual` (the user). */
+    refundSource: text("refund_source"),
+    /** The user said this is not a refund (of that charge): detection never links it again. */
+    refundBlocked: integer("refund_blocked", { mode: "boolean" }).notNull().default(false),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),

@@ -45,12 +45,24 @@ describe("matching a PayPal purchase with the charge that paid it", () => {
     expect(matchMirrors(paypal, [row(2, 5, "2026-03-01", 1235, "Spotify")])).toEqual([]);
     expect(matchMirrors(paypal, [row(2, 5, "2026-03-06", 1234, "Spotify")])).toEqual([]);
     expect(matchMirrors(paypal, [row(2, 5, "2026-02-27", 1234, "Spotify")])).toEqual([]);
+    // Money going the other way on one of them is not the same purchase.
+    expect(matchMirrors(paypal, [row(2, 5, "2026-03-01", -1234, "Spotify")])).toEqual([]);
+  });
+
+  it("pairs a PayPal refund with the card credit it was paid out to", () => {
+    // PayPal shows the refund on the 12th; the card gets the money back on the 14th.
     expect(
       matchMirrors(
-        [row(1, 9, "2026-03-01", -1234, "Spotify")],
-        [row(2, 5, "2026-03-01", -1234, "Spotify")],
+        [row(1, 9, "2026-09-12", -1999, "Mens Wearhouse Men's Wearhouse")],
+        [row(2, 5, "2026-09-14", -1999, "MENSWEARHSE"), row(3, 5, "2026-09-14", -1999, "Other")],
       ),
-    ).toEqual([]);
+    ).toEqual([{ copy: 1, counts: 2 }]); // "mens" starts "menswearhse"
+    expect(
+      matchMirrors(
+        [row(1, 9, "2026-08-02", -2898, "Lagosec Refund from Lagosec Inc.")],
+        [row(2, 5, "2026-08-03", -2898, "Nord LAGOSEC INC DE")],
+      ),
+    ).toEqual([{ copy: 1, counts: 2 }]);
   });
 
   it("uses each charge once, so two equal purchases take two charges", () => {

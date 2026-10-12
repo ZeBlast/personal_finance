@@ -286,7 +286,13 @@ export interface TransactionDto {
    */
   beforeOtherHistory: boolean;
   /** For a refund linked to the charge it gives back: that charge. */
-  refundOf: (NonNullable<TransactionDto["transferWith"]> & { amountMinor: number }) | null;
+  refundOf:
+    | (NonNullable<TransactionDto["transferWith"]> & {
+        amountMinor: number;
+        /** `auto` (found by the app) or `manual` (linked by the user). */
+        source: "auto" | "manual";
+      })
+    | null;
   /** For a charge: how much linked refunds have given back (cents, positive; 0 when none). */
   refundedMinor: number;
   /** `credit`, `loan`, `depository`, ... of this transaction's account. */
@@ -378,6 +384,7 @@ const selectColumns = {
   mirrorOfId: transactions.mirrorOfId,
   mirrorSource: transactions.mirrorSource,
   refundOfId: transactions.refundOfId,
+  refundSource: transactions.refundSource,
   paymentChannel: transactions.paymentChannel,
   counterpartyName: transactions.counterpartyName,
   counterpartyType: transactions.counterpartyType,
@@ -870,7 +877,11 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       historyStart !== null && isPaypalRow(r) && (r.authorizedDate ?? r.date) < historyStart;
     const original = r.refundOfId === null ? undefined : partners.get(r.refundOfId);
     dto.refundOf = original
-      ? { ...original, amountMinor: partnerAmounts.get(original.id) ?? 0 }
+      ? {
+          ...original,
+          amountMinor: partnerAmounts.get(original.id) ?? 0,
+          source: r.refundSource === "auto" ? "auto" : "manual",
+        }
       : null;
     dto.refundedMinor = refunded.get(r.id) ?? 0;
     dto.splits = splits.get(r.id) ?? [];

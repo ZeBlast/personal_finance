@@ -61,11 +61,22 @@ async function setup() {
 
 describe("linking a refund with its charge", () => {
   it("takes the charge back out of spending, in its month and category", async () => {
-    const { t, charge, refund, months, byCategory, link } = await setup();
-    // Unlinked, the refund sits in October, uncategorized.
+    const { t, add, charge, refund, months, byCategory, link } = await setup();
+    // The same merchant and amount a few weeks later: the app links it by itself.
+    const found = (await t.call("get", `/api/transactions/${refund}`).expect(200)).body;
+    expect(found.refundOf).toMatchObject({ id: charge, source: "auto" });
+    expect(await months()).toEqual([["2026-09", 0, 0]]);
+
+    // Saying it is not a refund sticks: the refund sits in October again, uncategorized, and
+    // detection running again leaves it alone.
+    await link(refund, null);
+    await add({ date: "2026-10-05", merchant: "Coffee", amountMinor: 300, direction: "out" });
+    expect(
+      (await t.call("get", `/api/transactions/${refund}`).expect(200)).body.refundOf,
+    ).toBeNull();
     expect(await months()).toEqual([
       ["2026-09", 5000, 0],
-      ["2026-10", -5000, 0],
+      ["2026-10", -4700, 0],
     ]);
 
     const suggestions = (
@@ -82,19 +93,52 @@ describe("linking a refund with its charge", () => {
       id: charge,
       merchant: "Outdoor Store",
       amountMinor: 5000,
+      source: "manual",
     });
     expect(
       (await t.call("get", `/api/transactions/${charge}`).expect(200)).body.refundedMinor,
     ).toBe(5000);
-    // Now it nets out September's purchase, in Shopping, and October has nothing.
-    expect(await months()).toEqual([["2026-09", 0, 0]]);
-    expect(await byCategory()).toEqual([["Shopping", 0]]);
-
-    await link(refund, null);
+    // It nets out September's purchase, in Shopping; October keeps only the coffee.
     expect(await months()).toEqual([
-      ["2026-09", 5000, 0],
-      ["2026-10", -5000, 0],
+      ["2026-09", 0, 0],
+      ["2026-10", 300, 0],
     ]);
+    expect(await byCategory()).toEqual(expect.arrayContaining([["Shopping", 0]]));
+  });
+
+  it("detects refunds only when one charge clearly fits, never between people", async () => {
+    const { matchRefunds } = await import("./services/refund.service.js");
+    const r = (id: number, date: string, amount: number, text: string) => ({
+      id,
+      date,
+      amount,
+      currency: "USD",
+      text,
+    });
+    // Two equal charges at the same merchant: which one is unclear, so neither.
+    expect(
+      matchRefunds(
+        [r(1, "2026-03-10", 500, "WONDER REFUND")],
+        [r(2, "2026-03-01", 500, "WONDER"), r(3, "2026-03-05", 500, "Wonder")],
+      ),
+    ).toEqual([]);
+    // Zelle from one person is not a refund of a Zelle to another.
+    expect(
+      matchRefunds(
+        [r(1, "2025-10-20", 3000, "Zelle payment from MINLIN CHEN")],
+        [r(2, "2025-10-14", 3000, "Zelle payment to DI NGUYEN")],
+      ),
+    ).toEqual([]);
+    // Too long after, a different amount, or another merchant: no.
+    expect(
+      matchRefunds([r(1, "2026-09-01", 500, "Temu refund")], [r(2, "2026-01-01", 500, "Temu")]),
+    ).toEqual([]);
+    expect(
+      matchRefunds(
+        [r(1, "2026-02-11", 888, "Refund from Temu.com")],
+        [r(2, "2026-02-11", 888, "Payment to Temu.com")],
+      ),
+    ).toEqual([[1, 2]]);
   });
 
   it("allows partial refunds, never more than the charge, and only money back", async () => {
