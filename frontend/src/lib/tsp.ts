@@ -344,9 +344,10 @@ export const SOURCE_OPTIONS: Array<{ value: PriceSource; label: string }> = [
   { value: "tsp.gov", label: "tsp.gov (often refuses downloads)" },
 ];
 
-export type HistoryRange = "30" | "90" | "365" | "1825" | "all" | "since";
+export type HistoryRange = "missing" | "30" | "90" | "365" | "1825" | "all" | "since";
 
 export const HISTORY_OPTIONS: Array<{ value: HistoryRange; label: string }> = [
+  { value: "missing", label: "Only what's missing (since the newest prices)" },
   { value: "30", label: "The last month" },
   { value: "90", label: "The last 3 months" },
   { value: "365", label: "The last year" },
@@ -356,7 +357,7 @@ export const HISTORY_OPTIONS: Array<{ value: HistoryRange; label: string }> = [
 ];
 
 export type FetchRequestResult =
-  | { ok: true; body: { source: PriceSource; days?: number; since?: string } }
+  | { ok: true; body: { source: PriceSource; days?: number; since?: string; missing?: true } }
   | { ok: false; message: string };
 
 /** The request for "download prices from this source, going back this far". */
@@ -366,6 +367,7 @@ export function buildFetchRequest(
   since: string,
   today: string,
 ): FetchRequestResult {
+  if (range === "missing") return { ok: true, body: { source, missing: true } };
   if (range === "since") {
     if (!DATE.test(since))
       return { ok: false, message: "Choose the day you started holding the funds." };

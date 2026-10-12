@@ -4,6 +4,7 @@ import { addDays } from "./utils/dates.js";
 import {
   fetchFundPrices,
   importFundPriceCsv,
+  missingPricesSince,
   parseFundPriceCsv,
   parsePriceDate,
   priceOnOrBefore,
@@ -188,6 +189,71 @@ describe("downloading prices", () => {
     expect(summary.days).toBe(2);
     expect(priceOnOrBefore(t.db, "TSP-C", "2026-10-08")!.price).toBe(126.25);
     expect(priceOnOrBefore(t.db, "TSP-G", "2026-10-08")!.price).toBe(20.27);
+  });
+
+  it("fetches only the days after the newest prices, and nothing when up to date", async () => {
+    const t = app();
+    const seen: string[] = [];
+    const spy =
+      (body: string): Fetcher =>
+      async (url) => {
+        seen.push(url);
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => body };
+      };
+    // No prices yet: the last 30 days.
+    await fetchFundPrices(t.db, {
+      today: "2026-10-09",
+      missing: true,
+      now: NOW,
+      fetcher: spy("Date,C Fund,G Fund,L 2050\n2026-10-06,98.1,19.5,12.0\n2026-10-07,98.2,19.6,"),
+    });
+    expect(seen[0]).toContain("start_date=2026-09-09");
+    // C and G are there through the 7th; L 2050 only through the 6th (its price came late), so
+    // the fund furthest behind decides.
+    expect(missingPricesSince(t.db, "2026-10-09")).toBe("2026-10-07");
+    await fetchFundPrices(t.db, {
+      today: "2026-10-09",
+      missing: true,
+      now: NOW,
+      fetcher: spy(
+        "Date,C Fund,G Fund,L 2050\n2026-10-07,98.2,19.6,12.1\n2026-10-08,98.3,19.7,12.2",
+      ),
+    });
+    expect(seen[1]).toContain("start_date=2026-10-07");
+    expect(seen[1]).toContain("end_date=2026-10-09");
+
+    // Up to date through today: no download at all.
+    await fetchFundPrices(t.db, {
+      today: "2026-10-09",
+      missing: true,
+      now: NOW,
+      fetcher: spy("Date,C Fund,G Fund,L 2050\n2026-10-09,98.4,19.8,12.3"),
+    });
+    expect(seen).toHaveLength(3);
+    const again = await fetchFundPrices(t.db, {
+      today: "2026-10-09",
+      missing: true,
+      now: NOW,
+      fetcher: spy(""),
+    });
+    expect(again).toMatchObject({ upToDate: true, prices: 0 });
+    expect(seen).toHaveLength(3);
+
+    // A weekend with no new prices is not an error.
+    const weekend = await fetchFundPrices(t.db, {
+      today: "2026-10-11",
+      missing: true,
+      now: NOW,
+      fetcher: spy("{}"),
+    });
+    expect(weekend).toMatchObject({ prices: 0, upToDate: true });
+  });
+
+  it("leaves out a fund that stopped being published when finding what is missing", async () => {
+    const t = app();
+    setFundPrice(t.db, "TSP-L2020", "2020-06-30", 30, "fetched", NOW);
+    setFundPrice(t.db, "TSP-C", "2026-10-08", 98, "fetched", NOW);
+    expect(missingPricesSince(t.db, "2026-10-09")).toBe("2026-10-09");
   });
 
   it("uses the chosen source and reaches back to a given first day", async () => {

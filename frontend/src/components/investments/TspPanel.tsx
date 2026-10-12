@@ -442,7 +442,7 @@ function PricesSection({
 }) {
   const [adding, setAdding] = useState(false);
   const [source, setSource] = useState<PriceSource>("maxtsp");
-  const [range, setRange] = useState<HistoryRange>("90");
+  const [range, setRange] = useState<HistoryRange>("missing");
   const [since, setSince] = useState("");
   const [rangeError, setRangeError] = useState<string | null>(null);
 
@@ -565,11 +565,13 @@ function PricesSection({
             }
             setRangeError(null);
             void run(async () => {
-              const r = await api<{ days: number; prices: number }>("/tsp/prices/fetch", {
-                method: "POST",
-                body: JSON.stringify(request.body),
-              });
-              return `Fetched ${r.prices} prices for ${r.days} days.`;
+              const r = await api<{ days: number; prices: number; upToDate?: boolean }>(
+                "/tsp/prices/fetch",
+                { method: "POST", body: JSON.stringify(request.body) },
+              );
+              return r.upToDate
+                ? "Prices are already up to date. There are no newer days to fetch yet."
+                : `Fetched ${r.prices} prices for ${r.days} days.`;
             }, "Could not download prices.");
           }}
         >

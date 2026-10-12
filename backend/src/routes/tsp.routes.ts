@@ -71,6 +71,8 @@ const fetchBody = z
     source: z.enum(PRICE_SOURCES as [PriceSource, ...PriceSource[]]).optional(),
     days: z.number().int().min(1).max(MAX_HISTORY_DAYS).optional(),
     since: date.optional(),
+    /** Only the days after the newest stored prices. */
+    missing: z.boolean().optional(),
   })
   .strict();
 
@@ -201,8 +203,9 @@ export function tspRoutes(db: AppDb): Router {
       ...(body.source ? { source: body.source } : {}),
       ...(body.days ? { days: body.days } : {}),
       ...(body.since ? { since: body.since } : {}),
+      ...(body.missing ? { missing: true } : {}),
     });
-    res.json({ ...summary, ...refresh() });
+    res.json({ ...summary, ...(summary.prices > 0 ? refresh() : {}) });
   });
 
   return router;

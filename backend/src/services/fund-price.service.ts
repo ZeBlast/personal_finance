@@ -169,6 +169,8 @@ export interface ImportSummary {
   from: string | null;
   to: string | null;
   ignoredColumns: string[];
+  /** For "only what's missing": nothing new was there to download. */
+  upToDate?: boolean;
 }
 
 /** Stores every price in a parsed file. Safe to import the same file again. */
@@ -327,6 +329,33 @@ export function parseFundPriceJson(text: string): ParsedPrices | null {
 const WHY_IMPORT =
   "Download the price file from tsp.gov in your browser (Share Prices, then download as CSV) and use Import price file.";
 
+/** How far a fund's newest price may lag the newest of all and still count as published. */
+const STILL_PUBLISHED_DAYS = 30;
+/** With no prices stored yet, "only what's missing" goes back this far. */
+const FIRST_FETCH_DAYS = 30;
+
+/**
+ * The first day whose prices are missing: the day after the newest price of the fund furthest
+ * behind, among funds still published (a fund whose newest price is more than
+ * STILL_PUBLISHED_DAYS older than the newest of all, such as a retired L fund, is left out, so it
+ * does not send every fetch back to when it stopped). Null when prices are there through `today`.
+ * With no prices at all, FIRST_FETCH_DAYS before today.
+ */
+export function missingPricesSince(db: Pick<AppDb, "all">, today: string): string | null {
+  const latest = db
+    .all<{ date: string }>(sql`select max(date) as date from fund_prices group by symbol`)
+    .map((r) => r.date)
+    .filter((d): d is string => typeof d === "string");
+  if (latest.length === 0) return addDays(today, -FIRST_FETCH_DAYS);
+  const newest = latest.reduce((a, b) => (a > b ? a : b));
+  const published = latest.filter((d) => d >= addDays(newest, -STILL_PUBLISHED_DAYS));
+  const since = addDays(
+    published.reduce((a, b) => (a < b ? a : b)),
+    1,
+  );
+  return since > today ? null : since;
+}
+
 /**
  * Downloads recent prices. Two sources: the Max TSP API (api.maxtsp.com, no key needed) and tsp.gov, which tends to
  * refuse scripted downloads. A refusal is explained rather than worked around, and the price file can
@@ -339,6 +368,12 @@ export async function fetchFundPrices(
     /** How far back to go, in days; or give `since`, the first day wanted. */
     days?: number;
     since?: string;
+    /**
+     * Only the days after the newest stored prices (see missingPricesSince). Nothing is
+     * downloaded when they are up to date, and an answer with no new days (a weekend, a holiday)
+     * is not an error.
+     */
+    missing?: boolean;
     today?: string;
     now?: string;
     fetcher?: Fetcher;
@@ -346,7 +381,18 @@ export async function fetchFundPrices(
 ): Promise<ImportSummary> {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   const earliest = addDays(today, -MAX_HISTORY_DAYS);
-  const wanted = options.since ?? addDays(today, -Math.max(options.days ?? 30, 1));
+  const nothing: ImportSummary = {
+    days: 0,
+    prices: 0,
+    funds: [],
+    from: null,
+    to: null,
+    ignoredColumns: [],
+    upToDate: true,
+  };
+  const missingFrom = options.missing ? missingPricesSince(db, today) : undefined;
+  if (missingFrom === null) return nothing;
+  const wanted = missingFrom ?? options.since ?? addDays(today, -Math.max(options.days ?? 30, 1));
   const from = wanted < earliest ? earliest : wanted > today ? today : wanted;
   const fetcher = options.fetcher ?? ((url, init) => fetch(url, init));
   const controller = new AbortController();
@@ -388,6 +434,8 @@ export async function fetchFundPrices(
     );
   }
   if (parsed.rows.length === 0) {
+    // Asking only for the newest days, none may have prices yet.
+    if (options.missing) return nothing;
     throw new AppError(
       502,
       "prices_unavailable",

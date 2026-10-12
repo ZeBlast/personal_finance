@@ -258,6 +258,10 @@ describe("downloading prices", () => {
     for (const bad of ["", "2027-01-01"]) {
       expect(buildFetchRequest("maxtsp", "since", bad, "2026-10-09").ok, bad).toBe(false);
     }
+    expect(buildFetchRequest("maxtsp", "missing", "", "2026-10-09")).toEqual({
+      ok: true,
+      body: { source: "maxtsp", missing: true },
+    });
   });
 });
 

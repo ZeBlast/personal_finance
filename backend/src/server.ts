@@ -4,6 +4,7 @@ import { createDb, encryptExistingBackups, runMigrations } from "./db/client.js"
 import { createGatewayProvider } from "./plaid/provider.js";
 import { rebuildAllTspHistories } from "./services/tsp-history.service.js";
 import { tspAccountIds, updateAllTspAccounts } from "./services/tsp.service.js";
+import { fetchFundPrices } from "./services/fund-price.service.js";
 import {
   ensureDiningSplit,
   ensureStarterAdditions,
@@ -143,6 +144,25 @@ async function main(): Promise<void> {
             ),
           )
       : Promise.resolve();
+    // Fund prices for TSP accounts: only the days after the newest stored prices, from the Max TSP
+    // API, in the background. Nothing is downloaded when they are up to date; a failure (offline,
+    // say) only means the Fetch prices button is there to try again.
+    if (tspAccountIds(db).length > 0) {
+      void fetchFundPrices(db, { source: "maxtsp", missing: true })
+        .then((got) => {
+          if (got.prices === 0) return;
+          console.log(`fund prices: ${got.prices} new for ${got.days} day(s), to ${got.to}`);
+          updateAllTspAccounts(db);
+          rebuildAllTspHistories(db, tspAccountIds(db), new Date().toISOString().slice(0, 10));
+        })
+        .catch((error: unknown) =>
+          console.error(
+            "fund price fetch failed:",
+            error instanceof Error ? error.message : "unknown error",
+          ),
+        );
+    }
+
     // Then sync on launch, in the background so the window is usable immediately. Connections
     // synced within the cooldown (Settings) are skipped, so relaunching does not re-sync needlessly.
     backedUp
