@@ -7,6 +7,7 @@ import { useApi } from "../hooks/useApi";
 import { useCategories } from "../hooks/useCategories";
 import { today } from "../lib/period";
 import type { Account } from "../types/api";
+import { Select } from "../components/common/Select";
 
 export function CalendarPage() {
   const basis = useDateBasis();
@@ -68,7 +69,7 @@ export function CalendarPage() {
               </button>
             ))}
           </div>
-          <select
+          <Select
             data-keep-selection
             aria-label="Account"
             value={accountId}
@@ -81,7 +82,7 @@ export function CalendarPage() {
                 {a.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 

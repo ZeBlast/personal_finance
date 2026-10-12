@@ -13,6 +13,7 @@ import { formatDay } from "../lib/time";
 import type { Account, Transaction, TransactionPage, TransactionSort } from "../types/api";
 import { CategorySelect } from "../components/common/CategorySelect";
 import { SplitDialog } from "../components/transactions/SplitDialog";
+import { Select } from "../components/common/Select";
 
 const PAGE_SIZE = 50;
 
@@ -320,7 +321,7 @@ export function TransactionsPage() {
           aria-label="Search transactions"
           className={`${controlClass} w-72`}
         />
-        <select
+        <Select
           aria-label="Account"
           value={filters.accountId}
           onChange={(e) => setFilter("accountId", e.target.value)}
@@ -332,8 +333,8 @@ export function TransactionsPage() {
               {accountLabel(a.name, a.institutionName)}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Institution"
           value={filters.institution}
           onChange={(e) => setFilter("institution", e.target.value)}
@@ -346,8 +347,8 @@ export function TransactionsPage() {
             </option>
           ))}
           {accounts.some((a) => !a.institutionName) && <option value="manual">Kept by hand</option>}
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Category"
           value={filters.category}
           onChange={(e) => setFilter("category", e.target.value)}
@@ -356,12 +357,12 @@ export function TransactionsPage() {
           <option value="">All categories</option>
           <option value="none">Uncategorized</option>
           {options.map((o) => (
-            <option key={o.id} value={o.id}>
+            <option key={o.id} value={o.id} data-depth={o.depth}>
               {o.label}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Status"
           value={filters.pending}
           onChange={(e) => setFilter("pending", e.target.value)}
@@ -370,8 +371,8 @@ export function TransactionsPage() {
           <option value="">Pending and posted</option>
           <option value="true">Pending only</option>
           <option value="false">Posted only</option>
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Online purchases"
           value={filters.online}
           onChange={(e) => setFilter("online", e.target.value)}
@@ -380,8 +381,8 @@ export function TransactionsPage() {
           <option value="">Online and not online</option>
           <option value="true">Online only</option>
           <option value="false">Not online</option>
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Transfers"
           value={filters.transfer}
           onChange={(e) => setFilter("transfer", e.target.value)}
@@ -389,7 +390,7 @@ export function TransactionsPage() {
         >
           <option value="">All transactions</option>
           <option value="unmatched">Transfers missing the other side</option>
-        </select>
+        </Select>
         <label className="text-xs text-slate-500">
           From
           <input
@@ -608,7 +609,7 @@ export function TransactionsPage() {
                             <option value={t.category.id}>{t.category.name} (archived)</option>
                           )}
                           {options.map((o) => (
-                            <option key={o.id} value={o.id}>
+                            <option key={o.id} value={o.id} data-depth={o.depth}>
                               {o.label}
                             </option>
                           ))}

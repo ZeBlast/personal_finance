@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
+import { Select } from "../common/Select";
 
 export interface MerchantGroup {
   id: number;
@@ -65,7 +66,7 @@ export function MerchantGroupField({
         Merchant group
       </label>
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           id={`${id}-group`}
           value={choice}
           onChange={(e) => {
@@ -81,7 +82,7 @@ export function MerchantGroupField({
             </option>
           ))}
           <option value={NEW}>New group...</option>
-        </select>
+        </Select>
         {choice === NEW && (
           <input
             aria-label="New group's name"

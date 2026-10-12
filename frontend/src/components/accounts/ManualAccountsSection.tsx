@@ -13,6 +13,7 @@ import { HiddenBadge, HideToggle } from "./HideToggle";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
 import { CollectionDialog, isCollection } from "./CollectionDialog";
 import { AddCreditsDialog, isStoreCredit, UseCreditsDialog } from "./StoreCreditDialogs";
+import { Select } from "../common/Select";
 
 type Kind =
   "cash" | "checking" | "savings" | "credit_card" | "store_credit" | "pokemon_cards" | "collection";
@@ -121,7 +122,7 @@ function NewAccountDialog({
           <label htmlFor={`${id}-kind`} className="block font-medium">
             Type
           </label>
-          <select
+          <Select
             id={`${id}-kind`}
             value={kind}
             onChange={(e) => setKind(e.target.value as Kind)}
@@ -132,7 +133,7 @@ function NewAccountDialog({
                 {k.label}
               </option>
             ))}
-          </select>
+          </Select>
           <p className="mt-1 text-xs text-slate-500">{info.help}</p>
         </div>
         <div>

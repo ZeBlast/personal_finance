@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Category } from "../types/api";
-import { categoryOptions, MAIN_MARK, SUB_MARK } from "./useCategories";
+import { categoryOptions } from "./useCategories";
 
 const cat = (id: number, name: string, parentId: number | null = null): Category =>
   ({ id, name, parentId }) as Category;
@@ -26,13 +26,16 @@ describe("category picker options", () => {
       "Gas",
       "Parking & Tolls",
     ]);
+    // The dropdown draws the hierarchy from the depth; the label is the plain name.
     expect(options.find((o) => o.name === "Transportation")).toMatchObject({
-      label: `${MAIN_MARK} Transportation`,
+      label: "Transportation",
       sub: false,
+      depth: 0,
     });
     expect(options.find((o) => o.name === "Gas")).toMatchObject({
-      label: `${SUB_MARK}Gas`,
+      label: "Gas",
       sub: true,
+      depth: 1,
     });
   });
 });

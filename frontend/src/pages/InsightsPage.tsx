@@ -10,6 +10,7 @@ import { today } from "../lib/period";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import type { RecurringReport, RecurringSeries, UtilizationHistory } from "../types/insights";
+import { Select } from "../components/common/Select";
 
 /** `YYYY-MM-DD` this many days before `day`. */
 function daysBefore(day: string, days: number): string {
@@ -254,7 +255,7 @@ function UtilizationSection() {
             />
             Each card separately
           </label>
-          <select
+          <Select
             aria-label="How far back"
             value={range}
             onChange={(e) => setRange(e.target.value)}
@@ -265,7 +266,7 @@ function UtilizationSection() {
                 {r.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
       {error && (

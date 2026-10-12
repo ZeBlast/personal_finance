@@ -14,6 +14,7 @@ import {
   type PlannedDraft,
 } from "./plannedForm";
 import { weekdayOf } from "./range";
+import { Select } from "../common/Select";
 
 const DAYS = [
   { value: 0, short: "S", name: "Sunday" },
@@ -198,7 +199,7 @@ export function PlannedDialog({
             <label htmlFor={`${id}-account`} className="block font-medium">
               Account (optional)
             </label>
-            <select
+            <Select
               id={`${id}-account`}
               value={draft.accountId}
               onChange={(e) => set({ accountId: e.target.value })}
@@ -210,13 +211,13 @@ export function PlannedDialog({
                   {a.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label htmlFor={`${id}-category`} className="block font-medium">
               Category (optional)
             </label>
-            <select
+            <Select
               id={`${id}-category`}
               value={draft.categoryId}
               onChange={(e) => set({ categoryId: e.target.value })}
@@ -224,11 +225,11 @@ export function PlannedDialog({
             >
               <option value="">No category</option>
               {options.map((o) => (
-                <option key={o.id} value={o.id}>
+                <option key={o.id} value={o.id} data-depth={o.depth}>
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="sm:col-span-2">
             <label htmlFor={`${id}-person`} className="block font-medium">
@@ -261,7 +262,7 @@ export function PlannedDialog({
             <label htmlFor={`${id}-repeat`} className="block font-medium">
               Repeats
             </label>
-            <select
+            <Select
               id={`${id}-repeat`}
               value={
                 draft.frequency === "weekly" &&
@@ -287,7 +288,7 @@ export function PlannedDialog({
               <option value="biweekly">Every 2 weeks (biweekly)</option>
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
-            </select>
+            </Select>
           </div>
 
           {repeats && (
@@ -363,7 +364,7 @@ export function PlannedDialog({
                   <label htmlFor={`${id}-dom`} className="block font-medium">
                     Day of the month
                   </label>
-                  <select
+                  <Select
                     id={`${id}-dom`}
                     value={draft.dayOfMonth}
                     onChange={(e) => set({ dayOfMonth: e.target.value })}
@@ -376,7 +377,7 @@ export function PlannedDialog({
                       </option>
                     ))}
                     <option value="-1">Last day of the month</option>
-                  </select>
+                  </Select>
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-3">
@@ -384,7 +385,7 @@ export function PlannedDialog({
                     <label htmlFor={`${id}-nth`} className="block font-medium">
                       Which
                     </label>
-                    <select
+                    <Select
                       id={`${id}-nth`}
                       value={draft.nthWeek}
                       onChange={(e) => set({ nthWeek: e.target.value })}
@@ -396,13 +397,13 @@ export function PlannedDialog({
                       <option value="3">3rd</option>
                       <option value="4">4th</option>
                       <option value="-1">Last</option>
-                    </select>
+                    </Select>
                   </div>
                   <div>
                     <label htmlFor={`${id}-wd`} className="block font-medium">
                       Weekday
                     </label>
-                    <select
+                    <Select
                       id={`${id}-wd`}
                       value={draft.monthWeekday}
                       onChange={(e) => set({ monthWeekday: e.target.value })}
@@ -414,7 +415,7 @@ export function PlannedDialog({
                           {d.name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 </div>
               )}

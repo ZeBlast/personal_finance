@@ -28,6 +28,7 @@ import {
   type SandboxNode,
   type ValueFormat,
 } from "../lib/sandbox/graph";
+import { Select } from "../components/common/Select";
 
 /**
  * The sandbox: a playground of nodes. Add income, expenses, maths, and tax nodes from the left;
@@ -720,7 +721,7 @@ function ParamField({
           placeholder={def.key === "brackets" ? "0 2, 3000 3, 17000 5.75" : ""}
         />
       ) : def.type === "select" ? (
-        <select
+        <Select
           value={String(value ?? def.default)}
           onChange={(e) => onChange(e.target.value)}
           className={cls}
@@ -730,7 +731,7 @@ function ParamField({
               {o.label}
             </option>
           ))}
-        </select>
+        </Select>
       ) : (
         <span className="flex items-center gap-1">
           {def.type === "money" && <span className="text-slate-400">$</span>}

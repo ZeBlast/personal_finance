@@ -30,6 +30,7 @@ import { ConfirmDialog, Modal } from "../common/Modal";
 import { AllocationEditor } from "./AllocationEditor";
 import { buttonClass, inputClass, primaryClass } from "./styles";
 import { RetirementProjection } from "./RetirementProjection";
+import { Select } from "../common/Select";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -501,7 +502,7 @@ function PricesSection({
           <label htmlFor="price-source" className="block text-xs font-medium">
             Get prices from
           </label>
-          <select
+          <Select
             id="price-source"
             value={source}
             onChange={(e) => setSource(e.target.value as PriceSource)}
@@ -512,13 +513,13 @@ function PricesSection({
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor="price-range" className="block text-xs font-medium">
             How far back (every day in that time is saved)
           </label>
-          <select
+          <Select
             id="price-range"
             value={range}
             onChange={(e) => setRange(e.target.value as HistoryRange)}
@@ -529,7 +530,7 @@ function PricesSection({
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         {range === "since" && (
           <div>
@@ -651,7 +652,7 @@ function PriceDialog({
           <label htmlFor="price-fund" className="block font-medium">
             Fund
           </label>
-          <select
+          <Select
             id="price-fund"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
@@ -662,7 +663,7 @@ function PriceDialog({
                 {f.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -816,7 +817,7 @@ function ContributionDialog({
             <label htmlFor="tsp-frequency" className="block font-medium">
               How often
             </label>
-            <select
+            <Select
               id="tsp-frequency"
               value={draft.frequency}
               onChange={(e) => set({ frequency: e.target.value as ContributionDraft["frequency"] })}
@@ -827,7 +828,7 @@ function ContributionDialog({
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label htmlFor="tsp-start" className="block font-medium">
@@ -894,7 +895,7 @@ function ContributionDialog({
               <label htmlFor="tsp-match" className="block font-medium">
                 Employer adds
               </label>
-              <select
+              <Select
                 id="tsp-match"
                 value={draft.matchPlan}
                 onChange={(e) =>
@@ -905,7 +906,7 @@ function ContributionDialog({
                 <option value="">Nothing</option>
                 <option value="fers">Federal agency (FERS): 1% automatic + up to 4% match</option>
                 <option value="custom">My employer&apos;s own match (401(k) and others)</option>
-              </select>
+              </Select>
             </div>
             {draft.matchPlan !== "" && (
               <div>

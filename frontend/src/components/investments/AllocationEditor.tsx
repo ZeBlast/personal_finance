@@ -1,5 +1,6 @@
 import { allocationTotal, evenSplit, type AllocationRow, type TspFund } from "../../lib/tsp";
 import { buttonClass, inputClass } from "./styles";
+import { Select } from "../common/Select";
 
 /**
  * Chooses which funds new money goes into and what share each gets. The shares must add up to
@@ -29,7 +30,7 @@ export function AllocationEditor({
             <label className="block text-xs font-medium" htmlFor={`${idPrefix}-fund-${index}`}>
               Fund
             </label>
-            <select
+            <Select
               id={`${idPrefix}-fund-${index}`}
               value={row.symbol}
               onChange={(e) => update(index, { symbol: e.target.value })}
@@ -43,7 +44,7 @@ export function AllocationEditor({
                     {f.name}
                   </option>
                 ))}
-            </select>
+            </Select>
           </div>
           <div className="w-24">
             <label className="block text-xs font-medium" htmlFor={`${idPrefix}-pct-${index}`}>

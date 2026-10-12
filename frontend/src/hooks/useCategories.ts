@@ -35,14 +35,14 @@ export const MAIN_MARK = "■";
 export const SUB_MARK = "\u00a0\u00a0\u00a0\u00a0└\u00a0";
 
 /**
- * Categories for a picker, each main category followed by its subcategories. `label` is what a
- * dropdown shows: a main category marked with a square, a subcategory indented under it with a
- * branch ("■ Transportation", "    └ Gas"), since a plain dropdown cannot use bold or colour.
+ * Categories for a picker, each main category followed by its subcategories. `label` is what the
+ * list shows and `depth` how far it is indented (1 for a subcategory under its main category): the
+ * app's dropdown (Select) draws the hierarchy, so pass `data-depth={o.depth}` on the option.
  * `name` is the category's own name, for text elsewhere ("Always categorize as Gas").
  */
 export function categoryOptions(
   categories: Category[],
-): Array<{ id: number; label: string; name: string; sub: boolean }> {
+): Array<{ id: number; label: string; name: string; sub: boolean; depth: number }> {
   const byId = new Map(categories.map((c) => [c.id, c]));
   return categories
     .map((c) => {
@@ -51,7 +51,7 @@ export function categoryOptions(
         id: c.id,
         name: c.name,
         sub: parent !== undefined,
-        label: parent ? `${SUB_MARK}${c.name}` : `${MAIN_MARK} ${c.name}`,
+        label: c.name,
         // A subcategory sorts right after its main category, before the next main one.
         sortKey: parent
           ? [parent.name.toLowerCase(), 1, c.name.toLowerCase()]
@@ -67,5 +67,5 @@ export function categoryOptions(
         String(ac).localeCompare(String(bc))
       );
     })
-    .map(({ id, label, name, sub }) => ({ id, label, name, sub }));
+    .map(({ id, label, name, sub }) => ({ id, label, name, sub, depth: sub ? 1 : 0 }));
 }

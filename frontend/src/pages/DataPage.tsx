@@ -17,6 +17,7 @@ import type {
   IntegrityReport,
 } from "../types/data";
 import type { Settings } from "../types/api";
+import { Select } from "../components/common/Select";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -210,7 +211,7 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
             </label>
             <label className="flex items-center gap-2">
               Keep the latest
-              <select
+              <Select
                 aria-label="Automatic backups to keep"
                 value={settings.data.backupsToKeep}
                 onChange={(e) => void saveSetting({ backupsToKeep: Number(e.target.value) })}
@@ -221,7 +222,7 @@ function BackupsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
                     {n}
                   </option>
                 ))}
-              </select>
+              </Select>
               automatic backups
             </label>
           </>

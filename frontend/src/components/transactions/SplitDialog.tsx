@@ -154,7 +154,7 @@ export function SplitDialog({
               >
                 <option value="">Uncategorized</option>
                 {options.map((o) => (
-                  <option key={o.id} value={o.id}>
+                  <option key={o.id} value={o.id} data-depth={o.depth}>
                     {o.label}
                   </option>
                 ))}

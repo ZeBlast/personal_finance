@@ -8,6 +8,7 @@ import {
   TRANSACTION_TYPES,
   type TransactionDraft,
 } from "./transactionDraft";
+import { Select } from "../common/Select";
 
 /** Adds one transaction (a contribution, a purchase, a dividend, ...) to a manual account. */
 export function TransactionForm({
@@ -80,7 +81,7 @@ export function TransactionForm({
             <label htmlFor={`${id}-type`} className="block font-medium">
               Type
             </label>
-            <select
+            <Select
               id={`${id}-type`}
               value={draft.type}
               onChange={(e) => set({ type: e.target.value })}
@@ -91,7 +92,7 @@ export function TransactionForm({
                   {t.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="sm:col-span-2">
             <label htmlFor={`${id}-fund`} className="block font-medium">

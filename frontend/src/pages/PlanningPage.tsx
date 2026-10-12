@@ -20,6 +20,7 @@ import type {
   SubscriptionReview,
   SubscriptionStatus,
 } from "../types/planning";
+import { Select } from "../components/common/Select";
 
 type Tab = "forecast" | "bills" | "subscriptions" | "paychecks";
 
@@ -104,7 +105,7 @@ function ForecastTab() {
         </dl>
         <label className="text-sm">
           Look ahead{" "}
-          <select
+          <Select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
@@ -114,7 +115,7 @@ function ForecastTab() {
                 {n} days
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       {data.lowest.balanceMinor < 0 && (
@@ -554,7 +555,7 @@ function SubscriptionsTab() {
                   : "seems to have stopped"}
               </td>
               <td className="py-1.5">
-                <select
+                <Select
                   aria-label={`Decision for ${s.merchant}`}
                   value={s.review?.status ?? ""}
                   onChange={(e) => void decide(s, e.target.value as SubscriptionStatus | "")}
@@ -565,7 +566,7 @@ function SubscriptionsTab() {
                       {d.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </td>
             </tr>
           ))}

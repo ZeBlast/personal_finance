@@ -13,6 +13,7 @@ import {
   type TaxInputs,
 } from "../lib/taxes/estimate";
 import { formatDay } from "../lib/time";
+import { Select } from "../components/common/Select";
 
 interface IncomeTx {
   id: number;
@@ -100,7 +101,7 @@ export function TaxesPage() {
         </div>
         <label className="text-sm">
           Tax year
-          <select
+          <Select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
             className={inputClass}
@@ -110,7 +111,7 @@ export function TaxesPage() {
                 {y}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
       {error && (
@@ -258,7 +259,7 @@ function TaxWorkspace({ data }: { data: TaxData }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               Filing status
-              <select
+              <Select
                 value={profile.filingStatus}
                 onChange={(e) => set({ filingStatus: e.target.value as FilingStatus })}
                 className={inputClass}
@@ -268,11 +269,11 @@ function TaxWorkspace({ data }: { data: TaxData }) {
                     {f.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="text-sm">
               State
-              <select
+              <Select
                 value={profile.state}
                 onChange={(e) =>
                   set({
@@ -286,12 +287,12 @@ function TaxWorkspace({ data }: { data: TaxData }) {
                 <option value="MD">Maryland</option>
                 <option value="DC">Washington DC</option>
                 <option value="VA">Virginia</option>
-              </select>
+              </Select>
             </label>
             {profile.state === "MD" && (
               <label className="text-sm">
                 County (county income tax)
-                <select
+                <Select
                   value={profile.marylandCounty ?? ""}
                   onChange={(e) => set({ marylandCounty: e.target.value || null })}
                   className={inputClass}
@@ -302,7 +303,7 @@ function TaxWorkspace({ data }: { data: TaxData }) {
                       {c.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             )}
             <label className="text-sm">

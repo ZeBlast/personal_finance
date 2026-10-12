@@ -19,6 +19,7 @@ import { PERIOD_OPTIONS, resolvePeriod } from "../../lib/period";
 import { announceDataChanged } from "../../lib/syncEvents";
 import type { Account } from "../../types/api";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
+import { Select } from "../common/Select";
 
 /**
  * A credit card's cashback: the rates it earns (by category, and for everything else) and what it
@@ -47,7 +48,7 @@ export function CashbackSection({ account }: { account: Account }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="flex items-center gap-2 text-xs">
             Earned
-            <select
+            <Select
               aria-label={`Cashback period for ${account.name}`}
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
@@ -58,7 +59,7 @@ export function CashbackSection({ account }: { account: Account }) {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {!editing && (
             <button type="button" className={buttonClass} onClick={() => setEditing(true)}>
@@ -214,7 +215,7 @@ function RatesEditor({
             <label className="block text-xs font-medium" htmlFor={id("kind", index)}>
               Rule
             </label>
-            <select
+            <Select
               id={id("kind", index)}
               value={row.kind}
               onChange={(e) => update(index, { kind: e.target.value as RuleKind })}
@@ -225,7 +226,7 @@ function RatesEditor({
                   {k.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           {row.kind !== "category" && (
             <div className="min-w-40 flex-1">
@@ -247,7 +248,7 @@ function RatesEditor({
               <label className="block text-xs font-medium" htmlFor={id("cat", index)}>
                 {row.kind === "exclude" ? "Excluded from" : "Category"}
               </label>
-              <select
+              <Select
                 id={id("cat", index)}
                 value={row.categoryId}
                 onChange={(e) => update(index, { categoryId: e.target.value })}
@@ -257,11 +258,11 @@ function RatesEditor({
                   {row.kind === "exclude" ? "Every rate" : "Everything else"}
                 </option>
                 {options.map((o) => (
-                  <option key={o.id} value={o.id}>
+                  <option key={o.id} value={o.id} data-depth={o.depth}>
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
           {row.kind !== "exclude" && (

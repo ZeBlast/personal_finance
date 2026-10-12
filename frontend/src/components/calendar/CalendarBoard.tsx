@@ -21,6 +21,7 @@ import {
   yearChoices,
   type DaySpan,
 } from "./range";
+import { Select } from "../common/Select";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** How far the wheel must turn before the month changes, and the pause before it can again. */
@@ -243,7 +244,7 @@ export function CalendarBoard({
           >
             ‹
           </button>
-          <select
+          <Select
             aria-label="Month"
             value={monthIndex}
             onChange={(e) => setMonth(joinMonth(year, Number(e.target.value)))}
@@ -254,8 +255,8 @@ export function CalendarBoard({
                 {name}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             aria-label="Year"
             value={year}
             onChange={(e) => setMonth(joinMonth(Number(e.target.value), monthIndex))}
@@ -266,7 +267,7 @@ export function CalendarBoard({
                 {y}
               </option>
             ))}
-          </select>
+          </Select>
           <button type="button" aria-label="Next month" onClick={() => go(1)} className={navButton}>
             ›
           </button>

@@ -11,6 +11,7 @@ import type {
   RuleOperator,
   RulePreview,
 } from "../types/api";
+import { Select } from "../components/common/Select";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -107,7 +108,7 @@ function CategoryForm({
           <label htmlFor={`${id}-parent`} className="block text-sm font-medium">
             Inside
           </label>
-          <select
+          <Select
             id={`${id}-parent`}
             value={parentId}
             disabled={hasChildren}
@@ -120,7 +121,7 @@ function CategoryForm({
                 {p.name}
               </option>
             ))}
-          </select>
+          </Select>
           {hasChildren && (
             <p className="mt-1 text-xs text-slate-500">
               A category with subcategories stays at the top level.
@@ -143,7 +144,7 @@ function CategoryForm({
           <label htmlFor={`${id}-treatment`} className="block text-sm font-medium">
             Money here counts as
           </label>
-          <select
+          <Select
             id={`${id}-treatment`}
             value={treatment}
             onChange={(e) => setTreatment(e.target.value)}
@@ -157,7 +158,7 @@ function CategoryForm({
             <option value="transfer">
               Moving my own money (cash withdrawals, savings): never income or spending
             </option>
-          </select>
+          </Select>
           <p className="mt-1 text-xs text-slate-500">
             Income counts toward income totals, the month report, and the sandbox&apos;s income
             figures; a refund only takes money off spending; moving your own money counts as
@@ -353,18 +354,18 @@ function CategoriesSection({ onChanged }: { onChanged: () => void }) {
                 childrenOf(removing.id).length === 0 && (
                   <label className="block">
                     <span className="font-medium">Move its transactions and rules to</span>
-                    <select
+                    <Select
                       value={reassignTo}
                       onChange={(e) => setReassignTo(e.target.value)}
                       className={inputClass}
                     >
                       <option value="">Nothing: just archive it</option>
                       {reassignChoices.map((o) => (
-                        <option key={o.id} value={o.id}>
+                        <option key={o.id} value={o.id} data-depth={o.depth}>
                           {o.label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                 )}
             </div>
@@ -463,7 +464,7 @@ function RuleForm({
             <label htmlFor={`${id}-field`} className="block text-sm font-medium">
               When the
             </label>
-            <select
+            <Select
               id={`${id}-field`}
               value={field}
               onChange={(e) => setField(e.target.value as RuleField)}
@@ -474,13 +475,13 @@ function RuleForm({
                   {FIELD_LABEL[f]}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label htmlFor={`${id}-op`} className="block text-sm font-medium">
               ...
             </label>
-            <select
+            <Select
               id={`${id}-op`}
               value={operator}
               onChange={(e) => setOperator(e.target.value as RuleOperator)}
@@ -491,7 +492,7 @@ function RuleForm({
                   {OPERATOR_LABEL[o]}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
         <div>
@@ -523,7 +524,7 @@ function RuleForm({
           <label htmlFor={`${id}-cat`} className="block text-sm font-medium">
             Use this category
           </label>
-          <select
+          <Select
             id={`${id}-cat`}
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
@@ -531,11 +532,11 @@ function RuleForm({
           >
             <option value="">Choose a category</option>
             {options.map((o) => (
-              <option key={o.id} value={o.id}>
+              <option key={o.id} value={o.id} data-depth={o.depth}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div>
           <label htmlFor={`${id}-name`} className="block text-sm font-medium">

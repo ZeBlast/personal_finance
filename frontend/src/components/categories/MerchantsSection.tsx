@@ -5,6 +5,7 @@ import { categoryOptions } from "../../hooks/useCategories";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { Category } from "../../types/api";
+import { Select } from "../common/Select";
 
 interface MerchantRow {
   key: string;
@@ -134,7 +135,7 @@ export function MerchantsSection({
           aria-label="Search merchants"
           className={`${controlClass} w-64`}
         />
-        <select
+        <Select
           aria-label="Show merchants"
           value={show}
           onChange={(e) => {
@@ -151,7 +152,7 @@ export function MerchantsSection({
               Assigned to {o.name}
             </option>
           ))}
-        </select>
+        </Select>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -217,7 +218,7 @@ export function MerchantsSection({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{m.transactionCount}</td>
                     <td className="px-3 py-2">
-                      <select
+                      <Select
                         aria-label={`Category for ${m.merchant}`}
                         value={m.assigned ? String(m.assigned.categoryId) : ""}
                         disabled={busyKey === m.key}
@@ -231,11 +232,11 @@ export function MerchantsSection({
                           </option>
                         )}
                         {options.map((o) => (
-                          <option key={o.id} value={o.id}>
+                          <option key={o.id} value={o.id} data-depth={o.depth}>
                             {o.label}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </td>
                   </tr>
                 );

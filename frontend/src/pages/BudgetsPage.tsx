@@ -8,6 +8,7 @@ import { announceDataChanged } from "../lib/syncEvents";
 import { currencyDigits, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import type { Budget, BudgetMonth } from "../types/analytics";
+import { Select } from "../components/common/Select";
 
 const inputClass =
   "mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800";
@@ -91,7 +92,7 @@ function BudgetForm({
             <label htmlFor={`${id}-cat`} className="block font-medium">
               Category
             </label>
-            <select
+            <Select
               id={`${id}-cat`}
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
@@ -99,11 +100,11 @@ function BudgetForm({
             >
               <option value="">Choose a category</option>
               {options.map((o) => (
-                <option key={o.id} value={o.id}>
+                <option key={o.id} value={o.id} data-depth={o.depth}>
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
             <p className="mt-1 text-xs text-slate-500">
               A budget for a category also counts spending in its subcategories.
             </p>

@@ -31,6 +31,7 @@ import { parseBrackets } from "../../lib/sandbox/brackets";
 import { FILING_STATUSES, type FilingStatus } from "../../lib/sandbox/taxes";
 import { LineChart } from "../charts/LineChart";
 import { SavedMaps } from "./SavedMaps";
+import { Select } from "../common/Select";
 
 /**
  * The cash-flow map (experimental): buckets of money and the amounts flowing between them. Drag a
@@ -283,7 +284,7 @@ export function FlowMap() {
             </button>
           ))}
           <span className="ml-auto flex items-center gap-2">
-            <select
+            <Select
               aria-label="Show amounts"
               value={period}
               onChange={(e) => setPeriod(Number(e.target.value))}
@@ -294,7 +295,7 @@ export function FlowMap() {
                   Amounts {p.label}
                 </option>
               ))}
-            </select>
+            </Select>
             <button
               type="button"
               onClick={() => {
@@ -550,7 +551,7 @@ export function FlowMap() {
         <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <div className="mb-1 flex items-center justify-between">
             <h3 className="font-semibold">Savings growth</h3>
-            <select
+            <Select
               aria-label="Years to project"
               value={years}
               onChange={(e) => setYears(Number(e.target.value))}
@@ -561,7 +562,7 @@ export function FlowMap() {
                   {y} years
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <LineChart
             series={[
@@ -681,7 +682,7 @@ function NodeEditor({
         <>
           <label className="block">
             Kind of tax
-            <select
+            <Select
               value={tax.type}
               onChange={(e) => setTax({ type: e.target.value as FlowTaxType })}
               className={field}
@@ -691,12 +692,12 @@ function NodeEditor({
                   {t.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {tax.type !== "vehicle" && tax.type !== "fers" && tax.type !== "custom" && (
             <label className="block">
               Filing status
-              <select
+              <Select
                 value={tax.status ?? "single"}
                 onChange={(e) => setTax({ status: e.target.value as FilingStatus })}
                 className={field}
@@ -706,13 +707,13 @@ function NodeEditor({
                     {s.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           {tax.type === "state" && (
             <label className="block">
               State
-              <select
+              <Select
                 value={tax.state ?? "VA"}
                 onChange={(e) => setTax({ state: e.target.value as StateCode })}
                 className={field}
@@ -722,13 +723,13 @@ function NodeEditor({
                     {s.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           {tax.type === "local" && (
             <label className="block">
               County
-              <select
+              <Select
                 value={tax.county ?? "montgomery"}
                 onChange={(e) => setTax({ county: e.target.value })}
                 className={field}
@@ -738,14 +739,14 @@ function NodeEditor({
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
           {tax.type === "vehicle" && (
             <>
               <label className="block">
                 County
-                <select
+                <Select
                   value={tax.locality ?? "fairfax_county"}
                   onChange={(e) => setTax({ locality: e.target.value })}
                   className={field}
@@ -755,7 +756,7 @@ function NodeEditor({
                       {l.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="block">
                 Vehicle value
@@ -886,12 +887,12 @@ function LinkEditor({
           </label>
           <label className="block">
             &nbsp;
-            <select value={per} onChange={(e) => setPer(Number(e.target.value))} className={field}>
+            <Select value={per} onChange={(e) => setPer(Number(e.target.value))} className={field}>
               <option value={1}>per year</option>
               <option value={12}>per month</option>
               <option value={26}>every 2 weeks</option>
               <option value={52}>per week</option>
-            </select>
+            </Select>
           </label>
         </div>
       )}
@@ -1083,7 +1084,7 @@ function CustomTaxFields({
     <>
       <label className="block">
         How it is charged
-        <select
+        <Select
           value={c.mode}
           onChange={(e) => set({ mode: e.target.value as CustomTax["mode"] })}
           className={field}
@@ -1091,7 +1092,7 @@ function CustomTaxFields({
           <option value="percent">A percentage of income</option>
           <option value="fixed">A fixed amount per year</option>
           <option value="brackets">Brackets (like income tax)</option>
-        </select>
+        </Select>
       </label>
       {c.mode === "percent" && (
         <label className="block">

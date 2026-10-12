@@ -17,6 +17,7 @@ import { CategorySelect } from "../common/CategorySelect";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { MerchantGroupField } from "./MerchantGroupField";
 import { RefundLink } from "./RefundLink";
+import { Select } from "../common/Select";
 
 /**
  * Adds a transaction by hand to an account the user keeps by hand (cash, for example), or edits
@@ -124,7 +125,7 @@ export function ManualTransactionDialog({
             <label htmlFor={`${id}-account`} className="block font-medium">
               Account
             </label>
-            <select
+            <Select
               id={`${id}-account`}
               value={draft.accountId}
               onChange={(e) => set({ accountId: e.target.value })}
@@ -136,7 +137,7 @@ export function ManualTransactionDialog({
                   {a.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <label htmlFor={`${id}-date`} className="block font-medium">
@@ -238,7 +239,7 @@ export function ManualTransactionDialog({
             >
               <option value="">Uncategorized (let the rules decide)</option>
               {options.map((o) => (
-                <option key={o.id} value={o.id}>
+                <option key={o.id} value={o.id} data-depth={o.depth}>
                   {o.label}
                 </option>
               ))}
@@ -303,7 +304,7 @@ export function ManualTransactionDialog({
             <label htmlFor={`${id}-repeat`} className="block font-medium">
               Repeat
             </label>
-            <select
+            <Select
               id={`${id}-repeat`}
               value={draft.repeat}
               onChange={(e) => set({ repeat: e.target.value as ManualDraft["repeat"] })}
@@ -314,7 +315,7 @@ export function ManualTransactionDialog({
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
             {draft.repeat && (
               <p className="mt-1 text-xs text-slate-500">
                 This one is recorded now. The next ones show up on the calendar as expected, and you

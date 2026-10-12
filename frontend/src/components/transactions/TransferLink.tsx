@@ -4,6 +4,7 @@ import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
 import type { Account, Transaction } from "../../types/api";
+import { Select } from "../common/Select";
 
 const STORE_CREDIT_SUBTYPE = "store credit";
 
@@ -203,7 +204,7 @@ function OtherSidePicker({
           <label htmlFor={`${id}-account`} className="text-xs text-slate-500">
             Or an account you keep by hand (the app adds the other side there):
           </label>
-          <select
+          <Select
             id={`${id}-account`}
             value={accountId}
             onChange={(e) => setAccountId(e.target.value === "" ? "" : Number(e.target.value))}
@@ -215,7 +216,7 @@ function OtherSidePicker({
                 {a.name}
               </option>
             ))}
-          </select>
+          </Select>
           <button
             type="button"
             disabled={busy || accountId === ""}

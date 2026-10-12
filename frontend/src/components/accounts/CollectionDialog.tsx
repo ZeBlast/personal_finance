@@ -6,6 +6,7 @@ import type { Account } from "../../types/api";
 import { Modal } from "../common/Modal";
 import { CardPricesPanel, PriceHistory } from "./CardPrices";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
+import { Select } from "../common/Select";
 
 /** The subtypes of collection accounts: collectibles valued by hand, and Pokemon cards. */
 export const COLLECTION_SUBTYPE = "collection";
@@ -328,7 +329,7 @@ function AddPanel({
             <label htmlFor={`${id}-condition`} className="block text-xs font-medium">
               Condition
             </label>
-            <select
+            <Select
               id={`${id}-condition`}
               value={condition}
               onChange={(e) => setCondition(e.target.value)}
@@ -339,7 +340,7 @@ function AddPanel({
                   {c.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         )}
       </div>
@@ -647,7 +648,7 @@ export function CollectionDialog({
                     </td>
                     {pokemon && (
                       <td className="py-1 pr-2">
-                        <select
+                        <Select
                           aria-label={`Condition of ${i.name}`}
                           value={i.condition ?? DEFAULT_CONDITION}
                           title="Prices are looked up for this condition"
@@ -659,7 +660,7 @@ export function CollectionDialog({
                               {c.code}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </td>
                     )}
                     <td className="py-1 pr-2 text-right">

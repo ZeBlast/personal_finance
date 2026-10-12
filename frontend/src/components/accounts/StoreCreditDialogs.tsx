@@ -6,6 +6,7 @@ import { today } from "../../lib/period";
 import type { Account, Category } from "../../types/api";
 import { Modal } from "../common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
+import { Select } from "../common/Select";
 
 /** The subtype of a store credit (gift card) account. */
 export const STORE_CREDIT_SUBTYPE = "store credit";
@@ -271,7 +272,7 @@ export function UseCreditsDialog({
               <label htmlFor={`${id}-rest`} className="block font-medium">
                 The other {formatMinor(restMinor, "USD")} was paid from
               </label>
-              <select
+              <Select
                 id={`${id}-rest`}
                 value={restFrom}
                 onChange={(e) => setRestFrom(e.target.value)}
@@ -283,7 +284,7 @@ export function UseCreditsDialog({
                     {a.name}
                   </option>
                 ))}
-              </select>
+              </Select>
               <p className="mt-1 text-xs text-slate-500">
                 Choose an account you keep by hand (such as Cash) to add that part there too. A
                 connected card&apos;s part comes in with its next sync, so it is not added twice.
@@ -294,7 +295,7 @@ export function UseCreditsDialog({
             <label htmlFor={`${id}-category`} className="block font-medium">
               Category (optional)
             </label>
-            <select
+            <Select
               id={`${id}-category`}
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
@@ -302,11 +303,11 @@ export function UseCreditsDialog({
             >
               <option value="">Let the rules decide</option>
               {categoryOptions(categories).map((c) => (
-                <option key={c.id} value={c.id}>
+                <option key={c.id} value={c.id} data-depth={c.depth}>
                   {c.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
         {error && (

@@ -4,6 +4,7 @@ import type { FundPresets, HoldingRow } from "../../types/investments";
 import { Modal } from "../common/Modal";
 import { buildPayload, draftFromHolding, emptyDraft, type HoldingDraft } from "./holdingsForm";
 import { buttonClass, inputClass, primaryClass } from "./styles";
+import { Select } from "../common/Select";
 
 /**
  * Edits everything a manual account holds. Saving replaces the account's holdings with exactly
@@ -100,7 +101,7 @@ export function HoldingsEditor({
                       <label htmlFor={`${rowId}-fund`} className="block font-medium">
                         Fund {rows.length > 1 ? index + 1 : ""}
                       </label>
-                      <select
+                      <Select
                         id={`${rowId}-fund`}
                         value={row.preset}
                         onChange={(e) => update(row.key, { preset: e.target.value })}
@@ -112,7 +113,7 @@ export function HoldingsEditor({
                             {f.name}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                     <button
                       type="button"
@@ -153,7 +154,7 @@ export function HoldingsEditor({
                         <label htmlFor={`${rowId}-class`} className="block font-medium">
                           Type
                         </label>
-                        <select
+                        <Select
                           id={`${rowId}-class`}
                           value={row.assetClass}
                           onChange={(e) => update(row.key, { assetClass: e.target.value })}
@@ -164,7 +165,7 @@ export function HoldingsEditor({
                               {c}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       </div>
                     </div>
                   )}

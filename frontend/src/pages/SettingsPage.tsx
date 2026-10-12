@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, browserTabUrl, errorMessage, insideTauri } from "../api/client";
 import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/api";
+import { Select } from "../components/common/Select";
 
 const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
   fake: "Built-in sample banks. Nothing leaves your computer and no Plaid account is needed.",
@@ -270,7 +271,7 @@ export function SettingsPage() {
 
           <label className="block text-sm">
             <span className="font-medium">Theme</span>
-            <select
+            <Select
               value={settings.theme}
               disabled={saving}
               onChange={(e) => void save({ theme: e.target.value as Settings["theme"] })}
@@ -279,7 +280,7 @@ export function SettingsPage() {
               <option value="system">Match system</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
-            </select>
+            </Select>
           </label>
         </div>
       )}
@@ -290,7 +291,7 @@ export function SettingsPage() {
 
           <label className="block text-sm">
             <span className="font-medium">Data source</span>
-            <select
+            <Select
               value={settings.plaidEnvironment}
               disabled={saving}
               onChange={(e) => void save({ plaidEnvironment: e.target.value as PlaidEnvironment })}
@@ -299,7 +300,7 @@ export function SettingsPage() {
               <option value="fake">Demo (built-in sample data)</option>
               <option value="sandbox">Plaid Sandbox (test banks)</option>
               <option value="production">Plaid Production (real banks)</option>
-            </select>
+            </Select>
             <span className="text-xs text-slate-500">
               {ENVIRONMENT_HELP[settings.plaidEnvironment]}
             </span>

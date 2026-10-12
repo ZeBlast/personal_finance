@@ -18,6 +18,7 @@ import {
 } from "../../lib/categoryTrends";
 import { formatMinor } from "../../lib/money";
 import type { Account, Category } from "../../types/api";
+import { Select } from "../common/Select";
 
 /** Everything the user can change, remembered on this computer between visits. */
 interface Options {
@@ -461,7 +462,7 @@ export function CategoryExplorer() {
         <label htmlFor={`${id}-measure`} className="text-sm">
           Show
         </label>
-        <select
+        <Select
           id={`${id}-measure`}
           value={o.measure}
           onChange={(e) => set({ measure: e.target.value as Measure })}
@@ -472,7 +473,7 @@ export function CategoryExplorer() {
               {m.label}
             </option>
           ))}
-        </select>
+        </Select>
         <Segmented
           label="Chart"
           value={o.chart}

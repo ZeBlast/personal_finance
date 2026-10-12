@@ -5,6 +5,7 @@ import { useApi } from "../hooks/useApi";
 import type { Account } from "../types/api";
 import { resolveConfig } from "./config";
 import type { AnyWidget, ConfigField, ConfigValue, PlacedWidget } from "./types";
+import { Select } from "../components/common/Select";
 
 const inputClass =
   "mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800";
@@ -19,7 +20,7 @@ function FieldControl({
   field: ConfigField;
   value: ConfigValue;
   accounts: Account[];
-  categories: Array<{ id: number; label: string }>;
+  categories: Array<{ id: number; label: string; depth?: number }>;
   onChange: (value: ConfigValue) => void;
 }) {
   const id = useId();
@@ -92,7 +93,7 @@ function FieldControl({
       return (
         <div>
           {label}
-          <select
+          <Select
             id={id}
             value={String(value)}
             aria-describedby={described}
@@ -104,7 +105,7 @@ function FieldControl({
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
           {help}
         </div>
       );
@@ -112,7 +113,7 @@ function FieldControl({
       return (
         <div>
           {label}
-          <select
+          <Select
             id={id}
             value={String(value)}
             aria-describedby={described}
@@ -127,7 +128,7 @@ function FieldControl({
                   {a.name}
                 </option>
               ))}
-          </select>
+          </Select>
           {help}
         </div>
       );
@@ -135,7 +136,7 @@ function FieldControl({
       return (
         <div>
           {label}
-          <select
+          <Select
             id={id}
             value={String(value)}
             aria-describedby={described}
@@ -144,11 +145,11 @@ function FieldControl({
           >
             <option value="">All categories</option>
             {categories.map((c) => (
-              <option key={c.id} value={c.id}>
+              <option key={c.id} value={c.id} data-depth={c.depth}>
                 {c.label}
               </option>
             ))}
-          </select>
+          </Select>
           {help}
         </div>
       );

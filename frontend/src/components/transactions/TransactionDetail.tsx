@@ -15,6 +15,7 @@ import { RefundLink } from "./RefundLink";
 import { MerchantGroupField } from "./MerchantGroupField";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { CategorySelect } from "../common/CategorySelect";
+import { Select } from "../common/Select";
 
 type TransferChoice = "auto" | "yes" | "no";
 type OnlineChoice = "auto" | "yes" | "no";
@@ -273,7 +274,7 @@ export function TransactionDetail({
           >
             <option value="">Uncategorized (let the rules decide)</option>
             {options.map((o) => (
-              <option key={o.id} value={o.id}>
+              <option key={o.id} value={o.id} data-depth={o.depth}>
                 {o.label}
               </option>
             ))}
@@ -341,7 +342,7 @@ export function TransactionDetail({
           <label htmlFor={`${id}-transfer`} className="block text-sm font-medium">
             Transfer between my own accounts
           </label>
-          <select
+          <Select
             id={`${id}-transfer`}
             value={transfer}
             onChange={(e) => setTransfer(e.target.value as TransferChoice)}
@@ -357,7 +358,7 @@ export function TransactionDetail({
             </option>
             <option value="yes">Yes, money moved between my own accounts</option>
             <option value="no">No, this is income or spending</option>
-          </select>
+          </Select>
           <p className="mt-1 text-xs text-slate-500">
             Transfers between your own accounts are left out of income and spending. Money sent to
             or received from another person counts.
@@ -388,7 +389,7 @@ export function TransactionDetail({
           <label htmlFor={`${id}-online`} className="block text-sm font-medium">
             Bought online
           </label>
-          <select
+          <Select
             id={`${id}-online`}
             value={online}
             onChange={(e) => setOnline(e.target.value as OnlineChoice)}
@@ -400,7 +401,7 @@ export function TransactionDetail({
             </option>
             <option value="yes">Yes, this was bought online</option>
             <option value="no">No, this was not bought online</option>
-          </select>
+          </Select>
           <p className="mt-1 text-xs text-slate-500">
             Cards with an online cashback rate use this. The bank&apos;s answer is a guess and is
             sometimes wrong, and your choice is kept when the account syncs.

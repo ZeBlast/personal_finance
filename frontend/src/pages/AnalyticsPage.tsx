@@ -5,6 +5,7 @@ import { basisText, periodLabel, seriesPath } from "../lib/networthSeries";
 import { formatMinor } from "../lib/money";
 import { formatDay } from "../lib/time";
 import type { Granularity, NetWorthSeries } from "../types/data";
+import { Select } from "../components/common/Select";
 
 const RANGES = [
   { value: "30", label: "1 month" },
@@ -73,7 +74,7 @@ export function AnalyticsPage() {
             />
             Show assets and debts
           </label>
-          <select
+          <Select
             aria-label="How far back"
             value={range}
             onChange={(e) => setRange(e.target.value)}
@@ -84,7 +85,7 @@ export function AnalyticsPage() {
                 {r.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 
