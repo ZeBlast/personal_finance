@@ -5,13 +5,30 @@ import {
   inSpan,
   joinMonth,
   orderSpan,
+  sameDayIn,
   spanLength,
   spanTitle,
   splitMonth,
   stepDay,
   weekdayOf,
+  weekOf,
   yearChoices,
 } from "./range";
+
+describe("moving between months", () => {
+  it("keeps the day of the month, or the month's last day when it is shorter", () => {
+    expect(sameDayIn("2026-11", "2026-10-14")).toBe("2026-11-14");
+    expect(sameDayIn("2026-02", "2026-01-31")).toBe("2026-02-28");
+    expect(sameDayIn("2028-02", "2028-01-30")).toBe("2028-02-29");
+  });
+
+  it("finds the Sunday-to-Saturday week around a day, across a month end", () => {
+    expect(weekOf("2026-10-13")).toEqual({ from: "2026-10-11", to: "2026-10-17" });
+    expect(weekOf("2026-10-31")).toEqual({ from: "2026-10-25", to: "2026-10-31" });
+    expect(weekOf("2026-11-02")).toEqual({ from: "2026-11-01", to: "2026-11-07" });
+    expect(weekOf("2026-12-31")).toEqual({ from: "2026-12-27", to: "2027-01-02" });
+  });
+});
 
 describe("spans of days", () => {
   it("orders two days whichever was chosen first", () => {

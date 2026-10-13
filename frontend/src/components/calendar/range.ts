@@ -78,6 +78,19 @@ export function weekdayOf(day: string): number {
   return new Date(y, m - 1, d).getDay();
 }
 
+/** The same day of the month in another month, or that month's last day when it is shorter. */
+export function sameDayIn(month: string, day: string): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${month}-${String(Math.min(Number(day.slice(8)), last)).padStart(2, "0")}`;
+}
+
+/** The Sunday-to-Saturday week around a day. */
+export function weekOf(day: string): DaySpan {
+  const back = weekdayOf(day);
+  return { from: stepDay(day, -back), to: stepDay(day, 6 - back) };
+}
+
 /** One cell of the month grid: days from the month before and after fill the first and last weeks. */
 export interface GridCell {
   date: string;

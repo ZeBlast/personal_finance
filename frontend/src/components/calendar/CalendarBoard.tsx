@@ -4,7 +4,7 @@ import { useDateBasis } from "../../hooks/useDateBasis";
 import { useApi } from "../../hooks/useApi";
 import { useInstitutions, type Institution } from "../../hooks/useInstitutions";
 import { formatMinor } from "../../lib/money";
-import { monthOf, shiftMonth, today } from "../../lib/period";
+import { firstOfMonth, lastOfMonth, monthOf, shiftMonth, today } from "../../lib/period";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { CalendarDay, CalendarMonth } from "../../types/analytics";
@@ -17,7 +17,10 @@ import {
   MONTH_NAMES,
   orderSpan,
   splitMonth,
+  sameDayIn,
   stepDay,
+  weekdayOf,
+  weekOf,
   yearChoices,
   type DaySpan,
 } from "./range";
@@ -25,8 +28,6 @@ import { Select } from "../common/Select";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** How far the wheel must turn before the month changes, and the pause before it can again. */
-const WHEEL_STEP = 60;
-const WHEEL_PAUSE_MS = 450;
 
 const selectClass =
   "rounded-md border border-transparent bg-transparent px-2 py-1 text-lg font-semibold hover:border-slate-300 focus:border-blue-500 dark:hover:border-slate-600 [&>option]:text-sm [&>option]:font-normal";
@@ -120,8 +121,13 @@ function useMonths(month: string, accountId: string, basis: string) {
 
 /**
  * The big month calendar. Click a day to look at it; press on one day and drag to another (or
- * Shift+click) to look at everything from one day to the other. Turn the mouse wheel to go to the
- * next or previous month. With one day chosen, click the empty space in its box to write a note.
+ * Shift+click) to look at everything from one day to the other. The arrows, the month and year
+ * pickers and Today change the month; a single chosen day moves along to the same day of the new
+ * month. With one day chosen, click the empty space in its box to write a note.
+ *
+ * From the keyboard the month is one grid with one stop on Tab: the arrows move between days,
+ * Shift+arrows stretch the chosen span, Home and End go to the week's ends, Page Up and Page Down
+ * change the month (with Shift, the year), Enter or Space chooses, and Escape clears.
  */
 export function CalendarBoard({
   accountId,
@@ -137,6 +143,8 @@ export function CalendarBoard({
   const [direction, setDirection] = useState<"next" | "prev" | null>(null);
   const [dragging, setDragging] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  /** The day that takes the keyboard focus: the only day reached with Tab. */
+  const [active, setActive] = useState(selection?.from ?? todayDay);
   // The day a drag or a Shift+click extends from.
   const anchor = useRef<string | null>(selection?.from ?? null);
   const moved = useRef(false);
@@ -150,6 +158,8 @@ export function CalendarBoard({
   const weeks = useMemo(() => fullMonthGrid(month), [month]);
   const { year, monthIndex } = splitMonth(month);
   const thisYear = Number(todayDay.slice(0, 4));
+  // The day Tab reaches: the active one when it is shown, otherwise the month's first.
+  const tabbable = weeks.flat().some((c) => c.date === active) ? active : `${month}-01`;
 
   function setMonth(next: string): void {
     if (next === month) return;
@@ -157,30 +167,42 @@ export function CalendarBoard({
     setEditing(null);
     setMonthState(next);
   }
-  const go = (delta: number): void => setMonth(shiftMonth(month, delta));
+  /**
+   * A month chosen on purpose (arrows, pickers): a single chosen day moves to the same day of that
+   * month, so the panel always matches the grid. A span is kept, and the panel names it in full.
+   */
+  function navigate(next: string): void {
+    setMonth(next);
+    if (selection && isSingleDay(selection) && monthOf(selection.from) !== next) {
+      const day = sameDayIn(next, selection.from);
+      anchor.current = day;
+      setActive(day);
+      onSelect({ from: day, to: day });
+    }
+  }
+  const go = (delta: number): void => navigate(shiftMonth(month, delta));
 
-  // The mouse wheel turns the months. The listener is not passive so the page does not scroll too.
-  const goRef = useRef(go);
-  goRef.current = go;
+  /** Puts the keyboard focus on a day, turning to its month first. */
+  function focusDay(day: string): void {
+    setActive(day);
+    if (monthOf(day) !== month) setMonth(monthOf(day));
+    requestAnimationFrame(() =>
+      grid.current?.querySelector<HTMLElement>(`[data-date="${day}"]`)?.focus(),
+    );
+  }
+
+  /** Chooses a span (or day) around today and shows it. */
+  function chooseAround(span: DaySpan): void {
+    setMonth(monthOf(todayDay));
+    anchor.current = span.from;
+    onSelect(span);
+    focusDay(todayDay);
+  }
+
+  // A day chosen from elsewhere (the panel's list of notes) becomes the one Tab reaches.
   useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    let total = 0;
-    let pausedUntil = 0;
-    const onWheel = (e: WheelEvent): void => {
-      if (editing) return;
-      e.preventDefault();
-      const now = Date.now();
-      if (now < pausedUntil) return;
-      total += e.deltaY;
-      if (Math.abs(total) < WHEEL_STEP) return;
-      goRef.current(total > 0 ? 1 : -1);
-      total = 0;
-      pausedUntil = now + WHEEL_PAUSE_MS;
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [editing]);
+    if (selection) setActive(selection.from);
+  }, [selection]);
 
   // Releasing the mouse anywhere ends a drag.
   useEffect(() => {
@@ -232,14 +254,35 @@ export function CalendarBoard({
       }
       return;
     }
-    const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
-    if (delta === undefined) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onSelect(null);
+      return;
+    }
+    const arrow = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+    const back = weekdayOf(date);
+    const next =
+      arrow !== undefined
+        ? stepDay(date, arrow)
+        : e.key === "Home"
+          ? stepDay(date, -back)
+          : e.key === "End"
+            ? stepDay(date, 6 - back)
+            : e.key === "PageUp" || e.key === "PageDown"
+              ? sameDayIn(
+                  shiftMonth(monthOf(date), (e.key === "PageUp" ? -1 : 1) * (e.shiftKey ? 12 : 1)),
+                  date,
+                )
+              : null;
+    if (next === null) return;
     e.preventDefault();
-    const next = stepDay(date, delta);
-    if (monthOf(next) !== month) setMonth(monthOf(next));
-    requestAnimationFrame(() =>
-      grid.current?.querySelector<HTMLElement>(`[data-date="${next}"]`)?.focus(),
-    );
+    // Shift+arrow stretches the chosen span from where it started to the new day.
+    if (e.shiftKey && arrow !== undefined) {
+      const from = anchor.current ?? date;
+      anchor.current = from;
+      onSelect(orderSpan(from, next));
+    }
+    focusDay(next);
   }
 
   return (
@@ -257,7 +300,7 @@ export function CalendarBoard({
           <Select
             aria-label="Month"
             value={monthIndex}
-            onChange={(e) => setMonth(joinMonth(year, Number(e.target.value)))}
+            onChange={(e) => navigate(joinMonth(year, Number(e.target.value)))}
             className={selectClass}
           >
             {MONTH_NAMES.map((name, i) => (
@@ -269,7 +312,7 @@ export function CalendarBoard({
           <Select
             aria-label="Year"
             value={year}
-            onChange={(e) => setMonth(joinMonth(Number(e.target.value), monthIndex))}
+            onChange={(e) => navigate(joinMonth(Number(e.target.value), monthIndex))}
             className={selectClass}
           >
             {yearChoices(year, thisYear).map((y) => (
@@ -284,11 +327,35 @@ export function CalendarBoard({
         </div>
         <div className="flex items-center gap-2">
           {data.loading && <span className="text-xs text-slate-500">Loading...</span>}
-          {month !== monthOf(todayDay) && (
-            <button type="button" onClick={() => setMonth(monthOf(todayDay))} className={navButton}>
-              Today
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => chooseAround({ from: todayDay, to: todayDay })}
+            className={navButton}
+            title="Show this month and choose today"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseAround(weekOf(todayDay))}
+            className={navButton}
+            title="Choose this week, Sunday to Saturday"
+          >
+            This week
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              chooseAround({
+                from: firstOfMonth(monthOf(todayDay)),
+                to: lastOfMonth(monthOf(todayDay)),
+              })
+            }
+            className={navButton}
+            title="Choose this whole month"
+          >
+            This month
+          </button>
         </div>
       </div>
 
@@ -307,48 +374,56 @@ export function CalendarBoard({
         <div
           key={month}
           ref={grid}
-          role="group"
+          role="grid"
           aria-label={`${MONTH_NAMES[monthIndex]} ${year}`}
+          aria-multiselectable="true"
           className={`grid h-full grid-cols-7 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200 select-none dark:border-slate-700 dark:bg-slate-700 ${
             direction === "next" ? "pf-month-next" : direction === "prev" ? "pf-month-prev" : ""
           }`}
           style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }}
         >
-          {weeks.flat().map(({ date, inMonth }) => (
-            <DayCell
-              key={date}
-              date={date}
-              inMonth={inMonth}
-              isToday={date === todayDay}
-              day={data.days.get(date)}
-              note={data.notes[date]}
-              expected={data.expected.get(date)}
-              inside={inSpan(date, selection)}
-              isEdge={selection !== null && (date === selection.from || date === selection.to)}
-              editing={editing === date}
-              institutions={institutions}
-              onPress={(e) => press(e, date)}
-              onEnter={() => enter(date)}
-              onKeyDown={(e) => keys(e, date)}
-              chosen={selection !== null && isSingleDay(selection) && selection.from === date}
-              onEditNote={() => setEditing(date)}
-              onDoneEditing={(saved) => {
-                setEditing(null);
-                if (saved) {
-                  data.reloadNotes();
-                  announceDataChanged();
-                }
-              }}
-            />
+          {weeks.map((week) => (
+            <div key={week[0]!.date} role="row" className="contents">
+              {week.map(({ date, inMonth }) => (
+                <DayCell
+                  key={date}
+                  date={date}
+                  inMonth={inMonth}
+                  isToday={date === todayDay}
+                  day={data.days.get(date)}
+                  note={data.notes[date]}
+                  expected={data.expected.get(date)}
+                  inside={inSpan(date, selection)}
+                  isEdge={selection !== null && (date === selection.from || date === selection.to)}
+                  editing={editing === date}
+                  institutions={institutions}
+                  tabbable={date === tabbable}
+                  onFocus={() => setActive(date)}
+                  onPress={(e) => press(e, date)}
+                  onEnter={() => enter(date)}
+                  onKeyDown={(e) => keys(e, date)}
+                  chosen={selection !== null && isSingleDay(selection) && selection.from === date}
+                  onEditNote={() => setEditing(date)}
+                  onDoneEditing={(saved) => {
+                    setEditing(null);
+                    if (saved) {
+                      data.reloadNotes();
+                      announceDataChanged();
+                    }
+                  }}
+                />
+              ))}
+            </div>
           ))}
         </div>
       </div>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
         Click a day, or press on one day and drag to another (or Shift+click), to total up the days
-        in between. Turn the mouse wheel to change month. Click a chosen day's note box to write in
-        it; press Enter or click away to save. Dots on the left are the kinds of transactions that
-        day (by category); logos on the right are the banks involved. ↻ marks an expected
-        transaction, ● a pending one.
+        in between. With the keyboard: arrows move, Shift+arrows stretch the span, Page Up and Page
+        Down change month, Escape clears. Click a chosen day's note box to write in it; press Enter
+        or click away to save. Dots on the left are the kinds of transactions that day (by
+        category); logos on the right are the banks involved. ↻ marks an expected transaction, ● a
+        pending one.
       </p>
     </div>
   );
@@ -368,6 +443,8 @@ function DayCell({
   isEdge,
   editing,
   institutions,
+  tabbable,
+  onFocus,
   onPress,
   onEnter,
   onKeyDown,
@@ -385,6 +462,9 @@ function DayCell({
   isEdge: boolean;
   editing: boolean;
   institutions: Map<number, Institution>;
+  /** The one day reached with Tab. */
+  tabbable: boolean;
+  onFocus: () => void;
   onPress: (e: PointerEvent<HTMLDivElement>) => void;
   onEnter: () => void;
   onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
@@ -417,11 +497,15 @@ function DayCell({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role="gridcell"
+      tabIndex={tabbable ? 0 : -1}
       data-date={date}
       aria-label={cellLabel(date, day, note, expected)}
-      aria-pressed={inside}
+      aria-selected={inside}
+      aria-current={isToday ? "date" : undefined}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) onFocus();
+      }}
       onPointerDown={onPress}
       onPointerEnter={onEnter}
       onKeyDown={onKeyDown}

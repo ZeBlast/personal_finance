@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { setDateBasis, useDateBasis } from "../hooks/useDateBasis";
 import { CalendarBoard } from "../components/calendar/CalendarBoard";
 import { DayPanel } from "../components/calendar/DayPanel";
@@ -17,19 +17,8 @@ export function CalendarPage() {
   const accounts = useApi<Account[]>("/accounts");
   const { categories } = useCategories();
 
-  // Clicking anywhere outside the calendar and its panel deselects the day or days. A note being
-  // typed is saved by its box on the way out, so nothing typed is lost.
-  useEffect(() => {
-    if (selection === null) return;
-    const onPress = (event: PointerEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("[data-keep-selection], [role=dialog]")) return;
-      setSelection(null);
-    };
-    document.addEventListener("pointerdown", onPress, true);
-    return () => document.removeEventListener("pointerdown", onPress, true);
-  }, [selection]);
+  // The selection stays while other controls are used; the panel's Clear (or Escape on the
+  // calendar) clears it.
 
   return (
     <section className="flex h-full min-h-[36rem] flex-col gap-3">

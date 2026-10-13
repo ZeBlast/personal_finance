@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import { useDateBasis } from "../../hooks/useDateBasis";
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../../api/client";
@@ -6,9 +6,13 @@ import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
-import type { Account, Category, Transaction, TransactionPage } from "../../types/api";
+import type { Account, Category, Transaction } from "../../types/api";
 import type { CalendarEvent, PeriodSummary, PlannedItem } from "../../types/calendar";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
+import { SplitDialog } from "../transactions/SplitDialog";
+import { TransactionDetail } from "../transactions/TransactionDetail";
+import { LoadMore } from "./LoadMore";
+import { usePagedTransactions } from "./usePagedTransactions";
 import { buttonClass, primaryClass } from "../investments/styles";
 import { DayTransactionsTable } from "./DayTransactionsTable";
 import { NoteBox } from "./NoteBox";
@@ -271,15 +275,26 @@ function HowCalculated({ s }: { s: PeriodSummary }) {
   );
 }
 
+/** The Transactions page, showing these days, this account and this date basis. */
+function transactionsLink(span: DaySpan, accountId: string, basis: string): string {
+  const q = new URLSearchParams({ from: span.from, to: span.to });
+  if (accountId) q.set("account", accountId);
+  if (basis === "posted") q.set("dateBasis", "posted");
+  return `/transactions?${q}`;
+}
+
 function TransactionList({
   span,
   accountId,
-  onOpen,
+  onOpenTransaction,
+  onShowTable,
 }: {
   span: DaySpan;
   accountId: string;
+  /** Opens one transaction's details. */
+  onOpenTransaction: (t: Transaction) => void;
   /** Opens the table of these days' transactions. */
-  onOpen: () => void;
+  onShowTable: () => void;
 }) {
   const basis = useDateBasis();
   const query = new URLSearchParams({
@@ -290,24 +305,37 @@ function TransactionList({
     dateBasis: basis,
   });
   if (accountId) query.set("accountId", accountId);
-  const { data, error, loading } = useApi<TransactionPage>(`/transactions?${query}`);
+  const list = usePagedTransactions(query);
   const single = isSingleDay(span);
 
   return (
     <div>
-      {error && (
+      {list.error && (
         <p role="alert" className="text-sm text-red-600">
-          {error}
+          {list.error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
-      {data && data.items.length === 0 && (
+      {list.loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {list.items && list.items.length === 0 && (
         <p className="text-sm text-slate-500">
           No transactions {single ? "on this day" : "in this span"}.
         </p>
       )}
+      {list.items && list.items.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2 text-xs">
+          <button type="button" className={smallButton} onClick={onShowTable}>
+            View all as a table
+          </button>
+          <Link
+            to={transactionsLink(span, accountId, basis)}
+            className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+          >
+            Open in Transactions
+          </Link>
+        </div>
+      )}
       <ul className="space-y-1">
-        {data?.items.map((t) => (
+        {list.items?.map((t) => (
           <li key={t.id} className="text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="flex min-w-0 items-center gap-2">
@@ -319,8 +347,8 @@ function TransactionList({
                 <button
                   type="button"
                   className="truncate text-left hover:underline"
-                  title="Show these days' transactions as a table"
-                  onClick={onOpen}
+                  title="Open this transaction"
+                  onClick={() => onOpenTransaction(t)}
                 >
                   {t.merchant}
                 </button>
@@ -346,11 +374,13 @@ function TransactionList({
           </li>
         ))}
       </ul>
-      {data && data.total > data.items.length && (
-        <p className="mt-1 text-xs text-slate-500">
-          Showing the first {data.items.length} of {data.total}. Use the Transactions page for the
-          rest.
-        </p>
+      {list.items && (
+        <LoadMore
+          shown={list.items.length}
+          total={list.total}
+          busy={list.loadingMore}
+          onMore={() => void list.loadMore()}
+        />
       )}
     </div>
   );
@@ -624,6 +654,10 @@ export function DayPanel({
   const [notice, setNotice] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [detailTx, setDetailTx] = useState<Transaction | null>(null);
+  const [splitting, setSplitting] = useState<Transaction | null>(null);
+  /** One transaction: entered by hand opens its editor; from a bank, its details. */
+  const openTx = (t: Transaction) => (t.source === "manual" ? setEditingTx(t) : setDetailTx(t));
   const [showTable, setShowTable] = useState(false);
   const [planning, setPlanning] = useState<PlannedItem | "new" | null>(null);
 
@@ -648,12 +682,13 @@ export function DayPanel({
 
   async function openTransaction(id: number): Promise<void> {
     try {
-      setEditingTx(await api<Transaction>(`/transactions/${id}`));
+      openTx(await api<Transaction>(`/transactions/${id}`));
     } catch (e) {
       setNotice({ kind: "error", text: errorMessage(e, "Could not open that transaction.") });
     }
   }
 
+  const ids = useId();
   const s = summary.data;
   // A future day with something expected opens on what is expected.
   const fitting: Tab = future && (s?.expected.count ?? 0) > 0 ? "expected" : "transactions";
@@ -667,6 +702,25 @@ export function DayPanel({
       label: s && s.expected.count > 0 ? `Expected (${s.expected.count})` : "Expected",
     },
   ];
+
+  function tabKeys(e: KeyboardEvent<HTMLButtonElement>): void {
+    const order = tabs.map((t) => t.id);
+    const at = order.indexOf(tab);
+    const next =
+      e.key === "ArrowRight"
+        ? order[(at + 1) % order.length]
+        : e.key === "ArrowLeft"
+          ? order[(at - 1 + order.length) % order.length]
+          : e.key === "Home"
+            ? order[0]
+            : e.key === "End"
+              ? order[order.length - 1]
+              : undefined;
+    if (!next) return;
+    e.preventDefault();
+    setTab(next);
+    requestAnimationFrame(() => document.getElementById(`${ids}-tab-${next}`)?.focus());
+  }
 
   return (
     <aside
@@ -753,10 +807,14 @@ export function DayPanel({
           {tabs.map((t) => (
             <button
               key={t.id}
+              id={`${ids}-tab-${t.id}`}
               type="button"
               role="tab"
               aria-selected={tab === t.id}
+              aria-controls={`${ids}-panel`}
+              tabIndex={tab === t.id ? 0 : -1}
               onClick={() => setTab(t.id)}
+              onKeyDown={tabKeys}
               className={`-mb-px border-b-2 px-3 py-2 text-sm ${
                 tab === t.id
                   ? "border-blue-600 font-medium text-blue-700 dark:text-blue-400"
@@ -768,9 +826,20 @@ export function DayPanel({
           ))}
         </div>
 
-        <div role="tabpanel">
+        <div
+          role="tabpanel"
+          id={`${ids}-panel`}
+          aria-labelledby={`${ids}-tab-${tab}`}
+          tabIndex={0}
+          className="rounded outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
           {tab === "transactions" && (
-            <TransactionList span={span} accountId={accountId} onOpen={() => setShowTable(true)} />
+            <TransactionList
+              span={span}
+              accountId={accountId}
+              onOpenTransaction={openTx}
+              onShowTable={() => setShowTable(true)}
+            />
           )}
           {tab === "notes" &&
             (single ? (
@@ -834,9 +903,9 @@ export function DayPanel({
         <DayTransactionsTable
           span={span}
           accountId={accountId}
-          onEdit={(t) => {
+          onOpen={(t) => {
             setShowTable(false);
-            setEditingTx(t);
+            openTx(t);
           }}
           onClose={() => setShowTable(false)}
         />
@@ -852,6 +921,49 @@ export function DayPanel({
             announceDataChanged();
           }}
           onClose={() => setEditingTx(null)}
+          onSplit={() => {
+            setSplitting(editingTx);
+            setEditingTx(null);
+          }}
+        />
+      )}
+      {detailTx && (
+        <TransactionDetail
+          transaction={detailTx}
+          categories={categories}
+          onClose={() => setDetailTx(null)}
+          onSplit={() => {
+            setSplitting(detailTx);
+            setDetailTx(null);
+          }}
+          onSaved={(updated, rule) => {
+            setDetailTx(null);
+            setNotice({
+              kind: "info",
+              text: rule
+                ? `Rule “${rule.name}” created. ${rule.changed} transaction${rule.changed === 1 ? "" : "s"} recategorized.`
+                : `${updated.merchant} was saved.`,
+            });
+            announceDataChanged();
+          }}
+        />
+      )}
+      {splitting && (
+        <SplitDialog
+          transaction={splitting}
+          categories={categories}
+          onClose={() => setSplitting(null)}
+          onSaved={(updated) => {
+            setSplitting(null);
+            setNotice({
+              kind: "info",
+              text:
+                updated.splits.length > 0
+                  ? `${updated.merchant} is split across ${updated.splits.length} categories.`
+                  : `${updated.merchant} is no longer split.`,
+            });
+            announceDataChanged();
+          }}
         />
       )}
       {planning && (

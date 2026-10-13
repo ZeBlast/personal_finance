@@ -6,7 +6,9 @@ import { useDateBasis } from "../../hooks/useDateBasis";
 import { formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
 import type { CalendarEvent } from "../../types/calendar";
-import type { Transaction, TransactionPage } from "../../types/api";
+import type { Transaction } from "../../types/api";
+import { LoadMore } from "./LoadMore";
+import { usePagedTransactions } from "./usePagedTransactions";
 import { spanTitle, type DaySpan } from "./range";
 
 const LIMIT = 200; // the most the server returns at once
@@ -18,13 +20,13 @@ const LIMIT = 200; // the most the server returns at once
 export function DayTransactionsTable({
   span,
   accountId,
-  onEdit,
+  onOpen,
   onClose,
 }: {
   span: DaySpan;
   accountId: string;
-  /** Opens a transaction entered by hand for editing. */
-  onEdit: (t: Transaction) => void;
+  /** Opens one transaction (its editor, or a bank one's details). */
+  onOpen: (t: Transaction) => void;
   onClose: () => void;
 }) {
   const basis = useDateBasis();
@@ -40,7 +42,12 @@ export function DayTransactionsTable({
     txQuery.set("accountId", accountId);
     plannedQuery.set("accountId", accountId);
   }
-  const txs = useApi<TransactionPage>(`/transactions?${txQuery}`);
+  const list = usePagedTransactions(txQuery);
+  const txs = {
+    data: list.items ? { items: list.items } : null,
+    loading: list.loading,
+    error: list.error,
+  };
   const planned = useApi<CalendarEvent[]>(`/calendar/expected?${plannedQuery}`);
   // A pending entry already listed below (its own date is in these days) is not listed twice.
   const listed = new Set((txs.data?.items ?? []).map((t) => t.id));
@@ -113,18 +120,14 @@ export function DayTransactionsTable({
                     {t.pending ? "Pending" : formatDay(t.date)}
                   </td>
                   <td className="max-w-56 min-w-32 px-2 py-2 font-medium">
-                    {t.source === "manual" ? (
-                      <button
-                        type="button"
-                        className="text-left hover:underline"
-                        title="Edit this transaction"
-                        onClick={() => onEdit(t)}
-                      >
-                        {t.merchant}
-                      </button>
-                    ) : (
-                      t.merchant
-                    )}
+                    <button
+                      type="button"
+                      className="text-left hover:underline"
+                      title="Open this transaction"
+                      onClick={() => onOpen(t)}
+                    >
+                      {t.merchant}
+                    </button>
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">
                     <span
@@ -161,10 +164,13 @@ export function DayTransactionsTable({
           </table>
         </div>
       )}
-      {txs.data && txs.data.total > txs.data.items.length && (
-        <p className="mt-2 text-xs text-slate-500">
-          Showing the first {txs.data.items.length} of {txs.data.total}.
-        </p>
+      {list.items && (
+        <LoadMore
+          shown={list.items.length}
+          total={list.total}
+          busy={list.loadingMore}
+          onMore={() => void list.loadMore()}
+        />
       )}
     </Modal>
   );
