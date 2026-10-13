@@ -6,6 +6,8 @@ export interface SummaryParams {
   groupBy?: SummaryGroup;
   /** An account ID as text, or "" for all accounts (the form a widget setting stores). */
   accountId?: string;
+  /** A bank's name, "manual" for accounts kept by hand, or "" for all banks. */
+  institution?: string;
   /** A category ID as text, "none", or "" for all. */
   category?: string;
   rollupToParent?: boolean;
@@ -23,6 +25,7 @@ export function summaryPath(params: SummaryParams): string {
   const query = new URLSearchParams({ from: params.from, to: params.to });
   if (params.groupBy) query.set("groupBy", params.groupBy);
   if (params.accountId) query.set("accountId", params.accountId);
+  if (params.institution) query.set("institution", params.institution);
   if (params.category) query.set("category", params.category);
   if (params.rollupToParent) query.set("rollupToParent", "1");
   if (params.includeTransfers) query.set("includeTransfers", "1");

@@ -253,6 +253,13 @@
       "when": 1791851507393,
       "tag": "0035_statement_periods",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791863657491,
+      "tag": "0036_finer_dashboard_grid",
+      "breakpoints": true
     }
   ]
 }

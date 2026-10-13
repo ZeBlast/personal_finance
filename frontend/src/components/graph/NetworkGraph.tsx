@@ -117,7 +117,14 @@ interface Camera {
   scale: number;
 }
 
-export function NetworkGraph({ data }: { data: GraphData }) {
+export function NetworkGraph({
+  data,
+  fill = false,
+}: {
+  data: GraphData;
+  /** Fill the box it is in (a dashboard widget) instead of the window's height. */
+  fill?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const sim = useRef(new Simulation());
@@ -622,7 +629,9 @@ export function NetworkGraph({ data }: { data: GraphData }) {
   return (
     <div
       ref={wrapRef}
-      className="relative h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
+      className={`relative overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 ${
+        fill ? "h-full min-h-[12rem]" : "h-[calc(100vh-11rem)] min-h-[28rem]"
+      }`}
     >
       <canvas
         ref={canvasRef}

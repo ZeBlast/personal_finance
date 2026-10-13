@@ -136,6 +136,8 @@ export interface SummaryQuery {
   to: string;
   groupBy: Group;
   accountId?: number | undefined;
+  /** Only one bank's accounts: its name as the connection shows it, or "manual" for hand-kept. */
+  institution?: string | undefined;
   /** A category ID (including its subcategories) or "none" for uncategorized. */
   category?: number | "none" | undefined;
   /** For `groupBy=category`: show subcategories under their parent. */
@@ -244,6 +246,7 @@ function whereClauses(
     | "from"
     | "to"
     | "accountId"
+    | "institution"
     | "category"
     | "includeTransfers"
     | "includePending"
@@ -259,6 +262,8 @@ function whereClauses(
     accountScope(q.accountId),
   ];
   if (q.accountId !== undefined) parts.push(sql`t.account_id = ${q.accountId}`);
+  if (q.institution === "manual") parts.push(sql`a.plaid_item_id is null`);
+  else if (q.institution !== undefined) parts.push(sql`p.institution_name = ${q.institution}`);
   if (q.category === "none") parts.push(sql`t.category_id is null`);
   else if (q.category !== undefined) {
     parts.push(sql`(t.category_id = ${q.category} or c.parent_id = ${q.category})`);

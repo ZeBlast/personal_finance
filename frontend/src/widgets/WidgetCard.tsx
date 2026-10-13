@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { resolveConfig } from "./config";
 import { getWidget } from "./registry";
+import { readAppearance } from "./appearance";
+import { fromGrid } from "./layout";
 import type { PlacedWidget } from "./types";
 
 /**
@@ -43,16 +45,21 @@ const smallButton =
 /** One widget on the dashboard: its title bar (the drag handle), its content, and edit controls. */
 export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: Props) {
   const definition = getWidget(widget.widgetType);
-  const title = definition?.title ?? "Unavailable widget";
+  const look = readAppearance(widget.config);
+  const title = look.title || (definition?.title ?? "Unavailable widget");
+  // The title bar always shows while editing: it is what the widget is dragged by.
+  const showHeader = editing || !look.hideHeader;
 
   return (
     <article
       aria-label={title}
+      style={look.accent ? { borderLeft: `5px solid ${look.accent}` } : undefined}
       className={`flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-slate-800 ${
         editing ? "border-dashed border-blue-400" : "border-slate-200 dark:border-slate-700"
       }`}
     >
       <header
+        hidden={!showHeader}
         className={`widget-drag-handle flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-700 ${
           editing ? "cursor-move bg-blue-50 dark:bg-slate-900" : ""
         }`}
@@ -68,7 +75,8 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: P
         </h2>
         {editing && (
           <div className="flex shrink-0 items-center gap-1">
-            {definition?.configFields && definition.configFields.length > 0 && (
+            {/* Every widget has settings now: at least its title and look. */}
+            {definition && (
               <button
                 type="button"
                 className={smallButton}
@@ -104,7 +112,7 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: P
             <definition.Component
               config={resolveConfig(definition, widget.config)}
               instanceId={widget.key}
-              size={{ w: widget.w, h: widget.h }}
+              size={fromGrid({ w: widget.w, h: widget.h })}
             />
           </WidgetErrorBoundary>
         ) : (

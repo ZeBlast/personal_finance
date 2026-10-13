@@ -1,6 +1,24 @@
 import type { AnyWidget, PlacedWidget } from "./types";
 
-export const GRID_COLUMNS = 12;
+/**
+ * The grid is finer than the sizes widgets declare: a widget's `defaultSize` and `minSize` are in
+ * the classic 12 columns and 60px rows, and the dashboard works in GRID_SCALE times finer steps
+ * (24 columns, 30px rows), so a widget can be resized and placed in half steps.
+ */
+export const GRID_SCALE = 2;
+export const GRID_COLUMNS = 12 * GRID_SCALE;
+
+/** A declared size (12 columns, 60px rows) in grid steps. */
+export const toGrid = (size: { w: number; h: number }) => ({
+  w: size.w * GRID_SCALE,
+  h: size.h * GRID_SCALE,
+});
+
+/** A placed size in grid steps, as the size a widget's content is told (declared units). */
+export const fromGrid = (size: { w: number; h: number }) => ({
+  w: size.w / GRID_SCALE,
+  h: size.h / GRID_SCALE,
+});
 
 let counter = 0;
 /** A key for a widget that has no saved ID yet. */
@@ -36,7 +54,7 @@ export function buildDefaultLayout(widgets: AnyWidget[]): PlacedWidget[] {
   let y = 0;
   let rowHeight = 0;
   for (const widget of chosen) {
-    const { w, h } = widget.defaultSize;
+    const { w, h } = toGrid(widget.defaultSize);
     if (x + w > GRID_COLUMNS) {
       y += rowHeight;
       x = 0;
@@ -71,8 +89,7 @@ export function placeNew(widget: AnyWidget, existing: PlacedWidget[]): PlacedWid
     enabled: true,
     x: 0,
     y: nextFreeY(existing),
-    w: widget.defaultSize.w,
-    h: widget.defaultSize.h,
+    ...toGrid(widget.defaultSize),
     config: { ...(widget.defaultConfig ?? {}) },
   };
 }

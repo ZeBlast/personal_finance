@@ -7,15 +7,16 @@ import { DashboardSwitcher } from "../components/dashboard/DashboardSwitcher";
 import { useApi } from "../hooks/useApi";
 import type { DashboardList } from "../types/analytics";
 import { useDashboard } from "../hooks/useDashboard";
-import { GRID_COLUMNS, nextFreeY, placeNew } from "../widgets/layout";
+import { GRID_COLUMNS, GRID_SCALE, nextFreeY, placeNew, toGrid } from "../widgets/layout";
 import { AddWidgetDialog } from "../widgets/AddWidgetDialog";
 import { getWidget } from "../widgets/registry";
 import { WidgetCard } from "../widgets/WidgetCard";
 import { WidgetSettingsDialog } from "../widgets/WidgetSettingsDialog";
 import type { PlacedWidget } from "../widgets/types";
 
-const ROW_HEIGHT = 60;
-const MARGIN: [number, number] = [12, 12];
+/** A classic row (60px) split into GRID_SCALE steps, with the gaps between them. */
+const MARGIN: [number, number] = [10, 10];
+const ROW_HEIGHT = (60 + MARGIN[1]) / GRID_SCALE - MARGIN[1];
 
 const buttonClass =
   "rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-700";
@@ -60,7 +61,8 @@ function WidgetGrid({
             // Pressing a button in a widget's title bar clicks it instead of starting a drag.
             cancel: "button",
           }}
-          resizeConfig={{ enabled: editing, handles: ["se"] }}
+          // Resize from any edge or corner.
+          resizeConfig={{ enabled: editing, handles: ["se", "sw", "ne", "nw", "s", "n", "e", "w"] }}
           onLayoutChange={onLayoutChange}
         >
           {children}
@@ -98,7 +100,9 @@ function DashboardView({
 
   const layout: Layout = visible.map((w) => {
     const min = getWidget(w.widgetType)?.minSize;
-    return { i: w.key, x: w.x, y: w.y, w: w.w, h: w.h, minW: min?.w ?? 2, minH: min?.h ?? 2 };
+    // Declared minimums are in the classic units; the grid is GRID_SCALE times finer.
+    const minGrid = min ? toGrid(min) : { w: 2, h: 2 };
+    return { i: w.key, x: w.x, y: w.y, w: w.w, h: w.h, minW: minGrid.w, minH: minGrid.h };
   });
 
   /** Moving or resizing in edit mode updates the draft; ignored otherwise and when nothing changed. */

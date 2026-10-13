@@ -34,6 +34,8 @@ export type ConfigField = { key: string; label: string; help?: string } & (
   | { type: "account"; accountType?: string; allLabel?: string }
   /** Stored as the category's ID, or "" for all categories. */
   | { type: "category" }
+  /** Stored as a bank's name, "manual" for accounts kept by hand, or "" for all banks. */
+  | { type: "institution" }
 );
 
 export type WidgetGroup = "Accounts" | "Spending" | "Budgets" | "Activity" | "Tools";

@@ -38,6 +38,8 @@ function sanitizeValue(
     case "account":
     case "category":
       return typeof stored === "string" && /^\d*$/.test(stored) ? stored : fallback;
+    case "institution":
+      return typeof stored === "string" && stored.length <= 200 ? stored : fallback;
   }
 }
 

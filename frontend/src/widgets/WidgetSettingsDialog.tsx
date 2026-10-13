@@ -6,6 +6,19 @@ import type { Account } from "../types/api";
 import { resolveConfig } from "./config";
 import type { AnyWidget, ConfigField, ConfigValue, PlacedWidget } from "./types";
 import { Select } from "../components/common/Select";
+import { appearanceConfig, MAX_TITLE, readAppearance, type Appearance } from "./appearance";
+
+/** Accent colours offered for a widget's left edge. */
+const ACCENTS = [
+  "#2563eb",
+  "#16a34a",
+  "#dc2626",
+  "#d97706",
+  "#9333ea",
+  "#0891b2",
+  "#db2777",
+  "#475569",
+];
 
 const inputClass =
   "mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800";
@@ -153,6 +166,35 @@ function FieldControl({
           {help}
         </div>
       );
+    case "institution": {
+      // The banks the accounts come from, and the hand-kept accounts as one more choice.
+      const banks = [
+        ...new Set(accounts.map((a) => a.institutionName).filter((n): n is string => !!n)),
+      ].sort((a, b) => a.localeCompare(b));
+      return (
+        <div>
+          {label}
+          <Select
+            id={id}
+            value={String(value)}
+            aria-describedby={described}
+            onChange={(e) => onChange(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">All banks</option>
+            {banks.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+            {accounts.some((a) => a.isManual) && (
+              <option value="manual">Accounts kept by hand</option>
+            )}
+          </Select>
+          {help}
+        </div>
+      );
+    }
   }
 }
 
@@ -174,17 +216,58 @@ export function WidgetSettingsDialog({
   const [config, setConfig] = useState<Record<string, ConfigValue>>(() =>
     resolveConfig(definition, widget.config),
   );
+  const [look, setLook] = useState<Appearance>(() => readAppearance(widget.config));
   const accounts = useApi<Account[]>("/accounts");
   const { categories } = useCategories();
 
   function submit(event: FormEvent): void {
     event.preventDefault();
-    onSave(resolveConfig(definition, config)); // checked again, so a half-typed number cannot slip through
+    // Checked again, so a half-typed number cannot slip through; the look rides along.
+    onSave({ ...resolveConfig(definition, config), ...appearanceConfig(look) });
   }
 
   return (
     <Modal title={`${definition.title} settings`} onClose={onCancel}>
       <form onSubmit={submit} className="space-y-4">
+        <fieldset className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+          <legend className="px-1 text-sm font-medium">Appearance</legend>
+          <label className="block text-sm">
+            Title
+            <input
+              value={look.title}
+              maxLength={MAX_TITLE}
+              placeholder={definition.title}
+              onChange={(e) => setLook((l) => ({ ...l, title: e.target.value }))}
+              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={look.hideHeader}
+              onChange={(e) => setLook((l) => ({ ...l, hideHeader: e.target.checked }))}
+            />
+            Hide the title bar (it still shows while editing the dashboard)
+          </label>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            Accent
+            {["", ...ACCENTS].map((c) => (
+              <button
+                key={c || "none"}
+                type="button"
+                aria-label={c ? `Accent ${c}` : "No accent"}
+                aria-pressed={look.accent === c}
+                onClick={() => setLook((l) => ({ ...l, accent: c }))}
+                className={`h-6 w-6 rounded-full border ${
+                  look.accent === c ? "ring-2 ring-blue-500 ring-offset-1" : ""
+                } ${c ? "border-transparent" : "border-slate-300 bg-white text-xs dark:border-slate-600 dark:bg-slate-800"}`}
+                style={c ? { backgroundColor: c } : undefined}
+              >
+                {c ? "" : "∅"}
+              </button>
+            ))}
+          </div>
+        </fieldset>
         {(definition.configFields ?? []).map((field) => (
           <FieldControl
             key={field.key}

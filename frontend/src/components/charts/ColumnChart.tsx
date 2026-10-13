@@ -31,12 +31,18 @@ export function ColumnChart({
   format,
   formatAxis,
   colorFor,
+  fit = false,
 }: {
   series: ColumnSeries[];
   groups: ColumnGroup[];
   format: (value: number) => string;
   formatAxis?: (value: number) => string;
   colorFor?: (value: number, seriesIndex: number) => string;
+  /**
+   * Shrink to fit the height of the box it is in (keeping its shape), legend included, instead of
+   * growing with its width. For a dashboard widget that may be short and wide.
+   */
+  fit?: boolean;
 }) {
   const all = groups.flatMap((g) => g.values);
   const top = niceMax(Math.max(0, ...all));
@@ -62,12 +68,12 @@ export function ColumnChart({
     .join("; ");
 
   return (
-    <div>
+    <div className={fit ? "flex h-full min-h-0 flex-col" : undefined}>
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
         aria-label={summary || "No data"}
-        className="h-auto w-full"
+        className={fit ? "min-h-0 w-full flex-1" : "h-auto w-full"}
       >
         {gridValues.map((value) => (
           <g key={value}>

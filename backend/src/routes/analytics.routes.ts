@@ -29,6 +29,8 @@ const summaryQuery = z.object({
   to: date,
   groupBy: z.enum(GROUPS).default("none"),
   accountId: z.coerce.number().int().positive().optional(),
+  /** One bank's accounts (its name), or "manual" for accounts kept by hand. */
+  institution: z.string().min(1).max(200).optional(),
   category: z.union([z.literal("none"), z.coerce.number().int().positive()]).optional(),
   rollupToParent: flag.optional(),
   includeTransfers: flag.optional(),
@@ -95,6 +97,7 @@ export function analyticsRoutes(db: AppDb): Router {
         to: q.to,
         groupBy: q.groupBy,
         accountId: q.accountId,
+        institution: q.institution,
         category: q.category,
         rollupToParent: q.rollupToParent,
         includeTransfers: q.includeTransfers ?? false,

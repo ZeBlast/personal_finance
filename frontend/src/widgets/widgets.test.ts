@@ -237,10 +237,11 @@ describe("default dashboard layout", () => {
       valid({ id: "second-widget", defaultEnabled: true, order: 2, defaultSize: { w: 4, h: 5 } }),
     ];
     const layout = buildDefaultLayout(widgets);
+    // In grid steps: twice the declared columns and rows (the grid is GRID_SCALE times finer).
     expect(layout.map((p) => [p.widgetType, p.x, p.y, p.w, p.h])).toEqual([
-      ["first-widget", 0, 0, 8, 3],
-      ["second-widget", 8, 0, 4, 5],
-      ["third-widget", 0, 5, 6, 2], // the next row starts below the tallest widget of the row above
+      ["first-widget", 0, 0, 16, 6],
+      ["second-widget", 16, 0, 8, 10],
+      ["third-widget", 0, 10, 12, 4], // the next row starts below the tallest widget of the row above
     ]);
   });
 

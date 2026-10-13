@@ -37,17 +37,27 @@ export default defineWidget({
 
 Each field has a `key`, a `label`, and a `type`:
 
-| type       | stored as                    | extra options                 |
-| ---------- | ---------------------------- | ----------------------------- |
-| `select`   | string                       | `options: [{ value, label }]` |
-| `number`   | number                       | `min`, `max`, `step`          |
-| `boolean`  | true / false                 |                               |
-| `text`     | string                       | `maxLength`                   |
-| `account`  | account ID as text, or `""`  | (a picker of all accounts)    |
-| `category` | category ID as text, or `""` | (a picker of all categories)  |
+| type          | stored as                      | extra options                 |
+| ------------- | ------------------------------ | ----------------------------- |
+| `select`      | string                         | `options: [{ value, label }]` |
+| `number`      | number                         | `min`, `max`, `step`          |
+| `boolean`     | true / false                   |                               |
+| `text`        | string                         | `maxLength`                   |
+| `account`     | account ID as text, or `""`    | (a picker of all accounts)    |
+| `category`    | category ID as text, or `""`   | (a picker of all categories)  |
+| `institution` | bank name, `"manual"`, or `""` | (a picker of the banks)       |
 
 `fields.ts` has ready-made ones used by many widgets: `periodField`, `accountField`, `categoryField`,
-`includeTransfersField`, `monthsField`, and `countField(key, label, min, max)`.
+`institutionField`, `includeTransfersField`, `monthsField`, and `countField(key, label, min, max)`.
+`scopeFields` is the account, bank and category settings together, and `scopeOf(config)` turns them
+into `summaryPath` options; `ScopeCaption` shows in words what a widget is narrowed to.
+
+Setting keys may not start with `_`: those hold every widget's appearance (its own title, a hidden
+title bar, an accent colour; see `appearance.ts`), which the settings dialog offers for all widgets.
+
+Sizes are declared in 12 columns and 60px rows; the dashboard itself is twice as fine (24 columns,
+30px rows, see `GRID_SCALE` in `layout.ts`), so people can place and resize widgets in half steps. The
+`size` a widget receives is in the declared units (it can be a half, such as 4.5).
 
 The `config` your component receives is **already checked**: unknown keys are dropped, values of the
 wrong type or out of range are replaced by your defaults, and settings added in a later version are

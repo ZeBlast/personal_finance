@@ -41,6 +41,8 @@ export function validateWidget(widget: AnyWidget, file = widget.id): string[] {
   for (const field of fields) {
     if (keys.has(field.key)) bad(`setting "${field.key}" is declared twice`);
     keys.add(field.key);
+    // Keys starting "_" hold every widget's appearance (see appearance.ts).
+    if (field.key.startsWith("_")) bad(`setting "${field.key}" may not start with "_"`);
     if (!field.label.trim()) bad(`setting "${field.key}" has no label`);
     if (field.type === "select") {
       const values = field.options.map((o) => o.value);
