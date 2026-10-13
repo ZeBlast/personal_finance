@@ -63,6 +63,10 @@ export interface AccountSummary {
   color: string | null;
   /** Current credit limit for credit accounts, from the limit history; null otherwise. */
   creditLimitMinor: number | null;
+  /** For a credit card: the day of the month its statement closes, when set. */
+  statementClosingDay: number | null;
+  /** For a credit card: the day of the month its payment is due, when set. */
+  statementDueDay: number | null;
 }
 
 const summaryColumns = {
@@ -84,6 +88,8 @@ const summaryColumns = {
   isManual: accounts.isManual,
   hidden: accounts.hidden,
   color: accounts.color,
+  statementClosingDay: accounts.statementClosingDay,
+  statementDueDay: accounts.statementDueDay,
 };
 
 /**

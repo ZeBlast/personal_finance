@@ -32,6 +32,7 @@ import {
 } from "../services/manual-transaction.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { importBankCsv } from "../services/bank-csv-import.service.js";
+import { setStatementSettings, statements } from "../services/statement.service.js";
 import { notFound } from "../utils/errors.js";
 
 const idParam = z.coerce.number().int().positive();
@@ -190,6 +191,23 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
   /** Makes a new collection account from an exported file. */
   router.post("/collections/import", (req, res) => {
     res.status(201).json(importCollectionFile(db, collectionFileSchema.parse(req.body)));
+  });
+
+  /** A credit card's statement closing and due days (null clears them). */
+  router.put("/accounts/:id/statement-settings", (req, res) => {
+    const day = z.number().int().min(1).max(31).nullable();
+    const body = z.object({ closingDay: day, dueDay: day.optional() }).strict().parse(req.body);
+    res.json(
+      setStatementSettings(db, idParam.parse(req.params["id"]), {
+        closingDay: body.closingDay,
+        dueDay: body.dueDay ?? null,
+      }),
+    );
+  });
+  /** A credit card's statement periods, newest first, with what happened in each. */
+  router.get("/accounts/:id/statements", (req, res) => {
+    const count = z.coerce.number().int().min(1).max(36).default(12).parse(req.query["count"]);
+    res.json(statements(db, idParam.parse(req.params["id"]), count));
   });
 
   /**

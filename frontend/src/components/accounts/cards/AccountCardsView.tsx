@@ -11,6 +11,7 @@ import { ManualTransactionDialog } from "../../transactions/ManualTransactionDia
 import { BankCsvImportDialog } from "../BankCsvImportDialog";
 import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
+import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
 
 /**
  * The experimental Accounts view: every account as a card in the style of the investment account
@@ -27,6 +28,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [adding, setAdding] = useState<Account | null>(null);
   const [importing, setImporting] = useState<Account | null>(null);
   const [managing, setManaging] = useState<Account | null>(null);
+  const [statementsOf, setStatementsOf] = useState<Account | null>(null);
 
   const all = accounts.data ?? [];
   const collections = all.filter(isCollection);
@@ -56,6 +58,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
       account={a}
       onAdd={() => setAdding(a)}
       onImport={() => setImporting(a)}
+      onStatements={() => setStatementsOf(a)}
     />
   );
 
@@ -101,6 +104,15 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
           account={importing}
           onDone={changed}
           onClose={() => setImporting(null)}
+        />
+      )}
+      {statementsOf && (
+        <StatementsDialog
+          account={statementsOf}
+          onClose={() => {
+            setStatementsOf(null);
+            accounts.reload();
+          }}
         />
       )}
       {managing && (
@@ -308,10 +320,12 @@ function AccountCard({
   account: a,
   onAdd,
   onImport,
+  onStatements,
 }: {
   account: Account;
   onAdd: () => void;
   onImport: () => void;
+  onStatements: () => void;
 }) {
   const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
@@ -400,7 +414,12 @@ function AccountCard({
                   />
                 </div>
                 <div className="mt-0.5 flex justify-between text-xs text-slate-500">
-                  <span>{used === null ? "" : `${Math.round(used * 100)}% used`}</span>
+                  <span>
+                    {used === null ? "" : `${Math.round(used * 100)}% used`}
+                    {a.statementClosingDay
+                      ? `${used === null ? "" : " · "}closes ${dayOfMonth(a.statementClosingDay)}`
+                      : ""}
+                  </span>
                   <span>{limit ? `Limit ${money(a, limit)}` : "No limit known"}</span>
                 </div>
               </div>
@@ -444,6 +463,7 @@ function AccountCard({
             <BackButton onClick={() => navigate(`/transactions?account=${a.id}`)}>
               Transactions
             </BackButton>
+            {credit && <BackButton onClick={onStatements}>Statements</BackButton>}
             {a.isManual && payment && (
               <>
                 <BackButton onClick={onAdd}>Add transaction</BackButton>

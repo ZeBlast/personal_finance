@@ -8,6 +8,7 @@ import type { Account } from "../../types/api";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { CashbackSection } from "./CashbackSection";
+import { StatementsButton } from "./StatementsDialog";
 import { BankCsvImportDialog } from "./BankCsvImportDialog";
 import { HiddenBadge, HideToggle } from "./HideToggle";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
@@ -390,6 +391,7 @@ export function ManualAccountsSection() {
               </div>
               {a.type === "credit" && (
                 <div className="basis-full">
+                  <StatementsButton account={a} />
                   <CashbackSection account={a} />
                 </div>
               )}

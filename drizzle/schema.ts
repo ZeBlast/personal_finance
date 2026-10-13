@@ -99,6 +99,13 @@ export const accounts = sqliteTable(
     source: text("source").notNull().default("plaid"),
     /** Display color used by lists and the calendar. */
     color: text("color"),
+    /**
+     * For a credit card: the day of the month its statement closes (1-31; a later day than the
+     * month has means its last day), set by the user. Null: no statement periods.
+     */
+    statementClosingDay: integer("statement_closing_day"),
+    /** For a credit card: the day of the month its payment is due, after the statement closes. */
+    statementDueDay: integer("statement_due_day"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

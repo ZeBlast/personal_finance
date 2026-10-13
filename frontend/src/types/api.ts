@@ -53,6 +53,10 @@ export interface Account {
   countsInTotals: boolean;
   color: string | null;
   creditLimitMinor: number | null;
+  /** For a credit card: the day of the month its statement closes, when set. */
+  statementClosingDay: number | null;
+  /** For a credit card: the day of the month its payment is due, when set. */
+  statementDueDay: number | null;
 }
 
 export interface SyncRun {

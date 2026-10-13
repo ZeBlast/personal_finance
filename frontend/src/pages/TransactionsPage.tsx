@@ -27,6 +27,7 @@ interface Filters {
   institution: string; // "" = all, an institution's name, or "manual"
   from: string;
   to: string;
+  dateBasis: string; // "" = transaction date, "posted" = the date it posted (as statements do)
 }
 
 const NO_FILTERS: Filters = {
@@ -39,6 +40,7 @@ const NO_FILTERS: Filters = {
   institution: "",
   from: "",
   to: "",
+  dateBasis: "",
 };
 
 const controlClass =
@@ -130,6 +132,7 @@ export function TransactionsPage() {
         category: category ?? "",
         from: from ?? "",
         to: to ?? "",
+        dateBasis: searchParams.get("dateBasis") === "posted" ? "posted" : "",
       });
       setSearch("");
       setPage(1);
@@ -174,6 +177,7 @@ export function TransactionsPage() {
     if (filters.institution) params.set("institution", filters.institution);
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
+    if (filters.dateBasis) params.set("dateBasis", filters.dateBasis);
     api<TransactionPage>(`/transactions?${params}`)
       .then((result) => {
         if (cancelled) return;
@@ -390,6 +394,15 @@ export function TransactionsPage() {
         >
           <option value="">All transactions</option>
           <option value="unmatched">Transfers missing the other side</option>
+        </Select>
+        <Select
+          aria-label="Which date From and To use"
+          value={filters.dateBasis}
+          onChange={(e) => setFilter("dateBasis", e.target.value)}
+          className={controlClass}
+        >
+          <option value="">By transaction date</option>
+          <option value="posted">By posted date</option>
         </Select>
         <label className="text-xs text-slate-500">
           From

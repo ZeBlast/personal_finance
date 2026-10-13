@@ -4,6 +4,7 @@ import { api, ApiError, errorMessage } from "../api/client";
 import { ConfirmDialog } from "../components/common/Modal";
 import { LimitHistory } from "../components/accounts/LimitHistory";
 import { CashbackSection } from "../components/accounts/CashbackSection";
+import { StatementsButton } from "../components/accounts/StatementsDialog";
 import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
 import { ManualAccountsSection } from "../components/accounts/ManualAccountsSection";
 import { AccountCardsView } from "../components/accounts/cards/AccountCardsView";
@@ -80,6 +81,11 @@ function AccountRow({
         </div>
       </div>
       {isCredit && <LimitHistory account={account} />}
+      {isCredit && (
+        <div className="mt-2">
+          <StatementsButton account={account} />
+        </div>
+      )}
       {isCredit && <CashbackSection account={account} />}
     </li>
   );
