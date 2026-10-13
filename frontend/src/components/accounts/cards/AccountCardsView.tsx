@@ -1,4 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { usePersistentState } from "../../../hooks/usePersistentState";
+import { Modal } from "../../common/Modal";
+import { LimitHistory } from "../LimitHistory";
+import { applyOrder, moveBefore } from "./order";
 import { useNavigate } from "react-router-dom";
 import { api, errorMessage } from "../../../api/client";
 import { useApi } from "../../../hooks/useApi";
@@ -29,6 +33,10 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [importing, setImporting] = useState<Account | null>(null);
   const [managing, setManaging] = useState<Account | null>(null);
   const [statementsOf, setStatementsOf] = useState<Account | null>(null);
+  const [limitsOf, setLimitsOf] = useState<Account | null>(null);
+  // The user's order of banks and of cards (dragged into place), remembered in this browser.
+  const [groupOrder, setGroupOrder] = usePersistentState<string[]>("pf.accounts.groupOrder", []);
+  const [cardOrder, setCardOrder] = usePersistentState<string[]>("pf.accounts.cardOrder", []);
 
   const all = accounts.data ?? [];
   const collections = all.filter(isCollection);
@@ -52,35 +60,41 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   if (accounts.error) return <p className="text-sm text-red-600">{accounts.error}</p>;
   if (!accounts.data) return <p className="text-sm text-slate-500">Loading your accounts...</p>;
 
-  const card = (a: Account) => (
-    <AccountCard
-      key={a.id}
-      account={a}
-      onAdd={() => setAdding(a)}
-      onImport={() => setImporting(a)}
-      onStatements={() => setStatementsOf(a)}
-    />
-  );
+  const orderedGroups = applyOrder(groups, (g) => `item-${g.item.id}`, groupOrder);
+  const cardsIn = (list: Account[]) => applyOrder(list, (a) => String(a.id), cardOrder);
+
+  /** Cards of one group, in the user's order, each draggable within the group. */
+  const cardsOf = (groupKey: string, list: Account[]) => {
+    const ordered = cardsIn(list);
+    return ordered.map((a) => (
+      <Draggable
+        key={a.id}
+        kind="card"
+        id={String(a.id)}
+        scope={groupKey}
+        onMove={(from) =>
+          setCardOrder(
+            moveBefore(
+              ordered.map((x) => String(x.id)),
+              from,
+              String(a.id),
+            ).concat(cardOrder.filter((k) => !ordered.some((x) => String(x.id) === k))),
+          )
+        }
+      >
+        <AccountCard
+          account={a}
+          onAdd={() => setAdding(a)}
+          onImport={() => setImporting(a)}
+          onStatements={() => setStatementsOf(a)}
+          onLimits={() => setLimitsOf(a)}
+        />
+      </Draggable>
+    ));
+  };
 
   return (
     <div className="space-y-8">
-      {groups.map(({ item, accounts: own }) => (
-        <InstitutionGroup key={item.id} item={item}>
-          {own.map(card)}
-        </InstitutionGroup>
-      ))}
-
-      {manual.length > 0 && (
-        <section>
-          <GroupHeading title="Kept by hand" subtitle="Accounts you add and update yourself" />
-          <CardGrid>{manual.map(card)}</CardGrid>
-        </section>
-      )}
-
-      {groups.length === 0 && manual.length === 0 && (
-        <p className="text-sm text-slate-500">No accounts yet.</p>
-      )}
-
       {collections.length > 0 && (
         <section className="space-y-4">
           <GroupHeading title="Collections" subtitle="Valued item by item" />
@@ -88,6 +102,59 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             <CollectionShowcase key={a.id} account={a} onManage={() => setManaging(a)} />
           ))}
         </section>
+      )}
+
+      {/* Groups sit side by side while the window has room, each as wide as its cards. */}
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-8">
+        {manual.length > 0 && (
+          <GroupBox count={manual.length}>
+            <GroupHeading title="Kept by hand" subtitle="Accounts you add and update yourself" />
+            <CardGrid>{cardsOf("manual", manual)}</CardGrid>
+          </GroupBox>
+        )}
+        {orderedGroups.map(({ item, accounts: own }) => (
+          <Draggable
+            key={item.id}
+            kind="group"
+            id={`item-${item.id}`}
+            scope="banks"
+            handleOnly
+            style={groupBasis(own.length)}
+            onMove={(from) =>
+              setGroupOrder(
+                moveBefore(
+                  orderedGroups.map((g) => `item-${g.item.id}`),
+                  from,
+                  `item-${item.id}`,
+                ),
+              )
+            }
+          >
+            <InstitutionGroup item={item}>{cardsOf(`item-${item.id}`, own)}</InstitutionGroup>
+          </Draggable>
+        ))}
+      </div>
+
+      {groups.length === 0 && manual.length === 0 && (
+        <p className="text-sm text-slate-500">No accounts yet.</p>
+      )}
+
+      {limitsOf && (
+        <Modal
+          title={`${limitsOf.name}: credit limit`}
+          onClose={() => {
+            setLimitsOf(null);
+            accounts.reload();
+          }}
+          wide
+          dismissible
+        >
+          <p className="mb-2 text-sm text-slate-500">
+            Current limit: {money(limitsOf, limitsOf.creditLimitMinor)}. Add, change or remove
+            entries; the current limit is the newest one.
+          </p>
+          <LimitHistory account={limitsOf} defaultOpen />
+        </Modal>
       )}
 
       {adding && (
@@ -129,6 +196,103 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   );
 }
 
+/**
+ * How wide a group starts: room for all its cards in a row (17rem each, 1rem apart), so groups
+ * with few cards sit side by side; it can grow to fill a line and wraps when there is no room.
+ */
+const groupBasis = (cards: number): CSSProperties => ({
+  flex: `1 1 calc(${cards} * 17rem + ${Math.max(0, cards - 1)} * 1rem)`,
+  maxWidth: "100%",
+  minWidth: "17rem",
+});
+
+function GroupBox({ count, children }: { count: number; children: ReactNode }) {
+  return <section style={groupBasis(count)}>{children}</section>;
+}
+
+/** What is being dragged right now (drag events can't read their data until the drop). */
+let dragging: { kind: string; scope: string; id: string } | null = null;
+
+/**
+ * Something that can be dragged onto another of its kind (and scope: a card stays in its bank)
+ * to take its place. With `handleOnly`, the drag starts only from an element marked
+ * `data-drag-handle` inside it, so buttons and cards inside still work as usual.
+ */
+function Draggable({
+  kind,
+  id,
+  scope,
+  handleOnly,
+  style,
+  onMove,
+  children,
+}: {
+  kind: string;
+  id: string;
+  scope: string;
+  handleOnly?: boolean;
+  style?: CSSProperties;
+  onMove: (fromId: string) => void;
+  children: ReactNode;
+}) {
+  // Whether the press began on the handle. The browser decides at the press whether something can
+  // be dragged, so the element is always draggable and a drag not from the handle is cancelled.
+  const fromHandle = useRef(!handleOnly);
+  const [over, setOver] = useState(false);
+  const [lifted, setLifted] = useState(false);
+  const accepts = () =>
+    dragging !== null && dragging.kind === kind && dragging.scope === scope && dragging.id !== id;
+  return (
+    <div
+      style={style}
+      draggable
+      onPointerDown={(e) => {
+        if (handleOnly) {
+          fromHandle.current = (e.target as HTMLElement).closest("[data-drag-handle]") !== null;
+        }
+      }}
+      onDragStart={(e) => {
+        // A card inside a bank being dragged is its own drag (started on it, handled above).
+        if (e.target !== e.currentTarget) return;
+        if (!fromHandle.current) {
+          e.preventDefault();
+          return;
+        }
+        e.stopPropagation();
+        dragging = { kind, scope, id };
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", id);
+        setLifted(true);
+      }}
+      onDragEnd={() => {
+        dragging = null;
+        setLifted(false);
+        if (handleOnly) fromHandle.current = false;
+      }}
+      onDragOver={(e) => {
+        if (!accepts()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        setOver(false);
+        if (!accepts()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onMove(dragging!.id);
+      }}
+      className={`rounded-lg transition ${lifted ? "opacity-40" : ""} ${
+        over ? "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900" : ""
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** The cards fill the width of the window: as many columns as fit, each at least 17rem. */
 function CardGrid({ children }: { children: ReactNode }) {
   return (
@@ -141,31 +305,43 @@ function CardGrid({ children }: { children: ReactNode }) {
   );
 }
 
+/** A group's name, with its actions right beside it on the left (not pushed to the far side). */
 function GroupHeading({
   title,
   subtitle,
   logo,
   action,
+  draggable,
 }: {
   title: string;
   subtitle: string;
   logo?: string | null;
   action?: ReactNode;
+  /** Shows a grip to drag the group by. */
+  draggable?: boolean;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        {logo ? (
-          <img
-            src={logo}
-            alt=""
-            className="h-8 w-8 rounded-full bg-white object-contain p-0.5 ring-1 ring-slate-200"
-          />
-        ) : null}
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold">{title}</h2>
-          <p className="text-xs text-slate-500">{subtitle}</p>
-        </div>
+    <div className="mb-3 flex flex-wrap items-center gap-3">
+      {draggable && (
+        <span
+          data-drag-handle
+          title="Drag to move this bank"
+          className="cursor-grab px-0.5 text-lg leading-none text-slate-400 select-none hover:text-slate-600 active:cursor-grabbing dark:hover:text-slate-200"
+        >
+          ⠿
+        </span>
+      )}
+      {logo ? (
+        <img
+          src={logo}
+          alt=""
+          data-drag-handle={draggable || undefined}
+          className="h-8 w-8 rounded-full bg-white object-contain p-0.5 ring-1 ring-slate-200"
+        />
+      ) : null}
+      <div className="min-w-0" data-drag-handle={draggable || undefined}>
+        <h2 className="truncate text-lg font-semibold">{title}</h2>
+        <p className="text-xs text-slate-500">{subtitle}</p>
       </div>
       {action}
     </div>
@@ -222,9 +398,9 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
         title={item.institutionName}
         subtitle={status}
         logo={item.logo}
+        draggable
         action={
           <div className="flex items-center gap-2">
-            {message && <span className="text-xs text-slate-500">{message}</span>}
             <button
               type="button"
               disabled={busy || item.borrowed}
@@ -245,8 +421,9 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
                   strokeLinejoin="round"
                 />
               </svg>
-              {busy ? "Syncing..." : `Sync ${item.institutionName}`}
+              {busy ? "Syncing..." : "Sync"}
             </button>
+            {message && <span className="text-xs text-slate-500">{message}</span>}
           </div>
         }
       />
@@ -321,11 +498,13 @@ function AccountCard({
   onAdd,
   onImport,
   onStatements,
+  onLimits,
 }: {
   account: Account;
   onAdd: () => void;
   onImport: () => void;
   onStatements: () => void;
+  onLimits: () => void;
 }) {
   const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
@@ -339,8 +518,9 @@ function AccountCard({
     ? `${a.subtype[0]!.toUpperCase()}${a.subtype.slice(1)}`
     : (KIND[a.type] ?? a.type);
 
+  // Hovering lights the card up, like a day on the calendar.
   const faceClass =
-    "absolute inset-0 flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white p-3 pl-4 text-sm dark:border-slate-700 dark:bg-slate-900";
+    "absolute inset-0 flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white p-3 pl-4 text-sm transition-colors group-hover/card:border-slate-300 group-hover/card:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:group-hover/card:border-slate-600 dark:group-hover/card:bg-slate-800";
   const hidden = {
     backfaceVisibility: "hidden" as const,
     WebkitBackfaceVisibility: "hidden" as const,
@@ -354,7 +534,7 @@ function AccountCard({
   );
 
   return (
-    <div className={`[perspective:1200px] ${a.hidden ? "opacity-50" : ""}`}>
+    <div className={`group/card [perspective:1200px] ${a.hidden ? "opacity-50" : ""}`}>
       <div
         role="button"
         tabIndex={0}
@@ -438,32 +618,41 @@ function AccountCard({
                 <dd className="truncate text-right">{a.officialName}</dd>
               </>
             )}
-            {a.availableBalanceMinor !== null && (
+            {credit
+              ? // The bank's own figure when it gives one, else what the limit leaves.
+                (a.availableBalanceMinor !== null || limit !== null) && (
+                  <>
+                    <dt className="text-slate-500">Available credit</dt>
+                    <dd className="text-right tabular-nums">
+                      {money(
+                        a,
+                        a.availableBalanceMinor ??
+                          Math.max(0, limit! - (a.currentBalanceMinor ?? 0)),
+                      )}
+                    </dd>
+                  </>
+                )
+              : a.availableBalanceMinor !== null && (
+                  <>
+                    <dt className="text-slate-500">Available</dt>
+                    <dd className="text-right tabular-nums">{money(a, a.availableBalanceMinor)}</dd>
+                  </>
+                )}
+            {credit && (
               <>
-                <dt className="text-slate-500">Available</dt>
-                <dd className="text-right tabular-nums">{money(a, a.availableBalanceMinor)}</dd>
-              </>
-            )}
-            {credit && limit !== null && (
-              <>
-                <dt className="text-slate-500">Left to spend</dt>
+                <dt className="text-slate-500">Credit limit</dt>
                 <dd className="text-right tabular-nums">
-                  {money(a, Math.max(0, limit - (a.currentBalanceMinor ?? 0)))}
+                  {limit !== null ? money(a, limit) : "not known"}
                 </dd>
               </>
             )}
-            <dt className="text-slate-500">Institution</dt>
-            <dd className="truncate text-right">{a.institutionName ?? "Kept by hand"}</dd>
-            <dt className="text-slate-500">Updated</dt>
-            <dd className="truncate text-right">
-              {a.lastBalanceUpdateAt ? timeAgo(a.lastBalanceUpdateAt) : "never"}
-            </dd>
           </dl>
           <div className="mt-auto flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
             <BackButton onClick={() => navigate(`/transactions?account=${a.id}`)}>
               Transactions
             </BackButton>
             {credit && <BackButton onClick={onStatements}>Statements</BackButton>}
+            {credit && <BackButton onClick={onLimits}>Credit limit</BackButton>}
             {a.isManual && payment && (
               <>
                 <BackButton onClick={onAdd}>Add transaction</BackButton>

@@ -165,8 +165,15 @@ function LimitForm({
 }
 
 /** A card's credit limit history, with adding, editing and deleting entries by hand. */
-export function LimitHistory({ account }: { account: Account }) {
-  const [open, setOpen] = useState(false);
+export function LimitHistory({
+  account,
+  defaultOpen = false,
+}: {
+  account: Account;
+  /** Start expanded (in a dialog of its own, say). */
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [data, setData] = useState<CreditLimitHistory | null>(null);
   const [form, setForm] = useState<CreditLimitEntry | "new" | null>(null);
   const [deleting, setDeleting] = useState<CreditLimitEntry | null>(null);
@@ -210,7 +217,8 @@ export function LimitHistory({ account }: { account: Account }) {
 
   return (
     <details
-      className="mt-1 ml-6 text-xs"
+      className={defaultOpen ? "text-sm" : "mt-1 ml-6 text-xs"}
+      open={defaultOpen || undefined}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
     >
       <summary className="cursor-pointer text-slate-500">Credit limit history</summary>

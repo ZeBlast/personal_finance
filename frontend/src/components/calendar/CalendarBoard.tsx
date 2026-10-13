@@ -432,7 +432,7 @@ function DayCell({
       <div className="relative flex justify-center">
         {expectedCount > 0 && (
           <span
-            className="absolute top-0 left-0 text-[10px] text-amber-700 dark:text-amber-400"
+            className="absolute top-0 left-0 text-sm font-semibold text-amber-700 dark:text-amber-400"
             title={`${expectedCount} expected`}
             aria-hidden="true"
           >
@@ -440,7 +440,7 @@ function DayCell({
           </span>
         )}
         <span
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-base font-semibold ${
+          className={`flex h-10 w-10 items-center justify-center rounded-full text-2xl font-semibold ${
             isToday
               ? "bg-white text-slate-900 shadow ring-1 ring-slate-300"
               : "text-slate-700 dark:text-slate-200"
@@ -450,7 +450,7 @@ function DayCell({
         </span>
         {day && day.pendingCount > 0 && (
           <span
-            className="absolute top-0 right-0 text-[10px] text-amber-600"
+            className="absolute top-0 right-0 text-sm text-amber-600"
             title={`${day.pendingCount} pending`}
             aria-hidden="true"
           >
@@ -508,13 +508,13 @@ function DayCell({
               <span
                 key={c.categoryId ?? "none"}
                 title={`${c.name}: ${c.count}`}
-                className="h-2 w-2 rounded-full"
+                className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: c.color ?? "#94a3b8" }}
               />
             ))}
             {day.categories.length > MAX_DOTS && (
               <span
-                className="text-[9px] text-slate-500"
+                className="text-xs text-slate-500"
                 title={day.categories
                   .slice(MAX_DOTS)
                   .map((c) => c.name)
@@ -532,13 +532,13 @@ function DayCell({
                   src={b.logo}
                   alt={b.name}
                   title={b.name}
-                  className="h-4 w-4 rounded-full bg-white object-contain ring-1 ring-white dark:ring-slate-900"
+                  className="h-6 w-6 rounded-full bg-white object-contain ring-1 ring-white dark:ring-slate-900"
                 />
               ) : (
                 <span
                   key={b.key}
                   title={b.name}
-                  className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold text-white ring-1 ring-white dark:ring-slate-900"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white dark:ring-slate-900"
                   style={{ backgroundColor: b.color ?? "#475569" }}
                 >
                   {b.key === "manual" ? "✋" : b.name.slice(0, 1).toUpperCase()}
@@ -546,7 +546,7 @@ function DayCell({
               ),
             )}
             {banks.length > MAX_LOGOS && (
-              <span className="pl-1.5 text-[9px] text-slate-500">+{banks.length - MAX_LOGOS}</span>
+              <span className="pl-1.5 text-xs text-slate-500">+{banks.length - MAX_LOGOS}</span>
             )}
           </span>
         </div>
@@ -581,7 +581,7 @@ function DayTotals({ day }: { day: CalendarDay }) {
   if (parts.length === 0) return null;
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-x-1.5 text-[10px] leading-4 font-medium tabular-nums"
+      className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm leading-5 font-semibold tabular-nums"
       title="Money out · money in · paid toward debt"
     >
       {parts}
