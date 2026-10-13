@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
   type WheelEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -335,6 +336,11 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
   const [attempt, setAttempt] = useState(0);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
+  /** The picture (or the item's box), as zoomed and moved. */
+  const picturePart = useRef<HTMLDivElement>(null);
+  const press = useRef<{ x: number; y: number; onPicture: boolean; onControl: boolean } | null>(
+    null,
+  );
   const size = CLOSE_UP_SIZES[attempt];
   const picture = pokemon && item.tcgplayerId && size ? cardImage(item.tcgplayerId, size) : null;
 
@@ -374,10 +380,25 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
   }
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    // Where the press began: a click that starts and ends off the picture closes the viewer.
+    press.current = {
+      x: e.clientX,
+      y: e.clientY,
+      onPicture: picturePart.current?.contains(target) ?? false,
+      onControl: target.closest("button") !== null,
+    };
     // A press on the zoom buttons is theirs: capturing it here would swallow their click.
-    if (zoom === 1 || (e.target as HTMLElement).closest("button")) return;
+    if (zoom === 1 || press.current.onControl) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+  };
+  /** A click off the picture (not a drag, not on a button) closes the viewer. */
+  const onStageClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const p = press.current;
+    if (!p || p.onPicture || p.onControl) return;
+    if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
+    onClose();
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
@@ -403,17 +424,19 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
       <div
         ref={stage}
         className={`relative flex min-h-0 flex-1 touch-none items-center justify-center overflow-hidden select-none ${
-          zoom > 1 ? (drag.current ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
+          zoom > 1 ? (drag.current ? "cursor-grabbing" : "cursor-grab") : ""
         }`}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+        onClick={onStageClick}
       >
         <div
-          className="transition-transform duration-75 ease-out will-change-transform"
+          ref={picturePart}
+          onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+          className={`transition-transform duration-75 ease-out will-change-transform ${zoom === 1 ? "cursor-zoom-in" : ""}`}
           style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
         >
           {picture ? (
@@ -448,7 +471,7 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
           </ZoomButton>
         </div>
         <p className="absolute top-4 left-4 text-xs text-white/60">
-          Scroll to zoom · drag to move · double-click to reset · Esc to close
+          Scroll to zoom · drag to move · double-click to reset · click outside or Esc to close
         </p>
       </div>
 
