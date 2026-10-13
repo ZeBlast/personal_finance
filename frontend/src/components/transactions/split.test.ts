@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { buildSplit } from "./SplitDialog";
+import { amountsFromPercents, buildSplit, splitEvenly } from "./SplitDialog";
+
+describe("dividing a transaction's cost", () => {
+  it("splits evenly to the cent, the first parts taking the odd cents", () => {
+    expect(splitEvenly(10_000, 3)).toEqual([3_334, 3_333, 3_333]);
+    expect(splitEvenly(1, 3)).toEqual([1, 0, 0]);
+    expect(splitEvenly(9_000, 2)).toEqual([4_500, 4_500]);
+    for (const [total, n] of [
+      [12_345, 7],
+      [99, 4],
+      [1_000_001, 3],
+    ] as const) {
+      expect(splitEvenly(total, n).reduce((a, b) => a + b, 0)).toBe(total);
+    }
+  });
+
+  it("turns percentages into amounts that add up exactly when they total 100", () => {
+    expect(amountsFromPercents(10_000, [50, 30, 20])).toEqual([5_000, 3_000, 2_000]);
+    // Thirds of $100: the cent left over goes where rounding lost the most.
+    const thirds = amountsFromPercents(10_000, [33.34, 33.33, 33.33]);
+    expect(thirds.reduce((a, b) => a + b, 0)).toBe(10_000);
+    expect(amountsFromPercents(1_999, [70, 30]).reduce((a, b) => a + b, 0)).toBe(1_999);
+    // Not yet 100: each part is just its share; a blank counts as nothing.
+    expect(amountsFromPercents(10_000, [25, NaN])).toEqual([2_500, 0]);
+  });
+});
 
 const part = (amount: string, categoryId = "") => ({ categoryId, amount, note: "" });
 

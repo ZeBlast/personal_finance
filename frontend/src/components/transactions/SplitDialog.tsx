@@ -17,6 +17,41 @@ interface Part {
 /** The size of a transaction, as people read it (always positive), in cents. */
 const sizeOf = (t: Transaction): number => Math.abs(t.amountMinor);
 
+/** `total` cents in `n` parts as equal as cents allow; the first parts take the odd cents. */
+export function splitEvenly(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const base = Math.floor(total / n);
+  return Array.from({ length: n }, (_, i) => base + (i < total - base * n ? 1 : 0));
+}
+
+/**
+ * `total` cents by percentages. When they add up to 100, the cents add up to the total exactly
+ * (each part rounds down, and the leftover cents go to the parts that lost the most); otherwise
+ * each part is its share, rounded. A blank or unreadable percentage counts as 0.
+ */
+export function amountsFromPercents(total: number, percents: number[]): number[] {
+  const p = percents.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+  const sum = p.reduce((a, b) => a + b, 0);
+  if (Math.abs(sum - 100) > 1e-9) return p.map((x) => Math.round((total * x) / 100));
+  const exact = p.map((x) => (total * x) / 100);
+  const out = exact.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, i) => ({ i, frac: x - Math.floor(x) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    out[i]! += 1;
+    left -= 1;
+  }
+  return out;
+}
+
+const minorToText = (minor: number): string => (minor / 100).toFixed(2);
+/** A share as a short percentage: "33.3%". */
+const percentOf = (part: number, total: number): string =>
+  total > 0 ? `${Math.round((part / total) * 1000) / 10}%` : "";
+
 /** The parts as a request, or a message saying what is wrong. Pure, so it can be tested. */
 export function buildSplit(
   parts: Part[],
@@ -95,10 +130,53 @@ export function SplitDialog({
   const dirty = JSON.stringify(parts) !== JSON.stringify(initial);
   const { requestClose, confirm } = useUnsavedGuard(dirty && !busy, onClose);
 
-  const used = parts.reduce((n, p) => n + (parseMoneyToMinor(p.amount, "USD") ?? 0), 0);
-  const left = sizeOf(t) - used;
+  const total = sizeOf(t);
+  const amountOf = (p: Part): number => parseMoneyToMinor(p.amount, "USD") ?? 0;
+  const used = parts.reduce((n, p) => n + amountOf(p), 0);
+  const left = total - used;
   const set = (i: number, change: Partial<Part>) =>
     setParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)));
+
+  // Entering each part's share as a percentage instead of an amount: the amounts follow.
+  const [mode, setMode] = useState<"amount" | "percent">("amount");
+  const [percents, setPercents] = useState<string[]>([]);
+  const percentsFromAmounts = (ps: Part[]) =>
+    ps.map((p) => (total > 0 ? String(Math.round((amountOf(p) / total) * 10000) / 100) : ""));
+  const applyPercents = (next: string[]) => {
+    setPercents(next);
+    const amounts = amountsFromPercents(
+      total,
+      next.map((x) => Number(x)),
+    );
+    setParts((ps) => ps.map((p, i) => ({ ...p, amount: minorToText(amounts[i] ?? 0) })));
+  };
+  const switchMode = (next: "amount" | "percent") => {
+    if (next === "percent") setPercents(percentsFromAmounts(parts));
+    setMode(next);
+  };
+  const splitEven = () => {
+    const amounts = splitEvenly(total, parts.length);
+    const next = parts.map((p, i) => ({ ...p, amount: minorToText(amounts[i]!) }));
+    setParts(next);
+    setPercents(percentsFromAmounts(next));
+  };
+  const addPart = () => {
+    setParts((ps) => [
+      ...ps,
+      { categoryId: "", amount: left > 0 ? minorToText(left) : "", note: "" },
+    ]);
+    setPercents((pc) => [
+      ...pc,
+      left > 0 && total > 0 ? String(Math.round((left / total) * 10000) / 100) : "",
+    ]);
+  };
+  const removePart = (i: number) => {
+    setParts((ps) => ps.filter((_, j) => j !== i));
+    setPercents((pc) => pc.filter((_, j) => j !== i));
+  };
+  const percentTotal = percents.reduce((n, x) => n + (Number(x) || 0), 0);
+  const colorOf = (categoryId: string) =>
+    categories.find((c) => String(c.id) === categoryId)?.color ?? "#94a3b8";
 
   async function save(body: { parts: unknown[] }): Promise<void> {
     setBusy(true);
@@ -139,11 +217,51 @@ export function SplitDialog({
             again.
           </p>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            role="radiogroup"
+            aria-label="Enter each part as"
+            className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-600"
+          >
+            {(["amount", "percent"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={mode === m}
+                onClick={() => switchMode(m)}
+                className={`px-3 py-1.5 ${mode === m ? "bg-blue-600 text-white" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+              >
+                {m === "amount" ? "Dollars" : "Percent"}
+              </button>
+            ))}
+          </div>
+          <button type="button" className={buttonClass} onClick={splitEven}>
+            Split evenly
+          </button>
+        </div>
+        {/* Each category's share of the transaction. */}
+        <div
+          aria-hidden="true"
+          className="flex h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"
+        >
+          {parts.map((p, i) => (
+            <span
+              key={i}
+              title={options.find((o) => String(o.id) === p.categoryId)?.name ?? "Uncategorized"}
+              style={{
+                width: `${total > 0 ? Math.max(0, (amountOf(p) / total) * 100) : 0}%`,
+                backgroundColor: colorOf(p.categoryId),
+              }}
+              className="h-full border-r border-white/60 last:border-r-0 dark:border-slate-800/60"
+            />
+          ))}
+        </div>
         <ul className="space-y-2">
           {parts.map((p, i) => (
             <li
               key={i}
-              className="grid grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_auto] items-center gap-2"
+              className="grid grid-cols-[minmax(0,1fr)_7rem_4rem_minmax(0,1fr)_auto] items-center gap-2"
             >
               <CategorySelect
                 shown={options.find((o) => String(o.id) === p.categoryId)?.name ?? "Uncategorized"}
@@ -159,14 +277,38 @@ export function SplitDialog({
                   </option>
                 ))}
               </CategorySelect>
-              <input
-                aria-label={`Amount of part ${i + 1}`}
-                inputMode="decimal"
-                value={p.amount}
-                placeholder="0.00"
-                onChange={(e) => set(i, { amount: e.target.value })}
-                className={`${inputClass} text-right`}
-              />
+              {mode === "amount" ? (
+                <input
+                  aria-label={`Amount of part ${i + 1}`}
+                  inputMode="decimal"
+                  value={p.amount}
+                  placeholder="0.00"
+                  onChange={(e) => set(i, { amount: e.target.value })}
+                  className={`${inputClass} text-right`}
+                />
+              ) : (
+                <span className="relative">
+                  <input
+                    aria-label={`Percent of part ${i + 1}`}
+                    inputMode="decimal"
+                    value={percents[i] ?? ""}
+                    placeholder="0"
+                    onChange={(e) =>
+                      applyPercents(percents.map((x, j) => (j === i ? e.target.value : x)))
+                    }
+                    className={`${inputClass} pr-6 text-right`}
+                  />
+                  <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-slate-400">
+                    %
+                  </span>
+                </span>
+              )}
+              {/* The other way of reading the same part. */}
+              <span className="text-right text-xs text-slate-500 tabular-nums">
+                {mode === "amount"
+                  ? percentOf(amountOf(p), total)
+                  : formatMinor(amountOf(p), t.currency)}
+              </span>
               <input
                 aria-label={`Note for part ${i + 1}`}
                 value={p.note}
@@ -179,7 +321,7 @@ export function SplitDialog({
                 type="button"
                 aria-label={`Remove part ${i + 1}`}
                 disabled={parts.length <= 2}
-                onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))}
+                onClick={() => removePart(i)}
                 className="px-1 text-slate-400 hover:text-red-600 disabled:opacity-30"
               >
                 ✕
@@ -193,12 +335,7 @@ export function SplitDialog({
               type="button"
               className={buttonClass}
               disabled={parts.length >= 20}
-              onClick={() =>
-                setParts((ps) => [
-                  ...ps,
-                  { categoryId: "", amount: left > 0 ? (left / 100).toFixed(2) : "", note: "" },
-                ])
-              }
+              onClick={addPart}
             >
               + Add a part
             </button>
@@ -210,7 +347,11 @@ export function SplitDialog({
                   // Put what is left (or take what is over) on the last part.
                   const lastAmount = parseMoneyToMinor(parts.at(-1)!.amount, "USD") ?? 0;
                   const next = Math.max(0, lastAmount + left);
-                  set(parts.length - 1, { amount: (next / 100).toFixed(2) });
+                  const updated = parts.map((p, j) =>
+                    j === parts.length - 1 ? { ...p, amount: minorToText(next) } : p,
+                  );
+                  setParts(updated);
+                  setPercents(percentsFromAmounts(updated));
                 }}
               >
                 Put the rest in the last part
@@ -225,6 +366,9 @@ export function SplitDialog({
               : left > 0
                 ? `${formatMinor(left, t.currency)} left`
                 : `${formatMinor(-left, t.currency)} over`}
+            {mode === "percent" && Math.abs(percentTotal - 100) > 1e-9
+              ? ` · percentages add up to ${Math.round(percentTotal * 100) / 100}%`
+              : ""}
           </span>
         </div>
         {error && (
