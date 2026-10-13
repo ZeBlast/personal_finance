@@ -102,6 +102,22 @@ export interface SyncStatus {
   }>;
 }
 
+/** How a refund of a split purchase is divided across the purchase's categories (cents, positive). */
+export interface RefundAllocation {
+  refundId: number;
+  originalId: number;
+  refundMinor: number;
+  chosen: boolean;
+  lines: Array<{
+    categoryId: number | null;
+    categoryName: string | null;
+    spentMinor: number;
+    refundedElsewhereMinor: number;
+    leftMinor: number;
+    thisMinor: number;
+  }>;
+}
+
 export interface Transaction {
   id: number;
   accountId: number;

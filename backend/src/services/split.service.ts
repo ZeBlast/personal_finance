@@ -2,13 +2,15 @@ import { eq } from "drizzle-orm";
 import { categories, transactions, transactionSplits } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
+import { checkRefundSplit, reallocateRefundsOf } from "./refund-allocation.service.js";
 import { getTransaction, type TransactionDto } from "./transaction.service.js";
 
 /**
  * Splitting a transaction across categories. The parts must add up to the transaction's amount
  * (in cents, same sign: positive is money out); at least two, at most twenty. Saving an empty
  * list un-splits it. Any transaction can be split, a bank's own included: the split only changes
- * how it is counted, never the bank's record.
+ * how it is counted, never the bank's record. A refund of a split purchase is divided across the
+ * purchase's categories instead (see refund-allocation.service), where one part is enough.
  */
 export interface SplitInput {
   categoryId: number | null;
@@ -30,7 +32,8 @@ export function setSplits(
     .where(eq(transactions.id, transactionId))
     .get();
   if (!tx) throw notFound("That transaction");
-  if (parts.length === 1) {
+  const refundOfSplit = checkRefundSplit(db, transactionId, parts);
+  if (parts.length === 1 && !refundOfSplit) {
     throw new AppError(
       400,
       "invalid_split",
@@ -80,6 +83,8 @@ export function setSplits(
         })
         .run();
     });
+    // The refunds of this purchase follow its categories.
+    reallocateRefundsOf(t, transactionId, now);
   });
   return getTransaction(db, transactionId);
 }

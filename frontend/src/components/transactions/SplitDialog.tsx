@@ -1,12 +1,14 @@
 import { useId, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../../api/client";
+import { useApi } from "../../hooks/useApi";
 import { categoryOptions } from "../../hooks/useCategories";
 import { formatMinor, parseMoneyToMinor } from "../../lib/money";
-import type { Category, Transaction } from "../../types/api";
+import type { Category, RefundAllocation, Transaction } from "../../types/api";
 import { CategorySelect } from "../common/CategorySelect";
 import { Modal } from "../common/Modal";
 import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
+import { RefundSplitDialog } from "./RefundSplitDialog";
 
 interface Part {
   categoryId: string;
@@ -90,22 +92,46 @@ export function buildSplit(
   return { ok: true, parts: out };
 }
 
+type SplitDialogProps = {
+  transaction: Transaction;
+  categories: Category[];
+  onSaved: (updated: Transaction) => void;
+  onClose: () => void;
+};
+
+/**
+ * Splits a transaction across categories; a refund of a split purchase is instead divided across
+ * that purchase's categories (RefundSplitDialog).
+ */
+export function SplitDialog(props: SplitDialogProps) {
+  const t = props.transaction;
+  const allocation = useApi<RefundAllocation | null>(
+    t.refundOf ? `/transactions/${t.id}/refund-allocation` : null,
+  );
+  if (t.refundOf && allocation.loading) {
+    return (
+      <Modal title={`Split ${t.merchant}`} onClose={props.onClose} dismissible>
+        <p className="text-sm text-slate-500">Loading...</p>
+      </Modal>
+    );
+  }
+  if (t.refundOf && allocation.data) {
+    return <RefundSplitDialog {...props} allocation={allocation.data} />;
+  }
+  return <CategorySplitDialog {...props} />;
+}
+
 /**
  * Divides one transaction across categories. Each part has a category, an amount, and an optional
  * note; the parts must add up to the transaction. Totals and budgets then count each part in its
  * own category; the bank's record of the transaction does not change.
  */
-export function SplitDialog({
+function CategorySplitDialog({
   transaction: t,
   categories,
   onSaved,
   onClose,
-}: {
-  transaction: Transaction;
-  categories: Category[];
-  onSaved: (updated: Transaction) => void;
-  onClose: () => void;
-}) {
+}: SplitDialogProps) {
   const id = useId();
   const options = categoryOptions(categories.filter((c) => c.active));
   const [initial] = useState<Part[]>(() =>

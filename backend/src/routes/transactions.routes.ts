@@ -17,6 +17,7 @@ import {
   unlinkTransfer,
 } from "../services/transfer-link.service.js";
 import { linkMirror, mirrorCandidates, unlinkMirror } from "../services/paypal-mirror.service.js";
+import { refundAllocation } from "../services/refund-allocation.service.js";
 import { refundCandidates, setRefundOf } from "../services/refund.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
@@ -197,6 +198,13 @@ export function transactionsRoutes(db: AppDb): Router {
   /** Charges this refund could give back, the likeliest first. */
   router.get("/transactions/:id/refund-candidates", (req, res) => {
     res.json(refundCandidates(db, idParam.parse(req.params["id"])));
+  });
+  /**
+   * How this refund of a split purchase is divided across the purchase's categories, with what is
+   * left in each (null when it is not linked to a split purchase).
+   */
+  router.get("/transactions/:id/refund-allocation", (req, res) => {
+    res.json(refundAllocation(db, idParam.parse(req.params["id"])));
   });
   /** Links this refund with the charge it gives back (null unlinks it). */
   router.put("/transactions/:id/refund-of", (req, res) => {

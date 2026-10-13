@@ -4,6 +4,11 @@ import type { AppDb } from "../db/client.js";
 import { addDays } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { namesAgree } from "./paypal-mirror.service.js";
+import {
+  clearRefundAllocation,
+  ensureRefundAllocation,
+  refundAllocation,
+} from "./refund-allocation.service.js";
 import { getTransaction, type TransactionDto } from "./transaction.service.js";
 
 /**
@@ -131,6 +136,8 @@ export function detectRefunds(tx: Tx, now: string): number {
       .set({ refundOfId: charge, refundSource: "auto", updatedAt: now })
       .where(eq(transactions.id, refund))
       .run();
+    // A refund of a split purchase is divided across its categories.
+    ensureRefundAllocation(tx, refund, now);
   }
   return pairs.length;
 }
@@ -206,6 +213,10 @@ export function setRefundOf(
       );
     }
   }
+  // A refund that divided a split purchase across its categories stops doing so once unlinked or
+  // linked to another purchase; on a split purchase it is divided again (see refund-allocation).
+  const wasAllocated =
+    refund.refund_of_id !== null && refund.refund_of_id !== originalId && refundAllocation(db, id);
   db.update(transactions)
     .set({
       refundOfId: originalId,
@@ -221,6 +232,8 @@ export function setRefundOf(
     })
     .where(eq(transactions.id, id))
     .run();
+  if (wasAllocated) clearRefundAllocation(db, id);
+  if (originalId !== null) ensureRefundAllocation(db, id, now);
   return getTransaction(db, id);
 }
 
