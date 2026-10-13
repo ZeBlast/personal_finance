@@ -27,6 +27,10 @@ import {
 import { Select } from "../common/Select";
 import { showsSource, type CalendarFilters } from "./filters";
 import { MonthOverview } from "./MonthOverview";
+
+/** How far the wheel turns before the month changes, and the pause before it can change again. */
+const WHEEL_STEP = 60;
+const WHEEL_PAUSE_MS = 450;
 import { clearDraft, keepDraft, readDraft } from "./noteDrafts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -130,7 +134,7 @@ function useMonths(month: string, accountId: string, basis: string) {
 
 /**
  * The big month calendar. Click a day to look at it; press on one day and drag to another (or
- * Shift+click) to look at everything from one day to the other. The arrows, the month and year
+ * Shift+click) to look at everything from one day to the other. The mouse wheel, the arrows, the month and year
  * pickers and Today change the month; a single chosen day moves along to the same day of the new
  * month. With one day chosen, click the empty space in its box to write a note.
  *
@@ -209,6 +213,30 @@ export function CalendarBoard({
     }
   }
   const go = (delta: number): void => navigate(shiftMonth(month, delta));
+
+  // The mouse wheel over the calendar turns the months. The listener is not passive so the page
+  // does not scroll too. Not while a note is being written.
+  const goRef = useRef(go);
+  goRef.current = go;
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    let total = 0;
+    let pausedUntil = 0;
+    const onWheel = (e: WheelEvent): void => {
+      if (editing) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (now < pausedUntil) return;
+      total += e.deltaY;
+      if (Math.abs(total) < WHEEL_STEP) return;
+      goRef.current(total > 0 ? 1 : -1);
+      total = 0;
+      pausedUntil = now + WHEEL_PAUSE_MS;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [editing]);
 
   /** Puts the keyboard focus on a day, turning to its month first. */
   function focusDay(day: string): void {
@@ -472,11 +500,11 @@ export function CalendarBoard({
       </div>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
         Click a day, or press on one day and drag to another (or Shift+click), to total up the days
-        in between. With the keyboard: arrows move, Shift+arrows stretch the span, Page Up and Page
-        Down change month, Escape clears. Click a chosen day's note box to write in it; press Enter
-        or click away to save. Dots on the left are the kinds of transactions that day (by
-        category); logos on the right are the banks involved. ↻ marks an expected transaction, ● a
-        pending one.
+        in between. Turn the mouse wheel to change month. With the keyboard: arrows move,
+        Shift+arrows stretch the span, Page Up and Page Down change month, Escape clears. Click a
+        chosen day's note box to write in it; press Enter or click away to save. Dots on the left
+        are the kinds of transactions that day (by category); logos on the right are the banks
+        involved. ↻ marks an expected transaction, ● a pending one.
       </p>
     </div>
   );
