@@ -25,6 +25,8 @@ import {
   type DaySpan,
 } from "./range";
 import { Select } from "../common/Select";
+import { showsSource, type CalendarFilters } from "./filters";
+import { MonthOverview } from "./MonthOverview";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** How far the wheel must turn before the month changes, and the pause before it can again. */
@@ -131,10 +133,14 @@ function useMonths(month: string, accountId: string, basis: string) {
  */
 export function CalendarBoard({
   accountId,
+  accountName,
+  filters,
   selection,
   onSelect,
 }: {
   accountId: string;
+  accountName: string | null;
+  filters: CalendarFilters;
   selection: DaySpan | null;
   onSelect: (span: DaySpan | null) => void;
 }) {
@@ -359,6 +365,8 @@ export function CalendarBoard({
         </div>
       </div>
 
+      <MonthOverview month={month} accountId={accountId} accountName={accountName} />
+
       {data.error && (
         <p role="alert" className="text-sm text-red-600">
           {data.error}
@@ -390,9 +398,10 @@ export function CalendarBoard({
                   date={date}
                   inMonth={inMonth}
                   isToday={date === todayDay}
-                  day={data.days.get(date)}
+                  day={filters.recorded ? data.days.get(date) : undefined}
+                  pendingCount={filters.pending ? (data.days.get(date)?.pendingCount ?? 0) : 0}
                   note={data.notes[date]}
-                  expected={data.expected.get(date)}
+                  expected={visibleExpected(data.expected.get(date), filters)}
                   inside={inSpan(date, selection)}
                   isEdge={selection !== null && (date === selection.from || date === selection.to)}
                   editing={editing === date}
@@ -437,6 +446,7 @@ function DayCell({
   inMonth,
   isToday,
   day,
+  pendingCount,
   note,
   expected,
   inside,
@@ -456,6 +466,8 @@ function DayCell({
   inMonth: boolean;
   isToday: boolean;
   day: CalendarDay | undefined;
+  /** Pending transactions that day (0 when pending ones are hidden). */
+  pendingCount: number;
   note: string | undefined;
   expected: DayExpected | undefined;
   inside: boolean;
@@ -543,10 +555,10 @@ function DayCell({
         >
           {Number(date.slice(8))}
         </span>
-        {day && day.pendingCount > 0 && (
+        {pendingCount > 0 && (
           <span
             className="absolute top-0 right-0 text-sm text-amber-600"
-            title={`${day.pendingCount} pending`}
+            title={`${pendingCount} pending`}
             aria-hidden="true"
           >
             ●
@@ -652,6 +664,16 @@ function DayCell({
 }
 
 type DayExpected = CalendarOverlay["expected"][number];
+
+/** A day's expected items of the kinds shown, counted again; nothing when none is shown. */
+function visibleExpected(
+  e: DayExpected | undefined,
+  filters: CalendarFilters,
+): DayExpected | undefined {
+  if (!e) return undefined;
+  const items = e.items.filter((i) => showsSource(filters, i.source));
+  return items.length === 0 ? undefined : { ...e, items, count: items.length };
+}
 
 /** How many expected items a day names; the rest are "+N more" (all are in the day's panel). */
 const PREVIEW_ITEMS = 2;

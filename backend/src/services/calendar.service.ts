@@ -650,7 +650,7 @@ export interface CalendarOverlay {
     count: number;
     outflowMinor: number;
     inflowMinor: number;
-    /** Up to three of the day's events, largest first. */
+    /** The day's events, largest first (the cell names a few and can leave out some kinds). */
     items: Array<{
       merchant: string;
       amountMinor: number;
@@ -684,7 +684,6 @@ export function calendarOverlay(
       // The largest first, for the day cell to name.
       items: [...events]
         .sort((a, b) => b.amountMinor - a.amountMinor)
-        .slice(0, 3)
         .map((e) => ({
           merchant: e.merchant,
           amountMinor: e.amountMinor,

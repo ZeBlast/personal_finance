@@ -14,7 +14,7 @@ export interface CalendarOverlay {
     count: number;
     outflowMinor: number;
     inflowMinor: number;
-    /** Up to three of the day's expected items, largest first. */
+    /** The day's expected items, largest first. */
     items: Array<{
       merchant: string;
       amountMinor: number;

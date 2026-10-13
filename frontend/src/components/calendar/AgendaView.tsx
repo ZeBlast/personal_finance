@@ -8,6 +8,14 @@ import type { CalendarEvent } from "../../types/calendar";
 import { LoadMore, PAGE_SIZE } from "./LoadMore";
 import { MONTH_NAMES, splitMonth, type DaySpan } from "./range";
 import { usePagedTransactions } from "./usePagedTransactions";
+import {
+  isFiltered,
+  matchesSearch,
+  showsSource,
+  showsTransaction,
+  type CalendarFilters,
+} from "./filters";
+import { MonthOverview } from "./MonthOverview";
 
 const navButton =
   "rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800";
@@ -32,10 +40,16 @@ interface AgendaDay {
  */
 export function AgendaView({
   accountId,
+  accountName,
+  filters,
+  onResetFilters,
   selection,
   onSelect,
 }: {
   accountId: string;
+  accountName: string | null;
+  filters: CalendarFilters;
+  onResetFilters: () => void;
   selection: DaySpan | null;
   onSelect: (span: DaySpan | null) => void;
 }) {
@@ -70,12 +84,18 @@ export function AgendaView({
       }
       return d;
     };
-    for (const e of expected.data ?? []) dayOf(e.date).expected.push(e);
+    for (const e of expected.data ?? []) {
+      if (!showsSource(filters, e.source)) continue;
+      if (!matchesSearch(filters, e.merchant, e.categoryName, e.accountName)) continue;
+      dayOf(e.date).expected.push(e);
+    }
     for (const t of list.items ?? []) {
+      if (!showsTransaction(filters, t.pending)) continue;
+      if (!matchesSearch(filters, t.merchant, t.category?.name, t.accountName)) continue;
       dayOf(basis === "posted" ? t.date : (t.authorizedDate ?? t.date)).transactions.push(t);
     }
     return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-  }, [expected.data, list.items, basis]);
+  }, [expected.data, list.items, basis, filters]);
 
   // Opening on this month, the list starts at today rather than the 1st.
   const list_ = useRef<HTMLDivElement>(null);
@@ -137,6 +157,7 @@ export function AgendaView({
           </button>
         </div>
       </div>
+      <MonthOverview month={month} accountId={accountId} accountName={accountName} />
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}
@@ -148,7 +169,16 @@ export function AgendaView({
       >
         {!loading && days.length === 0 && (
           <p className="p-4 text-sm text-slate-500">
-            Nothing happened or is expected in {MONTH_NAMES[monthIndex]}.
+            {isFiltered(filters) ? (
+              <>
+                Nothing in {MONTH_NAMES[monthIndex]} matches the filters.{" "}
+                <button type="button" className="text-blue-600 underline" onClick={onResetFilters}>
+                  Show everything
+                </button>
+              </>
+            ) : (
+              <>Nothing happened or is expected in {MONTH_NAMES[monthIndex]}.</>
+            )}
           </p>
         )}
         <ol>

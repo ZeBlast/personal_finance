@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AgendaView } from "../components/calendar/AgendaView";
+import { FilterBar } from "../components/calendar/FilterBar";
+import { ALL_SHOWN, type CalendarFilters } from "../components/calendar/filters";
 import { spanTitle } from "../components/calendar/range";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { setDateBasis, useDateBasis } from "../hooks/useDateBasis";
@@ -20,6 +22,10 @@ export function CalendarPage() {
   const accounts = useApi<Account[]>("/accounts");
   const { categories } = useCategories();
   const [view, setView] = usePersistentState<"month" | "agenda">("pf.calendar.view", "month");
+  const [filters, setFilters] = useState<CalendarFilters>(ALL_SHOWN);
+  const accountName = accountId
+    ? ((accounts.data ?? []).find((a) => String(a.id) === accountId)?.name ?? null)
+    : null;
   // In a narrow window the panel sits below the calendar: a button leads to it while it is out
   // of sight.
   const panel = useRef<HTMLDivElement>(null);
@@ -121,12 +127,27 @@ export function CalendarPage() {
         </div>
       </div>
 
+      <FilterBar filters={filters} onChange={setFilters} searchable={view === "agenda"} />
+
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-[30rem] min-w-0 lg:min-h-0">
           {view === "agenda" ? (
-            <AgendaView accountId={accountId} selection={selection} onSelect={setSelection} />
+            <AgendaView
+              accountId={accountId}
+              accountName={accountName}
+              filters={filters}
+              onResetFilters={() => setFilters(ALL_SHOWN)}
+              selection={selection}
+              onSelect={setSelection}
+            />
           ) : (
-            <CalendarBoard accountId={accountId} selection={selection} onSelect={setSelection} />
+            <CalendarBoard
+              accountId={accountId}
+              accountName={accountName}
+              filters={filters}
+              selection={selection}
+              onSelect={setSelection}
+            />
           )}
         </div>
         <div ref={panel} className="flex min-w-0 flex-col lg:min-h-0">
