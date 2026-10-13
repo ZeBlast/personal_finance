@@ -92,6 +92,19 @@ describe("matching the two sides of a transfer", () => {
     ).toEqual([[1, 2]]);
   });
 
+  it("pairs two sides that both read like a transfer before a purchase or a promotion", () => {
+    // A $10 purchase the day before, and a $10 promotional credit, must not take the two sides of
+    // a real $10 transfer.
+    expect(
+      matchTransfers([
+        c(1, 1, "2026-09-08", 1000, "Dunkin'", "FOOD_AND_DRINK"),
+        c(2, 2, "2026-09-09", -1000, "Zelle payment from JONATHAN VO", "TRANSFER_IN"),
+        c(3, 3, "2026-09-09", 1000, "Jonathan Vo", "TRANSFER_OUT"),
+        c(4, 4, "2026-09-11", -1000, "VISA PROMOTION $10 PAZE CREDIT THANK YOU", "TRANSFER_IN"),
+      ]),
+    ).toEqual([[3, 2]]);
+  });
+
   it("uses each transaction once and prefers the closest date", () => {
     const pairs = matchTransfers([
       c(1, 1, "2026-09-03", 5000, "transfer"),

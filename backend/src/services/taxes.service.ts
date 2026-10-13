@@ -20,7 +20,7 @@ export interface TaxIncomeTransaction {
   amountMinor: number; // money in, as a positive number
   accountName: string;
   categoryName: string | null;
-  /** "credit" when its category counts money in as taxable income (Transfers > Credit). */
+  /** "credit" when its category counts money in as taxable income (Income > Credit). */
   kind: "income" | "credit";
   source: string;
   pending: boolean;
@@ -100,11 +100,12 @@ export function taxIncome(db: AppDb, year: number, environment: string): TaxInco
     amountMinor: r.amount_minor,
     accountName: r.account_name,
     categoryName: r.category_name,
-    // A credit is money counted as income by its category (Transfers > Credit), not pay or other
-    // income filed under Income (Paycheck, Interest & Dividends, ...).
+    // A credit is money counted as income by a Credit category (Income > Credit) or by a category
+    // outside Income, not pay or other income filed under Income (Paycheck, Interest & Dividends).
     kind:
       r.treatment === "income" &&
-      (r.parent_name ?? r.category_name ?? "").trim().toLowerCase() !== "income"
+      ((r.category_name ?? "").trim().toLowerCase() === "credit" ||
+        (r.parent_name ?? r.category_name ?? "").trim().toLowerCase() !== "income")
         ? "credit"
         : "income",
     source: r.source,

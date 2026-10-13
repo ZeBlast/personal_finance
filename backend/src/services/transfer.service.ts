@@ -106,34 +106,46 @@ const readsLikeTransfer = (c: Candidate): boolean =>
 
 const dayNumber = (day: string): number => Date.parse(`${day}T00:00:00Z`) / 86_400_000;
 
-/** Pairs up outgoing and incoming candidates. Pure, so it can be tested without a database. */
+/**
+ * Pairs up outgoing and incoming candidates. Pure, so it can be tested without a database.
+ *
+ * Pairs where both sides read like a transfer are made first, so a purchase of the same amount a
+ * day earlier cannot take the other side of a real transfer; only then may one side alone read like
+ * one. A promotion, cashback, reward or refund is never one side of a transfer.
+ */
 export function matchTransfers(candidates: Candidate[]): Array<[number, number]> {
-  const outgoing = candidates
+  const eligible = candidates.filter((c) => !NOT_A_PAYMENT.test(c.name));
+  const outgoing = eligible
     .filter((c) => c.amount > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-  const incoming = candidates.filter((c) => c.amount < 0);
+  const incoming = eligible.filter((c) => c.amount < 0);
   const used = new Set<number>();
   const pairs: Array<[number, number]> = [];
 
-  for (const out of outgoing) {
-    let best: Candidate | null = null;
-    let bestGap = Infinity;
-    for (const inn of incoming) {
-      if (used.has(inn.id) || inn.accountId === out.accountId) continue;
-      if (inn.currency !== out.currency || -inn.amount !== out.amount) continue;
-      const gap = Math.abs(dayNumber(inn.date) - dayNumber(out.date));
-      if (gap > MATCH_WINDOW_DAYS) continue;
-      // An exact amount on a different account is not enough on its own (a refund can equal a
-      // purchase): one side must read like a transfer or a payment.
-      if (!readsLikeTransfer(out) && !readsLikeTransfer(inn)) continue;
-      if (gap < bestGap || (gap === bestGap && best !== null && inn.id < best.id)) {
-        best = inn;
-        bestGap = gap;
+  for (const bothSides of [true, false]) {
+    for (const out of outgoing) {
+      if (used.has(out.id)) continue;
+      let best: Candidate | null = null;
+      let bestGap = Infinity;
+      for (const inn of incoming) {
+        if (used.has(inn.id) || inn.accountId === out.accountId) continue;
+        if (inn.currency !== out.currency || -inn.amount !== out.amount) continue;
+        const gap = Math.abs(dayNumber(inn.date) - dayNumber(out.date));
+        if (gap > MATCH_WINDOW_DAYS) continue;
+        // An exact amount on a different account is not enough on its own (a refund can equal a
+        // purchase): one side must read like a transfer or a payment, and first both.
+        const reads = Number(readsLikeTransfer(out)) + Number(readsLikeTransfer(inn));
+        if (reads < (bothSides ? 2 : 1)) continue;
+        if (gap < bestGap || (gap === bestGap && best !== null && inn.id < best.id)) {
+          best = inn;
+          bestGap = gap;
+        }
       }
-    }
-    if (best) {
-      used.add(best.id);
-      pairs.push([out.id, best.id]);
+      if (best) {
+        used.add(out.id);
+        used.add(best.id);
+        pairs.push([out.id, best.id]);
+      }
     }
   }
   return pairs;

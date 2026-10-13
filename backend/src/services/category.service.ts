@@ -919,3 +919,87 @@ export function ensureCategoryPack(db: AppDb): CategoryPackResult | null {
   });
   return result;
 }
+
+const CREDIT_REFUND_REGROUP_DONE = "defaults_credit_income_refund_reimbursements_v1";
+
+export interface CreditRefundRegroupResult {
+  creditMoved: boolean;
+  refundMerged: boolean;
+  transactionsMoved: number;
+}
+
+/**
+ * Regroups money coming in, once: Transfers > Credit moves under Income (it still counts as taxable
+ * income, and the Taxes page still groups it as Credits), and Transfers > Refund is folded into
+ * Income > Reimbursements (both lower spending and never count as income): its transactions, rules
+ * and budgets move there, and the empty Refund category is removed. Links from a refund to its
+ * purchase, and categories chosen by hand, are kept. Returns null when already done.
+ */
+export function ensureCreditRefundRegroup(db: AppDb): CreditRefundRegroupResult | null {
+  if (db.select().from(appSettings).where(eq(appSettings.key, CREDIT_REFUND_REGROUP_DONE)).get()) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const result: CreditRefundRegroupResult = {
+    creditMoved: false,
+    refundMerged: false,
+    transactionsMoved: 0,
+  };
+  const top = (name: string) =>
+    db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(sql`lower(${categories.name}) = ${name} and ${categories.parentId} is null`)
+      .get();
+  const child = (name: string, parentId: number) =>
+    db
+      .select({ id: categories.id, active: categories.active })
+      .from(categories)
+      .where(sql`lower(${categories.name}) = ${name} and ${categories.parentId} = ${parentId}`)
+      .get();
+  const income = top("income");
+  const transfers = top("transfers");
+
+  if (income && transfers) {
+    const credit = child("credit", transfers.id);
+    if (credit && !child("credit", income.id) && childIds(db, credit.id).length === 0) {
+      db.update(categories)
+        .set({ parentId: income.id, incomeTreatment: "income", updatedAt: now })
+        .where(eq(categories.id, credit.id))
+        .run();
+      result.creditMoved = true;
+    }
+
+    const refund = child("refund", transfers.id);
+    if (refund && childIds(db, refund.id).length === 0) {
+      let reimbursements = child("reimbursements", income.id);
+      if (!reimbursements) {
+        reimbursements = db
+          .insert(categories)
+          .values({
+            name: "Reimbursements",
+            color: "#86efac",
+            parentId: income.id,
+            active: true,
+            incomeTreatment: "refund",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: categories.id, active: categories.active })
+          .get();
+      } else if (!reimbursements.active) {
+        db.update(categories)
+          .set({ active: true, updatedAt: now })
+          .where(eq(categories.id, reimbursements.id))
+          .run();
+      }
+      const moved = deleteCategory(db, refund.id, reimbursements.id);
+      result.refundMerged = true;
+      result.transactionsMoved = moved.transactionCount;
+    }
+  }
+  db.insert(appSettings)
+    .values({ key: CREDIT_REFUND_REGROUP_DONE, value: "true", updatedAt: now })
+    .run();
+  return result;
+}

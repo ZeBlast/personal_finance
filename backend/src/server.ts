@@ -10,6 +10,7 @@ import {
   ensureStarterAdditions,
   ensureTransferSubcategories,
   ensureCategoryPack,
+  ensureCreditRefundRegroup,
   seedDefaults,
 } from "./services/category.service.js";
 import { detectInternalTransfers } from "./services/transfer.service.js";
@@ -64,6 +65,13 @@ async function main(): Promise<void> {
   if (pack) {
     console.log(
       `added ${pack.categoriesCreated} categories (${pack.recategorized} past transactions sorted)`,
+    );
+  }
+  // Credit moves under Income (still taxable); Refund folds into Income > Reimbursements, once.
+  const regroup = ensureCreditRefundRegroup(db);
+  if (regroup && (regroup.creditMoved || regroup.refundMerged)) {
+    console.log(
+      `moved Credit under Income; Refund merged into Reimbursements (${regroup.transactionsMoved} transactions)`,
     );
   }
   if (diningMoved !== null) {
