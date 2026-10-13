@@ -14,6 +14,9 @@ export const RULE_FIELDS = ["merchant", "name", "recipient", "sender", "plaid_ca
 export const RULE_OPERATORS = ["equals", "contains", "starts_with", "same_merchant"] as const;
 export type RuleField = (typeof RULE_FIELDS)[number];
 export type RuleOperator = (typeof RULE_OPERATORS)[number];
+/** Which way the money moves for a rule to apply: `in`, `out`, or (null) either. */
+export const RULE_DIRECTIONS = ["in", "out"] as const;
+export type RuleDirection = (typeof RULE_DIRECTIONS)[number];
 
 type Reader = Pick<AppDb, "select">;
 type Writer = Pick<AppDb, "select" | "update">;
@@ -26,12 +29,15 @@ export interface RuleSubject {
   sender: string | null;
   plaidPrimary: string | null;
   plaidDetailed: string | null;
+  /** Cents, positive is money out; when unknown, a direction-limited rule never matches. */
+  amountMinor?: number | undefined;
 }
 
 export interface RuleLike {
   field: RuleField;
   operator: RuleOperator;
   matchValue: string;
+  direction?: RuleDirection | null | undefined;
 }
 
 const norm = (text: string): string => text.trim().toLowerCase();
@@ -57,6 +63,9 @@ function candidates(field: RuleField, subject: RuleSubject): string[] {
 export function ruleMatches(rule: RuleLike, subject: RuleSubject): boolean {
   const wanted = norm(rule.matchValue);
   if (wanted === "") return false;
+  const amount = subject.amountMinor ?? 0;
+  if (rule.direction === "out" && !(amount > 0)) return false;
+  if (rule.direction === "in" && !(amount < 0)) return false;
   if (rule.operator === "same_merchant") {
     // The same place, ignoring case, store numbers and reference ids.
     const key = merchantKey(rule.matchValue);
@@ -96,6 +105,7 @@ export function activeRules(db: Reader): RuleRow[] {
       field: transactionRules.field,
       operator: transactionRules.operator,
       matchValue: transactionRules.matchValue,
+      direction: transactionRules.direction,
       categoryId: transactionRules.categoryId,
       priority: transactionRules.priority,
       enabled: transactionRules.enabled,
@@ -123,6 +133,7 @@ const subjectColumns = {
   senderUser: transactions.senderUser,
   plaidPrimary: transactions.plaidCategoryPrimary,
   plaidDetailed: transactions.plaidCategoryDetailed,
+  amountMinor: transactions.amountMinor,
   categoryId: transactions.categoryId,
   categorySource: transactions.categorySource,
   categoryRuleId: transactions.categoryRuleId,
@@ -186,6 +197,7 @@ function toSubject(row: {
   senderUser: string | null;
   plaidPrimary: string | null;
   plaidDetailed: string | null;
+  amountMinor: number;
 }): RuleSubject {
   return {
     merchant: row.merchantNameUser?.trim() || row.merchantName || row.name,
@@ -194,6 +206,7 @@ function toSubject(row: {
     sender: row.senderUser?.trim() || row.sender,
     plaidPrimary: row.plaidPrimary,
     plaidDetailed: row.plaidDetailed,
+    amountMinor: row.amountMinor,
   };
 }
 
@@ -258,6 +271,7 @@ export interface RuleDto {
   field: RuleField;
   operator: RuleOperator;
   matchValue: string;
+  direction: RuleDirection | null;
   categoryId: number;
   categoryName: string;
   categoryActive: boolean;
@@ -271,6 +285,7 @@ const dtoColumns = {
   field: transactionRules.field,
   operator: transactionRules.operator,
   matchValue: transactionRules.matchValue,
+  direction: transactionRules.direction,
   categoryId: transactionRules.categoryId,
   categoryName: categories.name,
   categoryActive: categories.active,
@@ -315,6 +330,7 @@ export interface RuleInput {
   field: RuleField;
   operator: RuleOperator;
   matchValue: string;
+  direction?: RuleDirection | null | undefined;
   categoryId: number;
   enabled?: boolean | undefined;
 }
@@ -336,6 +352,7 @@ export function createRule(db: AppDb, input: RuleInput): RuleDto {
       field: input.field,
       operator: input.operator,
       matchValue: input.matchValue,
+      direction: input.direction ?? null,
       categoryId: input.categoryId,
       priority,
       enabled: input.enabled ?? true,
@@ -412,7 +429,6 @@ export function previewRule(db: AppDb, rule: RuleLike): RulePreview {
     .select({
       ...subjectColumns,
       date: transactions.date,
-      amountMinor: transactions.amountMinor,
     })
     .from(transactions)
     .all();

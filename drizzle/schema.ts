@@ -319,6 +319,8 @@ export const transactionRules = sqliteTable("transaction_rules", {
   /** `equals`, `contains`, or `starts_with`; always case-insensitive. */
   operator: text("operator").notNull(),
   matchValue: text("match_value").notNull(),
+  /** `in` (money coming in), `out` (money going out), or null for either. */
+  direction: text("direction"),
   categoryId: integer("category_id")
     .notNull()
     .references(() => categories.id, { onDelete: "cascade" }),

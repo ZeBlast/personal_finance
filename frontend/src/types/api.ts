@@ -17,6 +17,8 @@ export interface Settings {
   backupsToKeep: number;
   /** The sidebar's pages in the user's order (paths); empty is the usual order. */
   navOrder: string[];
+  /** Names you go by on bank descriptions: money to or from them is moving your own money. */
+  ownNames: string[];
 }
 
 export interface PlaidStatus {
@@ -246,6 +248,7 @@ export interface Category {
 
 export type RuleField = "merchant" | "name" | "recipient" | "sender" | "plaid_category";
 export type RuleOperator = "equals" | "contains" | "starts_with" | "same_merchant";
+export type RuleDirection = "in" | "out";
 
 export interface Rule {
   id: number;
@@ -253,6 +256,8 @@ export interface Rule {
   field: RuleField;
   operator: RuleOperator;
   matchValue: string;
+  /** `in` (money coming in), `out` (money going out), or null for either. */
+  direction: RuleDirection | null;
   categoryId: number;
   categoryName: string;
   categoryActive: boolean;

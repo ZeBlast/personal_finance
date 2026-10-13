@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { api, ApiError, errorMessage } from "../api/client";
 import { MerchantsSection } from "../components/categories/MerchantsSection";
+import { OwnNamesSection } from "../components/categories/OwnNamesSection";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import type {
@@ -8,6 +9,7 @@ import type {
   Category,
   Rule,
   RuleField,
+  RuleDirection,
   RuleOperator,
   RulePreview,
 } from "../types/api";
@@ -403,6 +405,7 @@ function RuleForm({
   const [field, setField] = useState<RuleField>(rule?.field ?? "merchant");
   const [operator, setOperator] = useState<RuleOperator>(rule?.operator ?? "contains");
   const [matchValue, setMatchValue] = useState(rule?.matchValue ?? "");
+  const [direction, setDirection] = useState<RuleDirection | "">(rule?.direction ?? "");
   const [categoryId, setCategoryId] = useState(rule ? String(rule.categoryId) : "");
   const [name, setName] = useState(rule?.name ?? "");
   const [preview, setPreview] = useState<RulePreview | null>(null);
@@ -420,7 +423,7 @@ function RuleForm({
     const timer = window.setTimeout(() => {
       api<RulePreview>("/rules/preview", {
         method: "POST",
-        body: JSON.stringify({ field, operator, matchValue }),
+        body: JSON.stringify({ field, operator, matchValue, direction: direction || null }),
       })
         .then((result) => !cancelled && setPreview(result))
         .catch(() => !cancelled && setPreview(null));
@@ -429,7 +432,7 @@ function RuleForm({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [field, operator, matchValue]);
+  }, [field, operator, matchValue, direction]);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -440,6 +443,7 @@ function RuleForm({
       field,
       operator,
       matchValue,
+      direction: direction || null,
       categoryId: Number(categoryId),
     };
     try {
@@ -519,6 +523,21 @@ function RuleForm({
               .
             </p>
           )}
+        </div>
+        <div>
+          <label htmlFor={`${id}-dir`} className="block text-sm font-medium">
+            For money
+          </label>
+          <Select
+            id={`${id}-dir`}
+            value={direction}
+            onChange={(e) => setDirection(e.target.value as RuleDirection | "")}
+            className={inputClass}
+          >
+            <option value="">Going out or coming in</option>
+            <option value="out">Going out only (purchases, payments)</option>
+            <option value="in">Coming in only (refunds, credits, income)</option>
+          </Select>
         </div>
         <div>
           <label htmlFor={`${id}-cat`} className="block text-sm font-medium">
@@ -657,6 +676,7 @@ function RulesSection({ categories }: { categories: Category[] }) {
         Rules are tried from the top; the first one that matches decides the category. Categories
         you pick by hand are never changed by rules.
       </p>
+      <OwnNamesSection onSaved={() => void load()} />
       {notice && (
         <p
           role={notice.kind === "error" ? "alert" : "status"}
@@ -673,6 +693,8 @@ function RulesSection({ categories }: { categories: Category[] }) {
               <div className="text-xs text-slate-500">
                 {FIELD_LABEL[r.field]} {OPERATOR_LABEL[r.operator]} “{r.matchValue}” →{" "}
                 {r.categoryName}
+                {r.direction === "out" ? " · money going out" : ""}
+                {r.direction === "in" ? " · money coming in" : ""}
                 {!r.categoryActive ? " (archived: rule is ignored)" : ""}
                 {!r.enabled ? " · off" : ""}
               </div>

@@ -267,6 +267,13 @@
       "when": 1791911079636,
       "tag": "0037_occurrence_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791923516272,
+      "tag": "0038_rule_direction",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `transaction_rules` ADD `direction` text;

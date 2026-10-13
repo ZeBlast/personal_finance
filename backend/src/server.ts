@@ -13,6 +13,7 @@ import {
   ensureCreditRefundRegroup,
   seedDefaults,
 } from "./services/category.service.js";
+import { ensureRuleImprovements } from "./services/default-rules.service.js";
 import { detectInternalTransfers } from "./services/transfer.service.js";
 import { createCipher, deriveDatabaseKey, resolveEncryptionKey } from "./services/crypto.js";
 import {
@@ -69,6 +70,13 @@ async function main(): Promise<void> {
   }
   // Credit moves under Income (still taxable); Refund folds into Income > Reimbursements, once.
   const regroup = ensureCreditRefundRegroup(db);
+  // Rules that know which way money moves, name rules first, and generic credit rules, once.
+  const ruleFixes = ensureRuleImprovements(db);
+  if (ruleFixes) {
+    console.log(
+      `improved the starting rules (${ruleFixes.rulesCreated} added, ${ruleFixes.recategorized} transactions sorted)`,
+    );
+  }
   if (regroup && (regroup.creditMoved || regroup.refundMerged)) {
     console.log(
       `moved Credit under Income; Refund merged into Reimbursements (${regroup.transactionsMoved} transactions)`,

@@ -15,6 +15,7 @@ import {
   listRules,
   previewRule,
   reorderRules,
+  RULE_DIRECTIONS,
   RULE_FIELDS,
   RULE_OPERATORS,
   updateRule,
@@ -47,6 +48,7 @@ const ruleFields = {
   field: z.enum(RULE_FIELDS),
   operator: z.enum(RULE_OPERATORS),
   matchValue: z.string().trim().min(1).max(200),
+  direction: z.enum(RULE_DIRECTIONS).nullable().optional(),
   categoryId: z.number().int().positive(),
   enabled: z.boolean().optional(),
 };
@@ -61,6 +63,7 @@ const rulePreviewBody = z
     field: ruleFields.field,
     operator: ruleFields.operator,
     matchValue: ruleFields.matchValue,
+    direction: ruleFields.direction,
   })
   .strict();
 

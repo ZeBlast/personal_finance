@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { AppDb } from "../db/client.js";
+import { syncOwnNameRules } from "../services/default-rules.service.js";
 import { getSettings, settingsPatchSchema, updateSettings } from "../services/settings.service.js";
 
 export function settingsRoutes(db: AppDb): Router {
@@ -18,7 +19,10 @@ export function settingsRoutes(db: AppDb): Router {
       });
       return;
     }
-    res.json(updateSettings(db, parsed.data));
+    const updated = updateSettings(db, parsed.data);
+    // Money to and from the names you go by is filed as moving your own money.
+    if (parsed.data.ownNames !== undefined) syncOwnNameRules(db, updated.ownNames);
+    res.json(updated);
   });
 
   return router;
