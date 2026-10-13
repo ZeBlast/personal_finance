@@ -236,12 +236,13 @@ export function AccountsPage() {
 
   if (cardView) {
     return (
-      <section className="max-w-6xl space-y-5">
+      <section className="w-full space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">Accounts</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Click a card to turn it over. Connections are managed in the classic view.
+              Click a card to turn it over. Sync a bank with its own button; reconnecting and
+              disconnecting are in the classic view.
             </p>
           </div>
           {viewSwitch}

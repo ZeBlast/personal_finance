@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, errorMessage } from "../../../api/client";
 import { useApi } from "../../../hooks/useApi";
 import { useCategories } from "../../../hooks/useCategories";
 import { formatMinor } from "../../../lib/money";
-import { announceDataChanged } from "../../../lib/syncEvents";
+import { announceDataChanged, announceSyncFinished } from "../../../lib/syncEvents";
 import { timeAgo } from "../../../lib/time";
 import type { Account, PlaidItem } from "../../../types/api";
 import { ManualTransactionDialog } from "../../transactions/ManualTransactionDialog";
@@ -12,11 +13,13 @@ import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
 
 /**
- * The experimental Accounts view: every account as a card you can pick up. Checking, savings and
- * credit accounts look like the debit and credit cards they are (tilt with the mouse, click to turn
- * over for the details and actions); linked accounts carry their bank's logo and a "Linked" mark,
- * accounts kept by hand a "Kept by hand" mark, side by side. Loans and investments are plainer
- * tiles, and collections get a showcase of their own (see CollectionShowcase).
+ * The experimental Accounts view: every account as a card in the style of the investment account
+ * cards, with the account's colour as an accent down the left side. Cards are grouped by the bank
+ * they come from (each group with its own Sync button), accounts kept by hand together after
+ * them, and the grid fills the width of the window. A card shows the account's name, its number's
+ * last digits, its balance (with how much of the limit is used for a credit card) and whether it
+ * is connected, needs attention, or is kept by hand; click it to turn it over for the details and
+ * what you can do. Collections get a showcase of their own (see CollectionShowcase).
  */
 export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const accounts = useApi<Account[]>("/accounts?includeHidden=1");
@@ -24,18 +27,18 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [adding, setAdding] = useState<Account | null>(null);
   const [importing, setImporting] = useState<Account | null>(null);
   const [managing, setManaging] = useState<Account | null>(null);
-  const logos = useMemo(() => new Map(items.map((i) => [i.id, i.logo])), [items]);
 
   const all = accounts.data ?? [];
-  const cards = all.filter(
-    (a) => !isCollection(a) && (a.type === "depository" || a.type === "credit"),
-  );
-  const others = all.filter(
-    (a) => !isCollection(a) && a.type !== "depository" && a.type !== "credit",
-  );
   const collections = all.filter(isCollection);
-  const manualBank = all.filter(
-    (a) => a.isManual && !isCollection(a) && (a.type === "depository" || a.type === "credit"),
+  const manual = all.filter((a) => a.isManual && !isCollection(a));
+  const manualBank = manual.filter((a) => a.type === "depository" || a.type === "credit");
+  // One group per connection, in the order the connections were made.
+  const groups = useMemo(
+    () =>
+      items
+        .map((item) => ({ item, accounts: all.filter((a) => a.itemId === item.id) }))
+        .filter((g) => g.accounts.length > 0),
+    [items, all],
   );
   const changed = () => {
     setAdding(null);
@@ -47,44 +50,37 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   if (accounts.error) return <p className="text-sm text-red-600">{accounts.error}</p>;
   if (!accounts.data) return <p className="text-sm text-slate-500">Loading your accounts...</p>;
 
+  const card = (a: Account) => (
+    <AccountCard
+      key={a.id}
+      account={a}
+      onAdd={() => setAdding(a)}
+      onImport={() => setImporting(a)}
+    />
+  );
+
   return (
     <div className="space-y-8">
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Cards and bank accounts</h2>
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map((a) => (
-            <PaymentCard
-              key={a.id}
-              account={a}
-              logo={a.itemId === null ? null : (logos.get(a.itemId) ?? null)}
-              onAdd={() => setAdding(a)}
-              onImport={() => setImporting(a)}
-            />
-          ))}
-        </div>
-        {cards.length === 0 && (
-          <p className="text-sm text-slate-500">No checking, savings or card accounts yet.</p>
-        )}
-      </section>
+      {groups.map(({ item, accounts: own }) => (
+        <InstitutionGroup key={item.id} item={item}>
+          {own.map(card)}
+        </InstitutionGroup>
+      ))}
 
-      {others.length > 0 && (
+      {manual.length > 0 && (
         <section>
-          <h2 className="mb-3 text-lg font-semibold">Loans, investments and other</h2>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {others.map((a) => (
-              <OtherTile
-                key={a.id}
-                account={a}
-                logo={a.itemId === null ? null : (logos.get(a.itemId) ?? null)}
-              />
-            ))}
-          </div>
+          <GroupHeading title="Kept by hand" subtitle="Accounts you add and update yourself" />
+          <CardGrid>{manual.map(card)}</CardGrid>
         </section>
       )}
 
+      {groups.length === 0 && manual.length === 0 && (
+        <p className="text-sm text-slate-500">No accounts yet.</p>
+      )}
+
       {collections.length > 0 && (
-        <section className="space-y-6">
-          <h2 className="text-lg font-semibold">Collections</h2>
+        <section className="space-y-4">
+          <GroupHeading title="Collections" subtitle="Valued item by item" />
           {collections.map((a) => (
             <CollectionShowcase key={a.id} account={a} onManage={() => setManaging(a)} />
           ))}
@@ -121,111 +117,235 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   );
 }
 
+/** The cards fill the width of the window: as many columns as fit, each at least 17rem. */
+function CardGrid({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="grid gap-4"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(17rem, 1fr))" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function GroupHeading({
+  title,
+  subtitle,
+  logo,
+  action,
+}: {
+  title: string;
+  subtitle: string;
+  logo?: string | null;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        {logo ? (
+          <img
+            src={logo}
+            alt=""
+            className="h-8 w-8 rounded-full bg-white object-contain p-0.5 ring-1 ring-slate-200"
+          />
+        ) : null}
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold">{title}</h2>
+          <p className="text-xs text-slate-500">{subtitle}</p>
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** A bank's accounts, with a button that syncs just that bank. */
+function InstitutionGroup({ item, children }: { item: PlaidItem; children: ReactNode }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function sync(): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api<{
+        runs: Array<{
+          status: string;
+          added: number;
+          modified: number;
+          errorMessage: string | null;
+        }>;
+      }>("/sync", { method: "POST", body: JSON.stringify({ itemId: item.id }) });
+      const run = result.runs[0];
+      setMessage(
+        !run
+          ? "Nothing to sync."
+          : run.status === "success"
+            ? run.added + run.modified > 0
+              ? `Synced: ${run.added} new, ${run.modified} updated.`
+              : "Synced. Nothing new."
+            : (run.errorMessage ?? "The sync did not finish."),
+      );
+    } catch (e) {
+      setMessage(errorMessage(e, "Could not sync."));
+    } finally {
+      setBusy(false);
+      announceSyncFinished();
+    }
+  }
+
+  const status =
+    item.status === "active"
+      ? item.lastSuccessfulSyncAt
+        ? `Synced ${timeAgo(item.lastSuccessfulSyncAt)}`
+        : "Not synced yet"
+      : item.status === "login_required"
+        ? "Needs you to sign in again (reconnect in the classic view)"
+        : "Connection problem";
+
+  return (
+    <section>
+      <GroupHeading
+        title={item.institutionName}
+        subtitle={status}
+        logo={item.logo}
+        action={
+          <div className="flex items-center gap-2">
+            {message && <span className="text-xs text-slate-500">{message}</span>}
+            <button
+              type="button"
+              disabled={busy || item.borrowed}
+              onClick={() => void sync()}
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-800"
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`}
+              >
+                <path
+                  d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v2.6h-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {busy ? "Syncing..." : `Sync ${item.institutionName}`}
+            </button>
+          </div>
+        }
+      />
+      <CardGrid>{children}</CardGrid>
+    </section>
+  );
+}
+
 const money = (a: Account, minor: number | null) => formatMinor(minor, a.currency || "USD");
 
-/** A colour a little darker than `hex` (#rrggbb), for the card's gradient. */
-function darker(hex: string, amount = 0.35): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return "#1e293b";
-  const n = parseInt(m[1]!, 16);
-  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount));
-  return `rgb(${ch(16)}, ${ch(8)}, ${ch(0)})`;
+/** A plain outline of a card chip, drawn in the text colour. */
+function ChipOutline() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 40 30"
+      className="h-6 w-8 text-slate-400 dark:text-slate-500"
+    >
+      <rect
+        x="1"
+        y="1"
+        width="38"
+        height="28"
+        rx="5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M1 11h11M1 19h11M28 11h11M28 19h11M12 1v28M28 1v28M12 15h16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+    </svg>
+  );
 }
 
-const DEFAULT_COLOR: Record<string, string> = {
-  credit: "#4338ca",
-  depository: "#0f766e",
-};
-
-/** Whose card it is, for the corner of the card: the bank's logo, or its initials. */
-function Brand({ account, logo }: { account: Account; logo: string | null }) {
-  const name = account.institutionName ?? (account.isManual ? "Kept by hand" : "");
-  if (logo) {
+/** Connected, needs attention, or kept by hand. */
+function Status({ account: a }: { account: Account }) {
+  if (a.isManual) {
     return (
-      <img src={logo} alt="" className="h-7 w-7 rounded-full bg-white/90 object-contain p-0.5" />
+      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+        Manual
+      </span>
     );
   }
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
+  const ok = a.connectionStatus === "active";
   return (
-    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-[0.65rem] font-semibold">
-      {initials || "✎"}
-    </span>
-  );
-}
-
-/** Linked through Plaid, or kept by hand: the same kind of card, told apart by this mark. */
-function SourceMark({ account }: { account: Account }) {
-  return account.isManual ? (
-    <span className="rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-medium tracking-wide uppercase">
-      Kept by hand
-    </span>
-  ) : (
     <span
-      className="flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-medium tracking-wide uppercase"
-      title={
-        account.connectionStatus === "active"
-          ? "Linked and syncing"
-          : "Linked; the connection needs attention"
-      }
+      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+        ok
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+          : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+      }`}
     >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${account.connectionStatus === "active" ? "bg-emerald-300" : "bg-amber-300"}`}
-      />
-      Linked
+      <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} />
+      {ok ? "Connected" : "Disconnected"}
     </span>
   );
 }
 
-function PaymentCard({
+const KIND: Record<string, string> = {
+  credit: "Credit card",
+  depository: "Bank account",
+  loan: "Loan",
+  investment: "Investments",
+};
+
+function AccountCard({
   account: a,
-  logo,
   onAdd,
   onImport,
 }: {
   account: Account;
-  logo: string | null;
   onAdd: () => void;
   onImport: () => void;
 }) {
   const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const box = useRef<HTMLDivElement>(null);
+  const color = a.color ?? "#94a3b8";
+  const payment = a.type === "credit" || a.type === "depository";
   const credit = a.type === "credit";
-  const color = a.color ?? DEFAULT_COLOR[a.type] ?? "#334155";
+  const limit = credit ? a.creditLimitMinor : null;
   const used =
-    credit && a.creditLimitMinor && a.creditLimitMinor > 0
-      ? Math.min(1, Math.max(0, (a.currentBalanceMinor ?? 0) / a.creditLimitMinor))
-      : null;
+    limit && limit > 0 ? Math.min(1, Math.max(0, (a.currentBalanceMinor ?? 0) / limit)) : null;
+  const kind = a.subtype
+    ? `${a.subtype[0]!.toUpperCase()}${a.subtype.slice(1)}`
+    : (KIND[a.type] ?? a.type);
 
-  const onMove = (e: MouseEvent<HTMLDivElement>) => {
-    const r = box.current?.getBoundingClientRect();
-    if (!r) return;
-    setTilt({ x: (e.clientX - r.left) / r.width - 0.5, y: (e.clientY - r.top) / r.height - 0.5 });
+  const faceClass =
+    "absolute inset-0 flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white p-3 pl-4 text-sm dark:border-slate-700 dark:bg-slate-900";
+  const hidden = {
+    backfaceVisibility: "hidden" as const,
+    WebkitBackfaceVisibility: "hidden" as const,
   };
-  const face: CSSProperties = {
-    backfaceVisibility: "hidden",
-    WebkitBackfaceVisibility: "hidden",
-    background: `linear-gradient(135deg, ${color} 0%, ${darker(color)} 100%)`,
-  };
+  const accent = (
+    <span
+      aria-hidden="true"
+      className="absolute inset-y-0 left-0 w-1.5"
+      style={{ backgroundColor: color }}
+    />
+  );
 
   return (
-    <div
-      ref={box}
-      className={`group [perspective:1000px] ${a.hidden ? "opacity-50" : ""}`}
-      onMouseMove={onMove}
-      onMouseLeave={() => setTilt({ x: 0, y: 0 })}
-    >
+    <div className={`[perspective:1200px] ${a.hidden ? "opacity-50" : ""}`}>
       <div
         role="button"
         tabIndex={0}
         aria-pressed={flipped}
-        aria-label={`${a.name}: ${flipped ? "showing details" : "turn over for details"}`}
+        aria-label={`${a.name}: ${flipped ? "showing details, click to turn back" : "click for details"}`}
         onClick={() => setFlipped((f) => !f)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -233,112 +353,101 @@ function PaymentCard({
             setFlipped((f) => !f);
           }
         }}
-        className="relative aspect-[1.586] w-full cursor-pointer rounded-2xl shadow-lg transition-[transform,box-shadow] duration-300 ease-out outline-none group-hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-blue-400"
-        style={{
-          transformStyle: "preserve-3d",
-          transform: `rotateY(${(flipped ? 180 : 0) + tilt.x * 14}deg) rotateX(${-tilt.y * 10}deg)`,
-        }}
+        className="relative h-44 w-full cursor-pointer rounded-md shadow-sm transition-[transform,box-shadow] duration-500 outline-none hover:shadow-md focus-visible:ring-2 focus-visible:ring-blue-500"
+        style={{ transformStyle: "preserve-3d", transform: `rotateY(${flipped ? 180 : 0}deg)` }}
       >
-        {/* Front: what is on a real card. */}
-        <div
-          style={face}
-          className="absolute inset-0 flex flex-col justify-between overflow-hidden rounded-2xl p-4 text-white"
-        >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 opacity-60 transition-opacity group-hover:opacity-90"
-            style={{
-              background: `radial-gradient(circle at ${50 + tilt.x * 80}% ${50 + tilt.y * 80}%, rgba(255,255,255,0.28), transparent 55%)`,
-            }}
-          />
-          <div className="relative flex items-start justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <Brand account={a} logo={logo} />
-              <span className="truncate text-sm font-semibold">
-                {a.institutionName ?? "Your account"}
-              </span>
-            </div>
-            <SourceMark account={a} />
-          </div>
-          <div className="relative flex items-center gap-3">
-            {/* The chip. */}
-            <span
-              aria-hidden="true"
-              className="h-7 w-10 rounded-md border border-amber-200/60 bg-gradient-to-br from-amber-200 to-amber-500 shadow-inner"
-            />
-            <span className="font-mono text-lg tracking-[0.2em] opacity-90">
-              •••• {a.mask ?? "····"}
-            </span>
-          </div>
-          <div className="relative flex items-end justify-between gap-2">
+        {/* Front. */}
+        <div className={faceClass} style={hidden}>
+          {accent}
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="truncate text-xs opacity-80">{a.name}</div>
-              <div className="text-xl font-semibold tabular-nums">
-                {money(a, a.currentBalanceMinor)}
+              <div className="truncate font-medium">{a.name}</div>
+              <div className="text-xs text-slate-500">
+                {kind}
+                {a.hidden ? " · hidden" : ""}
               </div>
             </div>
-            <span className="text-right text-sm font-black tracking-widest italic opacity-90">
-              {credit ? "CREDIT" : a.subtype?.toLowerCase() === "savings" ? "SAVINGS" : "DEBIT"}
-            </span>
+            <Status account={a} />
           </div>
-          {a.hidden && (
-            <span className="absolute right-3 bottom-12 rounded bg-black/40 px-1.5 text-[0.65rem]">
-              Hidden
-            </span>
-          )}
+          <div className="mt-2 flex items-center gap-3">
+            {payment && <ChipOutline />}
+            {a.mask && (
+              <span className="font-mono text-sm tracking-[0.2em] text-slate-500">
+                •••• {a.mask}
+              </span>
+            )}
+          </div>
+          <div className="mt-auto">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs text-slate-500">{credit ? "Balance owed" : "Balance"}</span>
+              <span className="text-lg font-semibold tabular-nums">
+                {money(a, a.currentBalanceMinor)}
+              </span>
+            </div>
+            {credit && (
+              <div className="mt-1">
+                <div
+                  className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700"
+                  title={
+                    used === null
+                      ? "No limit known"
+                      : `${Math.round(used * 100)}% of the limit used`
+                  }
+                >
+                  <div
+                    className={`h-full rounded-full ${used !== null && used > 0.5 ? "bg-amber-500" : "bg-emerald-500"}`}
+                    style={{ width: `${(used ?? 0) * 100}%` }}
+                  />
+                </div>
+                <div className="mt-0.5 flex justify-between text-xs text-slate-500">
+                  <span>{used === null ? "" : `${Math.round(used * 100)}% used`}</span>
+                  <span>{limit ? `Limit ${money(a, limit)}` : "No limit known"}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Back: the details and what you can do. */}
-        <div
-          style={{ ...face, transform: "rotateY(180deg)" }}
-          className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl text-white"
-        >
-          <div aria-hidden="true" className="mt-4 h-8 w-full bg-black/70" />
-          <dl className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1 px-4 pt-3 text-xs">
-            <dt className="opacity-70">Balance</dt>
-            <dd className="text-right font-medium tabular-nums">
-              {money(a, a.currentBalanceMinor)}
-            </dd>
+        {/* Back. */}
+        <div className={faceClass} style={{ ...hidden, transform: "rotateY(180deg)" }}>
+          {accent}
+          <div className="truncate font-medium">{a.name}</div>
+          <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+            {a.officialName && a.officialName !== a.name && (
+              <>
+                <dt className="text-slate-500">Official name</dt>
+                <dd className="truncate text-right">{a.officialName}</dd>
+              </>
+            )}
             {a.availableBalanceMinor !== null && (
               <>
-                <dt className="opacity-70">Available</dt>
+                <dt className="text-slate-500">Available</dt>
                 <dd className="text-right tabular-nums">{money(a, a.availableBalanceMinor)}</dd>
               </>
             )}
-            {credit && a.creditLimitMinor !== null && (
+            {credit && limit !== null && (
               <>
-                <dt className="opacity-70">Limit</dt>
-                <dd className="text-right tabular-nums">{money(a, a.creditLimitMinor)}</dd>
+                <dt className="text-slate-500">Left to spend</dt>
+                <dd className="text-right tabular-nums">
+                  {money(a, Math.max(0, limit - (a.currentBalanceMinor ?? 0)))}
+                </dd>
               </>
             )}
-            <dt className="opacity-70">Kind</dt>
-            <dd className="truncate text-right">{a.subtype ?? a.type}</dd>
-            <dt className="opacity-70">Updated</dt>
+            <dt className="text-slate-500">Institution</dt>
+            <dd className="truncate text-right">{a.institutionName ?? "Kept by hand"}</dd>
+            <dt className="text-slate-500">Updated</dt>
             <dd className="truncate text-right">
               {a.lastBalanceUpdateAt ? timeAgo(a.lastBalanceUpdateAt) : "never"}
             </dd>
           </dl>
-          {used !== null && (
-            <div className="px-4 pb-1" title={`${Math.round(used * 100)}% of the limit used`}>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
-                <div
-                  className={`h-full rounded-full ${used > 0.5 ? "bg-amber-300" : "bg-emerald-300"}`}
-                  style={{ width: `${used * 100}%` }}
-                />
-              </div>
-              <div className="mt-0.5 text-[0.65rem] opacity-70">
-                {Math.round(used * 100)}% of the limit used
-              </div>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-1.5 px-4 pb-3" onClick={(e) => e.stopPropagation()}>
-            <CardButton onClick={() => navigate(`/transactions?account=${a.id}`)}>
+          <div className="mt-auto flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <BackButton onClick={() => navigate(`/transactions?account=${a.id}`)}>
               Transactions
-            </CardButton>
-            {a.isManual && (
+            </BackButton>
+            {a.isManual && payment && (
               <>
-                <CardButton onClick={onAdd}>Add</CardButton>
-                <CardButton onClick={onImport}>Import CSV</CardButton>
+                <BackButton onClick={onAdd}>Add transaction</BackButton>
+                <BackButton onClick={onImport}>Import CSV</BackButton>
               </>
             )}
           </div>
@@ -348,42 +457,15 @@ function PaymentCard({
   );
 }
 
-function CardButton({ onClick, children }: { onClick: () => void; children: string }) {
+function BackButton({ onClick, children }: { onClick: () => void; children: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       onKeyDown={(e) => e.stopPropagation()}
-      className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-medium hover:bg-white/35 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+      className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
     >
       {children}
     </button>
-  );
-}
-
-/** A loan, an investment account or anything else: a plainer tile that lifts on hover. */
-function OtherTile({ account: a, logo }: { account: Account; logo: string | null }) {
-  const color = a.color ?? "#475569";
-  return (
-    <div
-      className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-700 dark:bg-slate-800 ${a.hidden ? "opacity-50" : ""}`}
-      style={{ borderLeft: `6px solid ${color}` }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {logo && <img src={logo} alt="" className="h-6 w-6 rounded-full object-contain" />}
-          <span className="truncate font-medium">{a.name}</span>
-        </div>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-          {a.isManual ? "Kept by hand" : "Linked"}
-        </span>
-      </div>
-      <div className="mt-2 text-xl font-semibold tabular-nums">
-        {money(a, a.currentBalanceMinor)}
-      </div>
-      <div className="text-xs text-slate-500">
-        {a.institutionName ?? ""} {a.subtype ?? a.type}
-      </div>
-    </div>
   );
 }

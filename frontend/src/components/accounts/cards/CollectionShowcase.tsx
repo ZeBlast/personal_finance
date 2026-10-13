@@ -1,4 +1,12 @@
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { useApi } from "../../../hooks/useApi";
 import { formatMinor } from "../../../lib/money";
 import type { Account } from "../../../types/api";
@@ -34,14 +42,17 @@ type Sort = "value" | "name";
 const money = (minor: number | null) => formatMinor(minor, "USD");
 
 /** TCGplayer's public picture of a card, when the item is matched to a TCGplayer product. */
-const cardImage = (id: string) => `https://tcgplayer-cdn.tcgplayer.com/product/${id}_200w.jpg`;
-const cardImageLarge = (id: string) => `https://tcgplayer-cdn.tcgplayer.com/product/${id}_400w.jpg`;
+const cardImage = (id: string, size: 200 | 400 | 1000 = 200) =>
+  `https://tcgplayer-cdn.tcgplayer.com/product/${id}_${size}w.jpg`;
+
+/** How many items the preview shows before "View all". */
+const PREVIEW = 8;
 
 /**
- * A collection shown for what it is: Pokémon cards as a binder of cards (their pictures when
- * matched to TCGplayer, lifting and tilting under the mouse; click one to look closer), anything
- * else as items on display shelves, the more valuable standing taller. "Manage" opens the full
- * collection editor.
+ * A collection shown for what it is: a preview of its most valuable items (Pokémon cards as cards,
+ * with their pictures; anything else as boxes on a shelf), and "View all" for a large window to
+ * scroll, search and sort through every item. Click an item for a closer look you can zoom into
+ * and drag around. "Manage" opens the full collection editor.
  */
 export function CollectionShowcase({
   account,
@@ -51,79 +62,178 @@ export function CollectionShowcase({
   onManage: () => void;
 }) {
   const loaded = useApi<Collection>(`/accounts/${account.id}/collection`);
-  const [sort, setSort] = useState<Sort>("value");
+  const [browsing, setBrowsing] = useState(false);
   const [open, setOpen] = useState<Item | null>(null);
-  const items = useMemo(() => {
-    const list = [...(loaded.data?.items ?? [])];
-    return sort === "value"
-      ? list.sort((a, b) => b.totalValueMinor - a.totalValueMinor || a.name.localeCompare(b.name))
-      : list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [loaded.data, sort]);
   const c = loaded.data;
-  const pieces = items.reduce((n, i) => n + i.quantity, 0);
+  const pokemon = c?.type === "pokemon";
+  const byValue = useMemo(
+    () =>
+      [...(c?.items ?? [])].sort(
+        (a, b) => b.totalValueMinor - a.totalValueMinor || a.name.localeCompare(b.name),
+      ),
+    [c],
+  );
+  const pieces = byValue.reduce((n, i) => n + i.quantity, 0);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="relative overflow-hidden rounded-md border border-slate-200 bg-white p-4 pl-5 dark:border-slate-700 dark:bg-slate-900">
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-1.5"
+        style={{ backgroundColor: account.color ?? "#94a3b8" }}
+      />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-base font-semibold">{account.name}</div>
+          <div className="font-medium">{account.name}</div>
           <div className="text-xs text-slate-500">
             {c
-              ? `${pieces} item${pieces === 1 ? "" : "s"} · worth ${money(c.totalValueMinor)}`
+              ? `${pieces} item${pieces === 1 ? "" : "s"} · worth ${money(c.totalValueMinor)}${pokemon ? " · Pokémon cards" : ""}`
               : "Loading..."}
-            {c?.type === "pokemon" ? " · Pokémon cards" : ""}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Select
-            aria-label="Sort the collection"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as Sort)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
-          >
-            <option value="value">Most valuable first</option>
-            <option value="name">By name</option>
-          </Select>
+          {c && c.items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBrowsing(true)}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              View all {c.items.length}
+            </button>
+          )}
           <button
             type="button"
             onClick={onManage}
-            className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600"
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600"
           >
             Manage
           </button>
         </div>
       </div>
       {loaded.error && <p className="text-sm text-red-600">{loaded.error}</p>}
-      {c && items.length === 0 && (
+      {c && byValue.length === 0 && (
         <p className="text-sm text-slate-500">Nothing in it yet. Use Manage to add items.</p>
       )}
-      {c?.type === "pokemon" ? (
-        <Binder items={items} onOpen={setOpen} />
-      ) : (
-        <Shelves items={items} total={c?.totalValueMinor ?? 0} onOpen={setOpen} />
+      {byValue.length > 0 && (
+        <div className="relative">
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${pokemon ? "6.5rem" : "9rem"}, 1fr))`,
+            }}
+          >
+            {byValue
+              .slice(0, PREVIEW)
+              .map((item) =>
+                pokemon ? (
+                  <PokemonCard key={item.id} item={item} onOpen={() => setOpen(item)} />
+                ) : (
+                  <ShelfItem key={item.id} item={item} onOpen={() => setOpen(item)} />
+                ),
+              )}
+          </div>
+          {byValue.length > PREVIEW && (
+            <button
+              type="button"
+              onClick={() => setBrowsing(true)}
+              className="mt-3 w-full rounded-md border border-dashed border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              and {byValue.length - PREVIEW} more · view all
+            </button>
+          )}
+        </div>
       )}
-      {open && (
-        <ItemDetails item={open} pokemon={c?.type === "pokemon"} onClose={() => setOpen(null)} />
+      {browsing && c && (
+        <Browser collection={c} onOpen={setOpen} onClose={() => setBrowsing(false)} />
       )}
+      {open && <Viewer item={open} pokemon={pokemon} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-/** Pokémon cards in binder pockets. */
-function Binder({ items, onOpen }: { items: Item[]; onOpen: (item: Item) => void }) {
+/** Every item, in a large window that scrolls, with search and sort. */
+function Browser({
+  collection: c,
+  onOpen,
+  onClose,
+}: {
+  collection: Collection;
+  onOpen: (item: Item) => void;
+  onClose: () => void;
+}) {
+  const [sort, setSort] = useState<Sort>("value");
+  const [query, setQuery] = useState("");
+  const pokemon = c.type === "pokemon";
+  const items = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = c.items.filter(
+      (i) =>
+        !q ||
+        i.name.toLowerCase().includes(q) ||
+        `${i.setCode} ${i.number} ${i.variant}`.toLowerCase().includes(q),
+    );
+    return sort === "value"
+      ? list.sort((a, b) => b.totalValueMinor - a.totalValueMinor || a.name.localeCompare(b.name))
+      : list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [c, sort, query]);
+
   return (
-    <div className="grid grid-cols-3 gap-3 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 p-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
-      {items.map((item) => (
-        <PokemonCard key={item.id} item={item} onOpen={() => onOpen(item)} />
-      ))}
-    </div>
+    <Modal
+      title={`${c.name} · ${money(c.totalValueMinor)}`}
+      onClose={onClose}
+      wide="full"
+      dismissible
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name, set or number"
+          aria-label="Search the collection"
+          className="min-w-48 flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        />
+        <Select
+          aria-label="Sort"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as Sort)}
+          className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        >
+          <option value="value">Most valuable first</option>
+          <option value="name">By name</option>
+        </Select>
+        <span className="text-xs text-slate-500">
+          {items.length} of {c.items.length}
+        </span>
+      </div>
+      <div
+        className={`grid max-h-[70vh] gap-4 overflow-y-auto rounded-lg p-3 ${
+          pokemon
+            ? "bg-gradient-to-br from-slate-800 to-slate-900"
+            : "bg-slate-50 dark:bg-slate-900"
+        }`}
+        style={{
+          gridTemplateColumns: `repeat(auto-fill, minmax(${pokemon ? "9rem" : "11rem"}, 1fr))`,
+        }}
+      >
+        {items.map((item) =>
+          pokemon ? (
+            <PokemonCard key={item.id} item={item} large onOpen={() => onOpen(item)} />
+          ) : (
+            <ShelfItem key={item.id} item={item} large onOpen={() => onOpen(item)} />
+          ),
+        )}
+        {items.length === 0 && <p className="text-sm text-slate-500">Nothing matches.</p>}
+      </div>
+    </Modal>
   );
 }
 
-function PokemonCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
+/** A Pokémon card that tilts and shines under the mouse. */
+function PokemonCard({ item, onOpen, large }: { item: Item; onOpen: () => void; large?: boolean }) {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [broken, setBroken] = useState(false);
-  const picture = item.tcgplayerId && !broken ? cardImage(item.tcgplayerId) : null;
+  const picture =
+    item.tcgplayerId && !broken ? cardImage(item.tcgplayerId, large ? 400 : 200) : null;
   return (
     <button
       type="button"
@@ -148,18 +258,18 @@ function PokemonCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
             src={picture}
             alt={item.name}
             loading="lazy"
+            draggable={false}
             onError={() => setBroken(true)}
             className="h-full w-full object-cover"
           />
         ) : (
           <span className="flex h-full w-full flex-col justify-between bg-gradient-to-br from-amber-300 via-yellow-200 to-amber-500 p-1.5 text-left text-slate-900">
-            <span className="line-clamp-3 text-[0.65rem] leading-tight font-bold">{item.name}</span>
+            <span className="line-clamp-3 text-[0.7rem] leading-tight font-bold">{item.name}</span>
             <span className="text-[0.6rem] opacity-70">
               {item.setCode} {item.number}
             </span>
           </span>
         )}
-        {/* A holo shine that follows the mouse. */}
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 opacity-0 mix-blend-overlay transition-opacity group-hover:opacity-100"
@@ -172,7 +282,7 @@ function PokemonCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
             ×{item.quantity}
           </span>
         )}
-        <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1 py-0.5 text-center text-[0.6rem] font-medium text-white tabular-nums">
+        <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1 py-0.5 text-center text-[0.65rem] font-medium text-white tabular-nums">
           {money(item.totalValueMinor)}
         </span>
       </span>
@@ -180,115 +290,216 @@ function PokemonCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
   );
 }
 
-/** Anything else on shelves: each item a box, taller the more of the collection's value it holds. */
-function Shelves({
-  items,
-  total,
-  onOpen,
-}: {
-  items: Item[];
-  total: number;
-  onOpen: (item: Item) => void;
-}) {
-  const perShelf = 6;
-  const shelves: Item[][] = [];
-  for (let i = 0; i < items.length; i += perShelf) shelves.push(items.slice(i, i + perShelf));
-  const top = Math.max(1, ...items.map((i) => i.totalValueMinor));
+const hue = (name: string) => [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
+
+/** Anything else: a box on a shelf that lifts under the mouse. */
+function ShelfItem({ item, onOpen, large }: { item: Item; onOpen: () => void; large?: boolean }) {
   return (
-    <div className="space-y-4">
-      {shelves.map((shelf, s) => (
-        <div
-          key={s}
-          className="flex items-end gap-3 border-b-8 border-amber-800/70 px-2 pb-0 dark:border-amber-900"
-        >
-          {shelf.map((item, i) => {
-            const share = total > 0 ? item.totalValueMinor / total : 0;
-            const height = 64 + Math.round((item.totalValueMinor / top) * 72);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onOpen(item)}
-                title={`${item.name} · ${money(item.totalValueMinor)} (${Math.round(share * 100)}% of the collection)`}
-                style={{ height, background: `hsl(${((s * perShelf + i) * 47) % 360} 55% 45%)` }}
-                className="flex min-w-0 flex-1 flex-col justify-between rounded-t-lg p-2 text-left text-white shadow-md transition hover:-translate-y-2 hover:shadow-xl focus-visible:ring-4 focus-visible:ring-blue-400 focus-visible:outline-none"
-              >
-                <span className="line-clamp-2 text-xs leading-tight font-semibold">
-                  {item.name}
-                </span>
-                <span className="text-xs tabular-nums opacity-90">
-                  {money(item.totalValueMinor)}
-                  {item.quantity > 1 ? ` · ×${item.quantity}` : ""}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ))}
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`${item.name} · ${money(item.totalValueMinor)}`}
+      style={{ background: `hsl(${hue(item.name)} 50% 42%)` }}
+      className={`flex flex-col justify-between rounded-lg border-b-4 border-black/25 p-2.5 text-left text-white shadow-md transition hover:-translate-y-1.5 hover:shadow-xl focus-visible:ring-4 focus-visible:ring-blue-400 focus-visible:outline-none ${
+        large ? "h-36" : "h-24"
+      }`}
+    >
+      <span className="line-clamp-3 text-sm leading-tight font-semibold">{item.name}</span>
+      <span className="text-xs tabular-nums opacity-90">
+        {money(item.totalValueMinor)}
+        {item.quantity > 1 ? ` · ×${item.quantity}` : ""}
+      </span>
+    </button>
   );
 }
 
-function ItemDetails({
-  item,
-  pokemon,
-  onClose,
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 6;
+
+/**
+ * One item, up close, over everything else: the picture (or the item's box) zooms with the mouse
+ * wheel or the buttons, and drags around when zoomed in; double-click puts it back. Its details
+ * sit beside it. Escape or a click outside closes it.
+ */
+function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [broken, setBroken] = useState(false);
+  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const picture = pokemon && item.tcgplayerId && !broken ? cardImage(item.tcgplayerId, 1000) : null;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === "+" || e.key === "=") setZoom((z) => Math.min(MAX_ZOOM, z * 1.25));
+      else if (e.key === "-") setZoom((z) => Math.max(MIN_ZOOM, z / 1.25));
+      else if (e.key === "0") reset();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  // Zoomed all the way out, there is nothing to pan.
+  useEffect(() => {
+    if (zoom === 1) setPan({ x: 0, y: 0 });
+  }, [zoom]);
+
+  function reset(): void {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+
+  /** Zooms toward the point under the mouse, so that point stays put. */
+  function onWheel(e: WheelEvent<HTMLDivElement>): void {
+    const box = stage.current?.getBoundingClientRect();
+    if (!box) return;
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const cx = e.clientX - box.left - box.width / 2;
+    const cy = e.clientY - box.top - box.height / 2;
+    const k = next / zoom;
+    setPan((p) => ({ x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }));
+    setZoom(next);
+  }
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (zoom === 1) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    setPan({
+      x: drag.current.panX + e.clientX - drag.current.x,
+      y: drag.current.panY + e.clientY - drag.current.y,
+    });
+  };
+  const endDrag = () => {
+    drag.current = null;
+  };
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={item.name}
+      className="fixed inset-0 z-[60] flex flex-col bg-black/85 text-white lg:flex-row"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={stage}
+        className={`relative flex min-h-0 flex-1 touch-none items-center justify-center overflow-hidden select-none ${
+          zoom > 1 ? (drag.current ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
+        }`}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+      >
+        <div
+          className="transition-transform duration-75 ease-out will-change-transform"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        >
+          {picture ? (
+            <img
+              src={picture}
+              alt={item.name}
+              draggable={false}
+              onError={() => setBroken(true)}
+              className="max-h-[80vh] max-w-[80vw] rounded-2xl shadow-2xl lg:max-w-[55vw]"
+            />
+          ) : (
+            <div
+              style={{ background: `hsl(${hue(item.name)} 50% 42%)` }}
+              className="flex h-[22rem] w-64 flex-col justify-between rounded-2xl border-b-8 border-black/25 p-5 shadow-2xl"
+            >
+              <span className="text-2xl leading-tight font-bold">{item.name}</span>
+              <span className="text-lg tabular-nums">{money(item.totalValueMinor)}</span>
+            </div>
+          )}
+        </div>
+        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-sm">
+          <ZoomButton label="Zoom out" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.25))}>
+            −
+          </ZoomButton>
+          <span className="w-14 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <ZoomButton label="Zoom in" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.25))}>
+            +
+          </ZoomButton>
+          <ZoomButton label="Fit" onClick={reset}>
+            ⤢
+          </ZoomButton>
+        </div>
+        <p className="absolute top-4 left-4 text-xs text-white/60">
+          Scroll to zoom · drag to move · double-click to reset · Esc to close
+        </p>
+      </div>
+
+      <aside className="w-full shrink-0 overflow-y-auto bg-slate-900/90 p-5 text-sm lg:w-80">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-lg font-semibold">{item.name}</h2>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="rounded px-2 text-white/70 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+          {item.variant && <Detail label="Variant" value={item.variant} />}
+          {(item.setCode || item.number) && (
+            <Detail label="Set" value={`${item.setCode} ${item.number}`.trim()} />
+          )}
+          {item.condition && <Detail label="Condition" value={item.condition} />}
+          <Detail label="Quantity" value={String(item.quantity)} />
+          <Detail label="Each" value={money(item.unitValueMinor)} />
+          <Detail label="Together" value={money(item.totalValueMinor)} />
+          {item.marketPriceMinor !== null && (
+            <Detail label="Market price" value={money(item.marketPriceMinor)} />
+          )}
+          {item.notes && <Detail label="Notes" value={item.notes} />}
+        </dl>
+      </aside>
+    </div>,
+    document.body,
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt className="text-white/60">{label}</dt>
+      <dd className="text-right tabular-nums">{value}</dd>
+    </>
+  );
+}
+
+function ZoomButton({
+  label,
+  onClick,
+  children,
 }: {
-  item: Item;
-  pokemon: boolean;
-  onClose: () => void;
+  label: string;
+  onClick: () => void;
+  children: string;
 }) {
   return (
-    <Modal title={item.name} onClose={onClose} dismissible>
-      <div className="flex flex-wrap gap-4 text-sm">
-        {pokemon && item.tcgplayerId && (
-          <img
-            src={cardImageLarge(item.tcgplayerId)}
-            alt={item.name}
-            className="w-48 rounded-xl shadow-lg"
-          />
-        )}
-        <dl className="grid min-w-48 flex-1 grid-cols-2 gap-x-3 gap-y-1 self-start">
-          {item.variant && (
-            <>
-              <dt className="text-slate-500">Variant</dt>
-              <dd>{item.variant}</dd>
-            </>
-          )}
-          {(item.setCode || item.number) && (
-            <>
-              <dt className="text-slate-500">Set</dt>
-              <dd>
-                {item.setCode} {item.number}
-              </dd>
-            </>
-          )}
-          {item.condition && (
-            <>
-              <dt className="text-slate-500">Condition</dt>
-              <dd>{item.condition}</dd>
-            </>
-          )}
-          <dt className="text-slate-500">Quantity</dt>
-          <dd>{item.quantity}</dd>
-          <dt className="text-slate-500">Each</dt>
-          <dd className="tabular-nums">{money(item.unitValueMinor)}</dd>
-          <dt className="text-slate-500">Together</dt>
-          <dd className="font-medium tabular-nums">{money(item.totalValueMinor)}</dd>
-          {item.marketPriceMinor !== null && (
-            <>
-              <dt className="text-slate-500">Market price</dt>
-              <dd className="tabular-nums">{money(item.marketPriceMinor)}</dd>
-            </>
-          )}
-          {item.notes && (
-            <>
-              <dt className="text-slate-500">Notes</dt>
-              <dd>{item.notes}</dd>
-            </>
-          )}
-        </dl>
-      </div>
-    </Modal>
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded-full text-lg hover:bg-white/20"
+    >
+      {children}
+    </button>
   );
 }
