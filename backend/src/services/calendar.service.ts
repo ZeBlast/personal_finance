@@ -160,7 +160,12 @@ export interface PlannedDto {
 
 export interface PlannedOccurrence {
   plannedId: number;
+  /** The day it happens: its scheduled day, or the day it was moved to. */
   date: string;
+  /** Its day in the schedule, which names it for skip, done, record and change. */
+  occurrenceDate: string;
+  /** This one occurrence was moved or given another amount; the series is unchanged. */
+  changed: boolean;
   merchant: string;
   amountMinor: number;
   direction: "out" | "in";
@@ -263,14 +268,42 @@ function describe(db: AppDb, row: PlannedRow, resolved: Set<string>): PlannedDto
   };
 }
 
-function resolvedDates(db: AppDb, plannedId: number): Map<string, "skipped" | "done"> {
+interface OccurrenceException {
+  kind: "skipped" | "done" | "changed";
+  moveTo: string | null;
+  amountMinor: number | null;
+}
+
+/** A plan's exceptions by the scheduled day they apply to. */
+function exceptionsOf(db: AppDb, plannedId: number): Map<string, OccurrenceException> {
   return new Map(
     db
-      .select({ date: plannedExceptions.date, kind: plannedExceptions.kind })
+      .select({
+        date: plannedExceptions.date,
+        kind: plannedExceptions.kind,
+        moveTo: plannedExceptions.moveTo,
+        amountMinor: plannedExceptions.amountMinor,
+      })
       .from(plannedExceptions)
       .where(eq(plannedExceptions.plannedId, plannedId))
       .all()
-      .map((e) => [e.date, e.kind as "skipped" | "done"]),
+      .map((e) => [
+        e.date,
+        {
+          kind: e.kind as OccurrenceException["kind"],
+          moveTo: e.moveTo,
+          amountMinor: e.amountMinor,
+        },
+      ]),
+  );
+}
+
+/** The scheduled days that are skipped or done (a changed one is still expected). */
+function resolvedDates(db: AppDb, plannedId: number): Set<string> {
+  return new Set(
+    [...exceptionsOf(db, plannedId).entries()]
+      .filter(([, e]) => e.kind !== "changed")
+      .map(([date]) => date),
   );
 }
 
@@ -280,7 +313,7 @@ export function listPlanned(db: AppDb): PlannedDto[] {
     .from(plannedTransactions)
     .orderBy(asc(plannedTransactions.id))
     .all()
-    .map((row) => describe(db, row, new Set(resolvedDates(db, row.id).keys())));
+    .map((row) => describe(db, row, resolvedDates(db, row.id)));
 }
 
 function getPlannedRow(db: AppDb, id: number): PlannedRow {
@@ -290,7 +323,7 @@ function getPlannedRow(db: AppDb, id: number): PlannedRow {
 }
 
 export function getPlanned(db: AppDb, id: number): PlannedDto {
-  return describe(db, getPlannedRow(db, id), new Set(resolvedDates(db, id).keys()));
+  return describe(db, getPlannedRow(db, id), resolvedDates(db, id));
 }
 
 function checkPlannedInput(db: AppDb, input: PlannedInput): RepeatRule {
@@ -420,16 +453,22 @@ export function listOccurrences(
     // Something expected on a hidden account stays out of sight along with the account.
     if (r.accountHidden && options.accountId === undefined) continue;
     const rule = ruleOf(r.row);
-    const resolved = resolvedDates(db, r.row.id);
-    for (const date of occurrences(rule, from, to)) {
-      const status = resolved.get(date) ?? "expected";
-      if (status !== "expected" && !options.includeResolved) continue;
+    const exceptions = exceptionsOf(db, r.row.id);
+    const push = (
+      date: string,
+      occurrenceDate: string,
+      signed: number,
+      status: PlannedOccurrence["status"],
+      changed: boolean,
+    ) =>
       found.push({
         plannedId: r.row.id,
         date,
+        occurrenceDate,
+        changed,
         merchant: r.row.merchant,
-        amountMinor: Math.abs(r.row.amountMinor),
-        direction: r.row.amountMinor > 0 ? "out" : "in",
+        amountMinor: Math.abs(signed),
+        direction: signed > 0 ? "out" : "in",
         accountId: r.row.accountId,
         accountName: r.accountName,
         accountType: r.accountType,
@@ -440,6 +479,20 @@ export function listOccurrences(
         canRecord: r.row.accountId !== null && r.accountPlaidItemId === null,
         status,
       });
+    for (const date of occurrences(rule, from, to)) {
+      const e = exceptions.get(date);
+      if (e?.kind === "changed") continue; // listed on its new day below
+      const status = e?.kind ?? "expected";
+      if (status !== "expected" && !options.includeResolved) continue;
+      push(date, date, r.row.amountMinor, status, false);
+    }
+    // Occurrences changed on their own: on the day they moved to, which may be in this span
+    // although their scheduled day is not.
+    for (const [date, e] of exceptions) {
+      if (e.kind !== "changed") continue;
+      const day = e.moveTo ?? date;
+      if (day < from || day > to || !occurrences(rule, date, date).includes(date)) continue;
+      push(day, date, e.amountMinor ?? r.row.amountMinor, "expected", true);
     }
   }
   return found.sort((a, b) => a.date.localeCompare(b.date) || a.plannedId - b.plannedId);
@@ -452,6 +505,54 @@ function requireOccurrence(db: AppDb, plannedId: number, date: string): PlannedR
     throw new AppError(404, "not_an_occurrence", "That date is not one of its occurrences.");
   }
   return row;
+}
+
+/**
+ * Changes one occurrence only: moves it to another day and/or gives it another amount (positive;
+ * the plan's direction stays). The series is not touched. Changing it back to its own day and the
+ * plan's amount leaves no change behind. All of it is written at once, or nothing is.
+ */
+export function changeOccurrence(
+  db: AppDb,
+  plannedId: number,
+  date: string,
+  change: { moveTo: string; amountMinor: number },
+  now: string,
+): PlannedOccurrence {
+  const row = requireOccurrence(db, plannedId, date);
+  requireDate(change.moveTo, "new date");
+  if (
+    !Number.isInteger(change.amountMinor) ||
+    change.amountMinor < 1 ||
+    change.amountMinor > MAX_AMOUNT
+  ) {
+    throw new AppError(400, "invalid_amount", "Enter the amount as a positive number.");
+  }
+  const signed = row.amountMinor > 0 ? change.amountMinor : -change.amountMinor;
+  const same = change.moveTo === date && signed === row.amountMinor;
+  if (same) {
+    db.delete(plannedExceptions)
+      .where(and(eq(plannedExceptions.plannedId, plannedId), eq(plannedExceptions.date, date)))
+      .run();
+  } else {
+    const values = {
+      kind: "changed",
+      moveTo: change.moveTo === date ? null : change.moveTo,
+      amountMinor: signed === row.amountMinor ? null : signed,
+    };
+    db.insert(plannedExceptions)
+      .values({ plannedId, date, ...values, createdAt: now })
+      .onConflictDoUpdate({
+        target: [plannedExceptions.plannedId, plannedExceptions.date],
+        set: values,
+      })
+      .run();
+  }
+  const day = change.moveTo;
+  return listOccurrences(db, day, day, {
+    includeResolved: true,
+    accountId: row.accountId ?? undefined,
+  }).find((o) => o.plannedId === plannedId && o.occurrenceDate === date)!;
 }
 
 /** Marks one occurrence skipped or done, or (with null) expected again. */
@@ -473,7 +574,8 @@ export function setOccurrenceStatus(
     .values({ plannedId, date, kind, createdAt: now })
     .onConflictDoUpdate({
       target: [plannedExceptions.plannedId, plannedExceptions.date],
-      set: { kind },
+      // Done or skipped replaces a change to this occurrence.
+      set: { kind, moveTo: null, amountMinor: null },
     })
     .run();
 }
@@ -489,6 +591,10 @@ export function recordOccurrence(
   now: string,
 ): TransactionDto {
   const row = requireOccurrence(db, plannedId, date);
+  const change = exceptionsOf(db, plannedId).get(date);
+  const changed = change?.kind === "changed" ? change : null;
+  const day = changed?.moveTo ?? date;
+  const signed = changed?.amountMinor ?? row.amountMinor;
   if (!row.accountId) {
     throw new AppError(
       409,
@@ -501,10 +607,10 @@ export function recordOccurrence(
       tx as unknown as AppDb,
       {
         accountId: row.accountId!,
-        date,
+        date: day,
         merchant: row.merchant,
-        amountMinor: Math.abs(row.amountMinor),
-        direction: row.amountMinor > 0 ? "out" : "in",
+        amountMinor: Math.abs(signed),
+        direction: signed > 0 ? "out" : "in",
         categoryId: row.categoryId,
         recipient: row.amountMinor > 0 ? row.person : null,
         sender: row.amountMinor < 0 ? row.person : null,
@@ -530,8 +636,13 @@ export interface CalendarEvent {
   source: "planned" | "pending";
   /** The day it is due (planned) or projected to take effect (pending). */
   date: string;
-  /** The date it was entered with; differs from `date` for a pending entry carried forward. */
+  /**
+   * Planned: its day in the schedule (differs from `date` when this one was moved); this names it
+   * for skip, done, record and change. Pending: the date it was entered with.
+   */
   originalDate: string;
+  /** Planned: this one occurrence was moved or given another amount. */
+  changed: boolean;
   merchant: string;
   /** Always positive; `direction` says which way the money moves. */
   amountMinor: number;
@@ -577,10 +688,10 @@ export function expectedEvents(
   for (const o of listOccurrences(db, from, to, options)) {
     if (o.status === "expected" && matchesPendingManual(pending, o)) continue;
     events.push({
-      id: `planned:${o.plannedId}:${o.date}`,
+      id: `planned:${o.plannedId}:${o.occurrenceDate}`,
       source: "planned",
       date: o.date,
-      originalDate: o.date,
+      originalDate: o.occurrenceDate,
       merchant: o.merchant,
       amountMinor: o.amountMinor,
       direction: o.direction,
@@ -594,6 +705,7 @@ export function expectedEvents(
       repeats: o.repeats,
       recurring: o.recurring,
       canRecord: o.canRecord,
+      changed: o.changed,
       transactionId: null,
     });
   }
@@ -618,6 +730,7 @@ export function expectedEvents(
       repeats: null,
       recurring: false,
       canRecord: false,
+      changed: false,
       transactionId: t.id,
     });
   }

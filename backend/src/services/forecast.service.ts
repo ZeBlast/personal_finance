@@ -4,7 +4,7 @@ import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
 import { closingDates, dueAfter, listBills } from "./bills.service.js";
 import { listOccurrences } from "./calendar.service.js";
-import { nextAfter, recurringReport } from "./recurring.service.js";
+import { nextAfter, recurringReport, type Cadence } from "./recurring.service.js";
 import { getSettings } from "./settings.service.js";
 import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
 
@@ -32,6 +32,11 @@ export interface ForecastEvent {
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
   source: "expected" | "recurring" | "card_bill" | "pending";
+  /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
+  seriesKey?: string;
+  cadence?: Cadence;
+  /** A card bill: the card. */
+  accountId?: number;
 }
 
 export interface ForecastDay {
@@ -125,6 +130,8 @@ export function cashForecast(
         label: s.merchant,
         amountMinor: s.direction === "in" ? amount : -amount,
         source: "recurring",
+        seriesKey: s.key,
+        cadence: s.cadence,
       });
     }
   }
@@ -136,12 +143,14 @@ export function cashForecast(
       label: `${bill.name} bill`,
       amountMinor: -bill.statement.remainingMinor,
       source: "card_bill",
+      accountId: bill.accountId,
     });
     if (bill.next) {
       add(bill.next.dueOn, {
         label: `${bill.name} bill (so far)`,
         amountMinor: -bill.next.balanceSoFarMinor,
         source: "card_bill",
+        accountId: bill.accountId,
       });
       // Pending card entries beyond the next closing date belong to a later bill. Charge cash
       // on that bill's due date rather than on the purchase date, and do not count them twice.
@@ -177,5 +186,44 @@ export function cashForecast(
     days,
     lowest,
     endBalanceMinor: balance,
+  };
+}
+
+/**
+ * The cash forecast for the days of a calendar span that lie ahead (up to the forecast's reach):
+ * each day's projected cash in the bank accounts and what changes it. Days before tomorrow and
+ * past the reach are left out, so the calendar shows no forecast for them.
+ */
+export function calendarForecast(
+  db: AppDb,
+  from: string,
+  to: string,
+  today: string = new Date().toISOString().slice(0, 10),
+): {
+  currency: string;
+  today: string;
+  accountsCounted: number;
+  /** The last day the forecast reaches. */
+  reach: string;
+  days: Array<{ date: string; cashMinor: number; events: ForecastEvent[] }>;
+} {
+  if (!isRealDate(from) || !isRealDate(to) || to < from) {
+    throw new AppError(400, "invalid_range", "Choose a real span of days.");
+  }
+  const reach = addDays(today, MAX_FORECAST_DAYS);
+  if (to <= today || from > reach) {
+    const settings = getSettings(db);
+    return { currency: settings.currency, today, accountsCounted: 0, reach, days: [] };
+  }
+  const days = Math.max(7, Math.round((Date.parse(to) - Date.parse(today)) / 86_400_000));
+  const f = cashForecast(db, { today, days: Math.min(days, MAX_FORECAST_DAYS) });
+  return {
+    currency: f.currency,
+    today,
+    accountsCounted: f.accountsCounted,
+    reach,
+    days: f.days
+      .filter((d) => d.date > today && d.date >= from && d.date <= to)
+      .map((d) => ({ date: d.date, cashMinor: d.balanceMinor, events: d.events })),
   };
 }

@@ -8,7 +8,7 @@ import { firstOfMonth, lastOfMonth, monthOf, shiftMonth, today } from "../../lib
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { CalendarDay, CalendarMonth } from "../../types/analytics";
-import type { CalendarOverlay } from "../../types/calendar";
+import type { CalendarForecast, CalendarOverlay } from "../../types/calendar";
 import {
   fullMonthGrid,
   inSpan,
@@ -27,6 +27,7 @@ import {
 import { Select } from "../common/Select";
 import { showsSource, type CalendarFilters } from "./filters";
 import { MonthOverview } from "./MonthOverview";
+import { clearDraft, keepDraft, readDraft } from "./noteDrafts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** How far the wheel must turn before the month changes, and the pause before it can again. */
@@ -112,7 +113,13 @@ function useMonths(month: string, accountId: string, basis: string) {
     notes,
     expected,
     loading: d1.loading || o1.loading,
-    error: d1.error ?? o1.error,
+    refreshing: [d0, d1, d2, o0, o1, o2].some((r) => r.refreshing),
+    /** Months (of the three shown) whose days or notes could not be loaded. */
+    failed: new Set(
+      months.filter((_, i) => [d0, d1, d2][i]!.error !== null || [o0, o1, o2][i]!.error !== null),
+    ),
+    error: d1.error ?? o1.error ?? d0.error ?? d2.error ?? o0.error ?? o2.error,
+    retry: () => [d0, d1, d2, o0, o1, o2].forEach((r) => r.reload()),
     reloadNotes: () => {
       o0.reload();
       o1.reload();
@@ -135,12 +142,15 @@ export function CalendarBoard({
   accountId,
   accountName,
   filters,
+  lowCash,
   selection,
   onSelect,
 }: {
   accountId: string;
   accountName: string | null;
   filters: CalendarFilters;
+  /** Projected cash below this (cents) marks a day. */
+  lowCash: number;
   selection: DaySpan | null;
   onSelect: (span: DaySpan | null) => void;
 }) {
@@ -162,6 +172,18 @@ export function CalendarBoard({
   const institutions = useInstitutions();
   const data = useMonths(month, accountId, basis);
   const weeks = useMemo(() => fullMonthGrid(month), [month]);
+  // The cash forecast covers all bank accounts, so it is shown only for all accounts.
+  const gridFrom = weeks[0]![0]!.date;
+  const gridTo = weeks.at(-1)!.at(-1)!.date;
+  const forecast = useApi<CalendarForecast>(
+    filters.forecast && !accountId ? `/calendar/forecast?from=${gridFrom}&to=${gridTo}` : null,
+  );
+  // A month that failed to load matters only when some of its days are on screen.
+  const failedShown = weeks.flat().some((c) => data.failed.has(monthOf(c.date)));
+  const forecastDays = useMemo(
+    () => new Map((forecast.data?.days ?? []).map((d) => [d.date, d] as const)),
+    [forecast.data],
+  );
   const { year, monthIndex } = splitMonth(month);
   const thisYear = Number(todayDay.slice(0, 4));
   // The day Tab reaches: the active one when it is shown, otherwise the month's first.
@@ -333,6 +355,11 @@ export function CalendarBoard({
         </div>
         <div className="flex items-center gap-2">
           {data.loading && <span className="text-xs text-slate-500">Loading...</span>}
+          {data.refreshing && (
+            <span className="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+              Refreshing...
+            </span>
+          )}
           <button
             type="button"
             onClick={() => chooseAround({ from: todayDay, to: todayDay })}
@@ -366,10 +393,24 @@ export function CalendarBoard({
       </div>
 
       <MonthOverview month={month} accountId={accountId} accountName={accountName} />
+      {!data.loading &&
+        !data.failed.has(month) &&
+        ![...data.days.values()].some((d) => monthOf(d.date) === month && d.count > 0) &&
+        ![...data.expected.keys()].some((d) => monthOf(d) === month) && (
+          <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">
+            Nothing recorded or expected in {MONTH_NAMES[monthIndex]} {year}
+            {accountName ? ` for ${accountName}` : ""}. Add an expected transaction from a day, or
+            sync your accounts to bring in their history.
+          </p>
+        )}
 
-      {data.error && (
-        <p role="alert" className="text-sm text-red-600">
-          {data.error}
+      {failedShown && (
+        <p role="alert" className="mb-1 text-sm text-red-600">
+          Some days could not be loaded and are marked &ldquo;not loaded&rdquo; (not empty):{" "}
+          {data.error}{" "}
+          <button type="button" className="underline" onClick={data.retry}>
+            Try again
+          </button>
         </p>
       )}
 
@@ -400,8 +441,11 @@ export function CalendarBoard({
                   isToday={date === todayDay}
                   day={filters.recorded ? data.days.get(date) : undefined}
                   pendingCount={filters.pending ? (data.days.get(date)?.pendingCount ?? 0) : 0}
+                  unavailable={data.failed.has(monthOf(date))}
                   note={data.notes[date]}
                   expected={visibleExpected(data.expected.get(date), filters)}
+                  forecast={forecastDays.get(date)}
+                  lowCash={lowCash}
                   inside={inSpan(date, selection)}
                   isEdge={selection !== null && (date === selection.from || date === selection.to)}
                   editing={editing === date}
@@ -447,8 +491,11 @@ function DayCell({
   isToday,
   day,
   pendingCount,
+  unavailable,
   note,
   expected,
+  forecast,
+  lowCash,
   inside,
   isEdge,
   editing,
@@ -468,8 +515,13 @@ function DayCell({
   day: CalendarDay | undefined;
   /** Pending transactions that day (0 when pending ones are hidden). */
   pendingCount: number;
+  /** The day's month could not be loaded: say so rather than look empty. */
+  unavailable: boolean;
   note: string | undefined;
   expected: DayExpected | undefined;
+  /** The cash forecast for the day, when it is ahead and the forecast is shown. */
+  forecast: ForecastDay | undefined;
+  lowCash: number;
   inside: boolean;
   isEdge: boolean;
   editing: boolean;
@@ -487,6 +539,7 @@ function DayCell({
 }) {
   const pressedWhileChosen = useRef(false);
   const expectedCount = expected?.count ?? 0;
+  const low = forecast !== undefined && forecast.cashMinor < lowCash;
   // The banks involved that day, once each; accounts kept by hand share one "by hand" mark.
   const banks = useMemo(() => {
     const seen = new Map<
@@ -512,7 +565,12 @@ function DayCell({
       role="gridcell"
       tabIndex={tabbable ? 0 : -1}
       data-date={date}
-      aria-label={cellLabel(date, day, note, expected)}
+      aria-label={
+        (unavailable ? `${formatDay(date)}, not loaded` : cellLabel(date, day, note, expected)) +
+        (forecast
+          ? `, projected cash ${formatMinor(forecast.cashMinor, "USD")}${low ? ", below your warning level" : ""}`
+          : "")
+      }
       aria-selected={inside}
       aria-current={isToday ? "date" : undefined}
       onFocus={(e) => {
@@ -533,7 +591,7 @@ function DayCell({
           : inMonth
             ? "bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
             : "bg-slate-50 text-slate-400 hover:bg-slate-100 dark:bg-slate-950 dark:hover:bg-slate-900"
-      }`}
+      } ${low ? "ring-2 ring-amber-500 ring-inset" : ""}`}
     >
       {/* The date, large and centred; expected and pending marks in the corners. */}
       <div className="relative flex justify-center">
@@ -566,8 +624,12 @@ function DayCell({
         )}
       </div>
 
+      {unavailable && (
+        <div className="text-center text-[11px] text-red-600 dark:text-red-400">Not loaded</div>
+      )}
       {day && <DayTotals day={day} />}
       {expected && expected.count > 0 && <ExpectedPreview expected={expected} />}
+      {forecast && <ForecastPreview forecast={forecast} low={low} />}
 
       {/* The note, in the middle of the box. On the chosen day there is always a box for it, and
           clicking that box writes in it. Pressing anywhere else still selects days as usual. */}
@@ -664,6 +726,51 @@ function DayCell({
 }
 
 type DayExpected = CalendarOverlay["expected"][number];
+type ForecastDay = CalendarForecast["days"][number];
+
+/**
+ * What the forecast adds to a day ahead: card bills and recurring items found in the history
+ * (plans and pending entries are already named above), and the cash left in the bank accounts,
+ * marked when it falls below the warning level.
+ */
+function ForecastPreview({ forecast, low }: { forecast: ForecastDay; low: boolean }) {
+  const extra = forecast.events.filter((e) => e.source === "card_bill" || e.source === "recurring");
+  return (
+    <div className="flex flex-col gap-0.5" aria-hidden="true">
+      {extra.slice(0, 2).map((e, n) => (
+        <div
+          key={n}
+          title={
+            e.source === "card_bill"
+              ? "Card bill due (estimated)"
+              : "Found recurring in your history"
+          }
+          className={`flex items-baseline justify-between gap-1 rounded px-1 text-[11px] leading-4 ${
+            e.source === "card_bill"
+              ? "border border-sky-300 bg-sky-50/70 text-sky-900 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-200"
+              : "border border-dotted border-slate-400 text-slate-700 dark:border-slate-500 dark:text-slate-300"
+          }`}
+        >
+          <span className="truncate">{e.label}</span>
+          <span className="shrink-0 tabular-nums">
+            {e.amountMinor > 0 ? "+" : "−"}
+            {money(Math.abs(e.amountMinor))}
+          </span>
+        </div>
+      ))}
+      <div
+        className={`text-center text-[11px] leading-4 tabular-nums ${
+          low
+            ? "font-semibold text-amber-700 dark:text-amber-400"
+            : "text-slate-500 dark:text-slate-400"
+        }`}
+        title="Projected cash in your bank accounts at the end of the day"
+      >
+        {low ? "Low cash " : "Cash "}≈ {money(forecast.cashMinor)}
+      </div>
+    </div>
+  );
+}
 
 /** A day's expected items of the kinds shown, counted again; nothing when none is shown. */
 function visibleExpected(
@@ -756,7 +863,7 @@ function NoteEditor({
   note: string;
   onDone: (saved: boolean) => void;
 }) {
-  const [text, setText] = useState(note);
+  const [text, setText] = useState(() => readDraft(date) ?? note);
   const [error, setError] = useState<string | null>(null);
   const finished = useRef(false);
   const latest = useRef(text);
@@ -775,8 +882,10 @@ function NoteEditor({
         method: "PUT",
         body: JSON.stringify({ note: value }),
       });
+      clearDraft(date);
       onDone(true);
     } catch (e) {
+      keepDraft(date, value);
       finished.current = false;
       setError(errorMessage(e, "Could not save the note."));
     }

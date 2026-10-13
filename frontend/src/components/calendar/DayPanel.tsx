@@ -11,6 +11,8 @@ import type { CalendarEvent, PeriodSummary, PlannedItem } from "../../types/cale
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
 import { SplitDialog } from "../transactions/SplitDialog";
 import { TransactionDetail } from "../transactions/TransactionDetail";
+import { ChangeOccurrenceForm, QuickAddExpected } from "./ExpectedEditing";
+import { ForecastSection } from "./ForecastSection";
 import { LoadMore } from "./LoadMore";
 import { usePagedTransactions } from "./usePagedTransactions";
 import { buttonClass, primaryClass } from "../investments/styles";
@@ -407,13 +409,17 @@ function EventRow({
   busy,
   onAct,
   onEditSeries,
+  onNotice,
 }: {
   e: CalendarEvent;
   today: string;
   busy: boolean;
   onAct: (e: CalendarEvent, action: EventAction) => void;
   onEditSeries: (e: CalendarEvent) => void;
+  onNotice: (n: { kind: "info" | "error"; text: string }) => void;
 }) {
+  const [changing, setChanging] = useState(false);
+  const moved = e.source === "planned" && e.originalDate !== e.date;
   const overdue = e.source === "planned" && e.status === "expected" && e.date < today;
   const carried = e.source === "pending" && e.originalDate !== e.date;
   return (
@@ -433,11 +439,18 @@ function EventRow({
                 Past due
               </span>
             )}
+            {e.changed && (
+              <span className="rounded-full bg-slate-200 px-2 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                Changed for this one
+              </span>
+            )}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400">
             {carried
               ? `Entered ${formatDay(e.originalDate)}; still pending; projected ${formatDay(e.date)}`
-              : formatDay(e.date)}
+              : moved
+                ? `${formatDay(e.date)} (moved from ${formatDay(e.originalDate)})`
+                : formatDay(e.date)}
             {e.accountName ? ` · ${e.accountName}` : " · any account"}
             {e.recurring && e.repeats ? ` · ${e.repeats}` : ""}
             {e.person ? ` · ${e.direction === "out" ? "to" : "from"} ${e.person}` : ""}
@@ -503,6 +516,16 @@ function EventRow({
                 >
                   Skip this one
                 </button>
+                <button
+                  type="button"
+                  className={smallButton}
+                  disabled={busy}
+                  aria-expanded={changing}
+                  onClick={() => setChanging((c) => !c)}
+                  title="Another day or amount for this one only; the series stays"
+                >
+                  Change this one
+                </button>
               </>
             ) : (
               <button
@@ -525,6 +548,9 @@ function EventRow({
           </>
         )}
       </div>
+      {changing && (
+        <ChangeOccurrenceForm e={e} onDone={() => setChanging(false)} onNotice={onNotice} />
+      )}
     </li>
   );
 }
@@ -536,6 +562,7 @@ function EventRow({
 function ExpectedList({
   span,
   accountId,
+  accounts,
   today,
   onEditSeries,
   onOpenTransaction,
@@ -543,6 +570,7 @@ function ExpectedList({
 }: {
   span: DaySpan;
   accountId: string;
+  accounts: Account[];
   today: string;
   onEditSeries: (plannedId: number) => void;
   onOpenTransaction: (id: number) => void;
@@ -569,10 +597,12 @@ function ExpectedList({
         });
         onNotice({ kind: "info", text: `${e.merchant} is posted now.` });
       } else if (action === "record") {
-        await api(`/planned/${e.plannedId}/occurrences/${e.date}/record`, { method: "POST" });
+        await api(`/planned/${e.plannedId}/occurrences/${e.originalDate}/record`, {
+          method: "POST",
+        });
         onNotice({ kind: "info", text: `${e.merchant} was recorded as a transaction.` });
       } else {
-        await api(`/planned/${e.plannedId}/occurrences/${e.date}`, {
+        await api(`/planned/${e.plannedId}/occurrences/${e.originalDate}`, {
           method: "PUT",
           body: JSON.stringify({
             status: action === "skip" ? "skipped" : action === "done" ? "done" : "expected",
@@ -595,6 +625,7 @@ function ExpectedList({
       busy={busy}
       onAct={(item, action) => void act(item, action)}
       onEditSeries={(item) => onEditSeries(item.plannedId!)}
+      onNotice={onNotice}
     />
   );
 
@@ -605,6 +636,12 @@ function ExpectedList({
           {error}
         </p>
       )}
+      <QuickAddExpected
+        day={span.from}
+        accountId={accountId}
+        accounts={accounts}
+        onNotice={onNotice}
+      />
       {loading && <p className="text-sm text-slate-500">Loading...</p>}
       {data && open.length === 0 && (
         <p className="text-sm text-slate-500">
@@ -620,6 +657,13 @@ function ExpectedList({
           <ul className="mt-2 space-y-2">{resolved.map(row)}</ul>
         </details>
       )}
+      {open.some((e) => e.source === "planned") && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Mark done stops expecting it without adding a transaction; Record it adds one to an
+          account you keep by hand. Change this one moves or re-prices one occurrence; Edit series
+          changes all of them.
+        </p>
+      )}
     </div>
   );
 }
@@ -634,6 +678,8 @@ export function DayPanel({
   accounts,
   categories,
   today,
+  showForecast,
+  lowCash,
   onClear,
   onPickDay,
 }: {
@@ -642,6 +688,9 @@ export function DayPanel({
   accounts: Account[];
   categories: Category[];
   today: string;
+  /** The cash forecast is shown (all accounts, Forecast on). */
+  showForecast: boolean;
+  lowCash: number;
   onClear: () => void;
   /** Called with a day to look at just that day (from the list of notes in a span). */
   onPickDay: (day: string) => void;
@@ -760,6 +809,9 @@ export function DayPanel({
         )}
         {summary.loading && <p className="text-sm text-slate-500">Loading...</p>}
         {s && <BalanceFigures s={s} single={single} />}
+        {single && future && showForecast && (
+          <ForecastSection day={span.from} lowCash={lowCash} onNotice={setNotice} />
+        )}
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -873,6 +925,7 @@ export function DayPanel({
             ))}
           {tab === "expected" && (
             <ExpectedList
+              accounts={accounts}
               span={span}
               accountId={accountId}
               today={today}

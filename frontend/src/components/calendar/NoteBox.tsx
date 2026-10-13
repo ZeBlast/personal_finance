@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
+import { clearDraft, keepDraft, readDraft } from "./noteDrafts";
 
 /**
  * The note for one day, edited right where it is shown. There is no Save button: it is saved when
@@ -21,11 +22,18 @@ export function NoteBox({
   placeholder?: string;
   autoFocus?: boolean;
 }) {
-  const [text, setText] = useState(saved);
-  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // A note that failed to save earlier comes back, to be saved this time.
+  const [draft] = useState(() => {
+    const kept = readDraft(day);
+    return kept !== null && kept.trim() !== saved.trim() ? kept : null;
+  });
+  const [text, setText] = useState(draft ?? saved);
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error" | "recovered">(
+    draft !== null ? "recovered" : "idle",
+  );
   const [error, setError] = useState<string | null>(null);
   // What is typed and what is stored, readable from the cleanup that runs when the box goes away.
-  const typed = useRef(saved);
+  const typed = useRef(draft ?? saved);
   const stored = useRef(saved.trim());
   const dayRef = useRef(day);
   dayRef.current = day;
@@ -42,9 +50,12 @@ export function NoteBox({
         body: JSON.stringify({ note: value }),
       });
       setState("saved");
+      clearDraft(dayRef.current);
       announceDataChanged();
     } catch (e) {
-      // Try again at the next chance rather than pretending it was saved.
+      // Try again at the next chance rather than pretending it was saved, and keep what was
+      // typed in case the box is gone by then.
+      keepDraft(dayRef.current, value);
       stored.current = "\u0000unsaved";
       setError(errorMessage(e, "Could not save the note."));
       setState("error");
@@ -95,9 +106,20 @@ export function NoteBox({
             {typed.current.trim() === "" ? "Note removed." : "Saved."}
           </span>
         )}
+        {state === "recovered" && (
+          <span className="text-amber-700 dark:text-amber-400">
+            This note was not saved last time.{" "}
+            <button type="button" className="underline" onClick={() => void save()}>
+              Save it now
+            </button>
+          </span>
+        )}
         {error && (
           <span role="alert" className="text-red-600">
-            {error}
+            {error} It is kept here until it saves.{" "}
+            <button type="button" className="underline" onClick={() => void save()}>
+              Try again
+            </button>
           </span>
         )}
       </div>

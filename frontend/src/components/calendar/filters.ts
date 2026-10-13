@@ -9,6 +9,8 @@ export interface CalendarFilters {
   pending: boolean;
   /** Occurrences of planned transactions. */
   planned: boolean;
+  /** The cash forecast: projected cash, card bills and detected recurring items. */
+  forecast: boolean;
   /** Merchant, category or account text (the agenda). */
   search: string;
 }
@@ -17,11 +19,12 @@ export const ALL_SHOWN: CalendarFilters = {
   recorded: true,
   pending: true,
   planned: true,
+  forecast: true,
   search: "",
 };
 
 export function isFiltered(f: CalendarFilters): boolean {
-  return !f.recorded || !f.pending || !f.planned || f.search.trim() !== "";
+  return !f.recorded || !f.pending || !f.planned || !f.forecast || f.search.trim() !== "";
 }
 
 /** Whether an expected item of this source is shown. */

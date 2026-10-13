@@ -446,8 +446,16 @@ export const plannedExceptions = sqliteTable(
       .notNull()
       .references(() => plannedTransactions.id, { onDelete: "cascade" }),
     date: text("date").notNull(),
-    /** `skipped` (it did not happen) or `done` (it happened, or was recorded as a transaction). */
+    /**
+     * `skipped` (it did not happen), `done` (it happened, or was recorded as a transaction), or
+     * `changed` (this one occurrence moves to `moveTo` and/or takes `amountMinor`; the series
+     * stays as it is).
+     */
     kind: text("kind").notNull(),
+    /** For `changed`: the day this occurrence happens instead (null keeps its day). */
+    moveTo: text("move_to"),
+    /** For `changed`: its amount instead, signed like the plan's (null keeps the plan's). */
+    amountMinor: integer("amount_minor"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [uniqueIndex("planned_exceptions_unique").on(table.plannedId, table.date)],

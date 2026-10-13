@@ -4,6 +4,7 @@ import { DATE_BASES } from "../services/analytics.service.js";
 import type { AppDb } from "../db/client.js";
 import {
   calendarOverlay,
+  changeOccurrence,
   createPlanned,
   deletePlanned,
   expectedEvents,
@@ -19,6 +20,7 @@ import {
   updatePlanned,
 } from "../services/calendar.service.js";
 import { getSettings } from "../services/settings.service.js";
+import { calendarForecast } from "../services/forecast.service.js";
 import { FREQUENCIES } from "../utils/recurrence.js";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -96,6 +98,15 @@ export function calendarRoutes(db: AppDb): Router {
     );
   });
 
+  /**
+   * The cash forecast for the days ahead in a span: projected cash in the bank accounts, with
+   * card bills, detected recurring items, plans and pending entries (see forecast.service.ts).
+   */
+  router.get("/calendar/forecast", (req, res) => {
+    const q = rangeQuery.pick({ from: true, to: true }).parse(req.query);
+    res.json(calendarForecast(db, q.from, q.to));
+  });
+
   router.get("/calendar/notes", (req, res) => {
     const q = rangeQuery.pick({ from: true, to: true }).parse(req.query);
     res.json(listNotes(db, q.from, q.to));
@@ -168,6 +179,23 @@ export function calendarRoutes(db: AppDb): Router {
       now(),
     );
     res.status(204).end();
+  });
+
+  /** Change one occurrence only: another day and/or amount; the series stays. */
+  router.put("/planned/:id/occurrences/:date/change", (req, res) => {
+    const body = z
+      .object({ moveTo: date, amountMinor: z.number().int().min(1).max(100_000_000_000) })
+      .strict()
+      .parse(req.body);
+    res.json(
+      changeOccurrence(
+        db,
+        idParam.parse(req.params["id"]),
+        date.parse(req.params["date"]),
+        body,
+        now(),
+      ),
+    );
   });
 
   /** Turn one occurrence into a real transaction on an account kept by hand. */

@@ -250,6 +250,78 @@ describe("day notes", () => {
 });
 
 describe("expected transactions", () => {
+  it("changes one occurrence's day and amount without touching the series", async () => {
+    const t = app();
+    const created = await plan(t, {
+      frequency: "monthly",
+      monthMode: "day",
+      dayOfMonth: 5,
+      startDate: "2026-01-05",
+    }).expect(201);
+    const id = created.body.id;
+    const occ = async (from: string, to: string) =>
+      (await t.call("get", `/api/planned/occurrences?from=${from}&to=${to}`).expect(200)).body;
+
+    const changed = await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05/change`)
+      .send({ moveTo: "2026-02-07", amountMinor: 125000 })
+      .expect(200);
+    expect(changed.body).toMatchObject({
+      date: "2026-02-07",
+      occurrenceDate: "2026-02-05",
+      amountMinor: 125000,
+      direction: "out",
+      changed: true,
+    });
+    // Feb 5 no longer has it; Feb 7 does; March is as planned.
+    expect(await occ("2026-02-01", "2026-02-06")).toEqual([]);
+    expect(await occ("2026-02-07", "2026-03-31")).toMatchObject([
+      { date: "2026-02-07", amountMinor: 125000, changed: true },
+      { date: "2026-03-05", amountMinor: 120000, changed: false },
+    ]);
+    // The expected totals follow the change.
+    const summary = await t.call("get", "/api/calendar/summary?from=2026-02-01&to=2026-02-28");
+    expect(summary.body.expected).toMatchObject({ count: 1, outflowMinor: 125000 });
+
+    // Bad input changes nothing.
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05/change`)
+      .send({ moveTo: "2026-02-31", amountMinor: 1 })
+      .expect(400);
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-06/change`)
+      .send({ moveTo: "2026-02-07", amountMinor: 1 })
+      .expect(404);
+    expect((await occ("2026-02-07", "2026-02-07"))[0]).toMatchObject({ amountMinor: 125000 });
+
+    // Skipping it replaces the change; making it expected again restores the plan's own.
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05`)
+      .send({ status: "skipped" })
+      .expect(204);
+    expect(await occ("2026-02-01", "2026-02-28")).toEqual([]);
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05`)
+      .send({ status: "expected" })
+      .expect(204);
+    expect(await occ("2026-02-01", "2026-02-28")).toMatchObject([
+      { date: "2026-02-05", amountMinor: 120000, changed: false },
+    ]);
+
+    // Changing it back to its own day and amount leaves no change behind.
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05/change`)
+      .send({ moveTo: "2026-02-09", amountMinor: 120000 })
+      .expect(200);
+    await t
+      .call("put", `/api/planned/${id}/occurrences/2026-02-05/change`)
+      .send({ moveTo: "2026-02-05", amountMinor: 120000 })
+      .expect(200);
+    expect(await occ("2026-02-01", "2026-02-28")).toMatchObject([
+      { date: "2026-02-05", changed: false },
+    ]);
+  });
+
   it("creates a repeating item and lists its occurrences in a window", async () => {
     const t = app();
     const created = await plan(t, {

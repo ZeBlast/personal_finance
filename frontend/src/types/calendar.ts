@@ -50,6 +50,8 @@ export interface CalendarEvent {
   recurring: boolean;
   canRecord: boolean;
   transactionId: number | null;
+  /** Planned: this one occurrence was moved or given another amount. */
+  changed: boolean;
 }
 
 export interface PeriodSummary {
@@ -124,6 +126,9 @@ export interface PlannedItem {
 export interface PlannedOccurrence {
   plannedId: number;
   date: string;
+  /** Its day in the schedule (differs from `date` when this one was moved). */
+  occurrenceDate: string;
+  changed: boolean;
   merchant: string;
   amountMinor: number;
   direction: "out" | "in";
@@ -136,4 +141,24 @@ export interface PlannedOccurrence {
   recurring: boolean;
   canRecord: boolean;
   status: "expected" | "skipped" | "done";
+}
+
+/** One thing that changes the cash forecast on a day (see backend forecast.service.ts). */
+export interface ForecastEvent {
+  label: string;
+  /** Positive is money coming in. */
+  amountMinor: number;
+  source: "expected" | "recurring" | "card_bill" | "pending";
+  seriesKey?: string;
+  cadence?: "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
+  accountId?: number;
+}
+
+/** The cash forecast for the days ahead in a span: cash in the bank accounts, day by day. */
+export interface CalendarForecast {
+  currency: string;
+  today: string;
+  accountsCounted: number;
+  reach: string;
+  days: Array<{ date: string; cashMinor: number; events: ForecastEvent[] }>;
 }

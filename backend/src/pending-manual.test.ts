@@ -13,7 +13,7 @@ import {
   calendarOverlay,
   expectedEvents,
 } from "./services/calendar.service.js";
-import { cashForecast } from "./services/forecast.service.js";
+import { calendarForecast, cashForecast } from "./services/forecast.service.js";
 import { listBills, setBillSettings } from "./services/bills.service.js";
 import { setAccountHidden } from "./services/account.service.js";
 import { summarize } from "./services/analytics.service.js";
@@ -183,6 +183,26 @@ describe("pending manual transactions", () => {
     expect(s.expected).toEqual({ count: 3, outflowMinor: 53000, inflowMinor: 0 });
     // The matched plan and its pending entry move the balance once.
     expect(s.balance.endMinor).toBe(10000 - 1000 - 2000 - 50000);
+  });
+
+  it("gives the calendar the forecast's cash for the days ahead in a span, and nothing before", () => {
+    const t = setup();
+    t.pending("2026-10-05");
+    t.pending("2026-10-12", 2000);
+    const f = calendarForecast(t.db, "2026-10-01", "2026-10-31", TODAY);
+    expect(f.days[0]!.date).toBe("2026-10-10");
+    expect(f.days.at(-1)!.date).toBe("2026-10-31");
+    expect(f.days.find((d) => d.date === "2026-10-10")).toMatchObject({ cashMinor: 9000 });
+    expect(f.days.find((d) => d.date === "2026-10-12")).toMatchObject({
+      cashMinor: 7000,
+      events: [{ label: "Coffee", amountMinor: -2000, source: "pending" }],
+    });
+    // Agrees with the forecast itself.
+    const full = cashForecast(t.db, { today: TODAY, days: 22 });
+    expect(full.days.find((d) => d.date === "2026-10-31")!.balanceMinor).toBe(
+      f.days.at(-1)!.cashMinor,
+    );
+    expect(calendarForecast(t.db, "2026-09-01", "2026-09-30", TODAY).days).toEqual([]);
   });
 
   it("forecasts outstanding and future charges once, and excludes entries outside the forecast", () => {

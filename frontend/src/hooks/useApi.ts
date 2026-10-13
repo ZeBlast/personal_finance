@@ -8,6 +8,8 @@ export interface ApiState<T> {
   error: string | null;
   /** True while there is no data yet (the first load), not on later refreshes. */
   loading: boolean;
+  /** True while it loads again with earlier data still on screen. */
+  refreshing: boolean;
   reload: () => void;
 }
 
@@ -20,11 +22,13 @@ export function useApi<T>(path: string | null): ApiState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [fetching, setFetching] = useState(false);
   const synced = useSyncFinishedCount();
 
   useEffect(() => {
     if (path === null) return;
     let cancelled = false;
+    setFetching(true);
     api<T>(path)
       .then((result) => {
         if (cancelled) return;
@@ -33,6 +37,9 @@ export function useApi<T>(path: string | null): ApiState<T> {
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(errorMessage(e, "Could not load this."));
+      })
+      .finally(() => {
+        if (!cancelled) setFetching(false);
       });
     return () => {
       cancelled = true;
@@ -45,5 +52,11 @@ export function useApi<T>(path: string | null): ApiState<T> {
   }, [path]);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
-  return { data, error, loading: data === null && error === null && path !== null, reload };
+  return {
+    data,
+    error,
+    loading: data === null && error === null && path !== null,
+    refreshing: fetching && data !== null,
+    reload,
+  };
 }

@@ -23,6 +23,8 @@ export function CalendarPage() {
   const { categories } = useCategories();
   const [view, setView] = usePersistentState<"month" | "agenda">("pf.calendar.view", "month");
   const [filters, setFilters] = useState<CalendarFilters>(ALL_SHOWN);
+  /** Days whose projected cash falls below this (cents) are marked. */
+  const [lowCash, setLowCash] = usePersistentState<number>("pf.calendar.lowCash", 0);
   const accountName = accountId
     ? ((accounts.data ?? []).find((a) => String(a.id) === accountId)?.name ?? null)
     : null;
@@ -127,7 +129,18 @@ export function CalendarPage() {
         </div>
       </div>
 
-      <FilterBar filters={filters} onChange={setFilters} searchable={view === "agenda"} />
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        searchable={view === "agenda"}
+        lowCash={lowCash}
+        onLowCash={setLowCash}
+      />
+      {filters.forecast && accountId && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          The cash forecast covers all your bank accounts together, so it shows with All accounts.
+        </p>
+      )}
 
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-h-[30rem] min-w-0 lg:min-h-0">
@@ -145,6 +158,7 @@ export function CalendarPage() {
               accountId={accountId}
               accountName={accountName}
               filters={filters}
+              lowCash={lowCash}
               selection={selection}
               onSelect={setSelection}
             />
@@ -158,6 +172,8 @@ export function CalendarPage() {
               accounts={accounts.data ?? []}
               categories={categories ?? []}
               today={todayDay}
+              showForecast={filters.forecast && !accountId}
+              lowCash={lowCash}
               onClear={() => setSelection(null)}
               onPickDay={(day) => setSelection({ from: day, to: day })}
             />
