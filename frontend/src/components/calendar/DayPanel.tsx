@@ -60,102 +60,113 @@ function Figure({
   );
 }
 
-function SummaryFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
+/**
+ * Everything beyond the three balances (money in and out, debt, counts, categories and how it is
+ * all worked out), folded away so the day's details come first.
+ */
+function MoreFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
   const c = s.currency;
   const change = s.balance.changeMinor;
   return (
-    <div className="space-y-2">
-      <BalanceFigures s={s} single={single} />
-      <div className="grid grid-cols-2 gap-2">
-        <Figure
-          label="Change in cash and cards"
-          value={change === null ? "Not known" : signedMoney(change, c)}
-          tone={change === null || change === 0 ? undefined : change > 0 ? "good" : "bad"}
-          hint={single ? "over the day" : "over the span"}
-        />
-        <Figure label="Money in" value={formatMinor(s.moneyInMinor, c)} tone="good" />
-        <Figure label="Money out" value={formatMinor(s.moneyOutMinor, c)} />
-        {(s.debtPaidMinor > 0 || s.debt.accountsCounted > 0) && (
-          <>
-            <Figure
-              label="Debt paid"
-              value={formatMinor(s.debtPaidMinor, c)}
-              tone={s.debtPaidMinor > 0 ? "debt" : undefined}
-              hint="to cards and loans, not spending"
-            />
-            <Figure
-              label={
-                s.balance.projected ? "Cards and loans owed (projected)" : "Cards and loans owed"
-              }
-              value={s.debt.endMinor === null ? "Not known" : formatMinor(s.debt.endMinor, c)}
-              hint="at the end"
-            />
-            <Figure
-              label="Change in debt"
-              value={s.debt.changeMinor === null ? "Not known" : signedMoney(s.debt.changeMinor, c)}
-              // Less debt is the good direction.
-              tone={
-                s.debt.changeMinor === null || s.debt.changeMinor === 0
-                  ? undefined
-                  : s.debt.changeMinor < 0
-                    ? "good"
-                    : "bad"
-              }
-              hint={single ? "over the day" : "over the span"}
-            />
-          </>
-        )}
-        <Figure
-          label="Transactions"
-          value={String(s.transactionCount)}
-          hint={s.pendingCount > 0 ? `${s.pendingCount} pending` : undefined}
-        />
-        {!single && (
-          <>
-            <Figure
-              label="Spending"
-              value={formatMinor(s.spendingMinor, c)}
-              hint="own-account transfers left out"
-            />
-            <Figure
-              label="Income"
-              value={formatMinor(s.incomeMinor, c)}
-              hint="own-account transfers left out"
-            />
-          </>
-        )}
-      </div>
-      {s.expected.count > 0 && (
-        <p className="text-xs text-slate-600 dark:text-slate-300">
-          Still expected: {s.expected.count} item{s.expected.count === 1 ? "" : "s"}
-          {s.expected.outflowMinor > 0 && <>, {formatMinor(s.expected.outflowMinor, c)} out</>}
-          {s.expected.inflowMinor > 0 && <>, {formatMinor(s.expected.inflowMinor, c)} in</>}.
-        </p>
-      )}
-      {!single && s.topCategories.length > 0 && (
-        <div>
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Top spending categories
-          </div>
-          <ul className="mt-1 space-y-0.5 text-sm">
-            {s.topCategories.map((cat) => (
-              <li key={cat.label} className="flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: cat.color ?? "#94a3b8" }}
-                  />
-                  <span className="truncate">{cat.label}</span>
-                </span>
-                <span className="tabular-nums">{formatMinor(cat.spendingMinor, c)}</span>
-              </li>
-            ))}
-          </ul>
+    <details className="group rounded-md border border-slate-200 dark:border-slate-700">
+      <summary className="cursor-pointer px-2 py-1.5 text-xs text-slate-600 select-none dark:text-slate-300">
+        More figures: money in and out, debt
+        {single ? "" : ", spending"} and how it is worked out
+      </summary>
+      <div className="space-y-2 border-t border-slate-200 p-2 dark:border-slate-700">
+        <div className="grid grid-cols-2 gap-2">
+          <Figure
+            label="Change in cash and cards"
+            value={change === null ? "Not known" : signedMoney(change, c)}
+            tone={change === null || change === 0 ? undefined : change > 0 ? "good" : "bad"}
+            hint={single ? "over the day" : "over the span"}
+          />
+          <Figure label="Money in" value={formatMinor(s.moneyInMinor, c)} tone="good" />
+          <Figure label="Money out" value={formatMinor(s.moneyOutMinor, c)} />
+          {(s.debtPaidMinor > 0 || s.debt.accountsCounted > 0) && (
+            <>
+              <Figure
+                label="Debt paid"
+                value={formatMinor(s.debtPaidMinor, c)}
+                tone={s.debtPaidMinor > 0 ? "debt" : undefined}
+                hint="to cards and loans, not spending"
+              />
+              <Figure
+                label={
+                  s.balance.projected ? "Cards and loans owed (projected)" : "Cards and loans owed"
+                }
+                value={s.debt.endMinor === null ? "Not known" : formatMinor(s.debt.endMinor, c)}
+                hint="at the end"
+              />
+              <Figure
+                label="Change in debt"
+                value={
+                  s.debt.changeMinor === null ? "Not known" : signedMoney(s.debt.changeMinor, c)
+                }
+                // Less debt is the good direction.
+                tone={
+                  s.debt.changeMinor === null || s.debt.changeMinor === 0
+                    ? undefined
+                    : s.debt.changeMinor < 0
+                      ? "good"
+                      : "bad"
+                }
+                hint={single ? "over the day" : "over the span"}
+              />
+            </>
+          )}
+          <Figure
+            label="Transactions"
+            value={String(s.transactionCount)}
+            hint={s.pendingCount > 0 ? `${s.pendingCount} pending` : undefined}
+          />
+          {!single && (
+            <>
+              <Figure
+                label="Spending"
+                value={formatMinor(s.spendingMinor, c)}
+                hint="own-account transfers left out"
+              />
+              <Figure
+                label="Income"
+                value={formatMinor(s.incomeMinor, c)}
+                hint="own-account transfers left out"
+              />
+            </>
+          )}
         </div>
-      )}
-      <HowCalculated s={s} />
-    </div>
+        {s.expected.count > 0 && (
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            Still expected: {s.expected.count} item{s.expected.count === 1 ? "" : "s"}
+            {s.expected.outflowMinor > 0 && <>, {formatMinor(s.expected.outflowMinor, c)} out</>}
+            {s.expected.inflowMinor > 0 && <>, {formatMinor(s.expected.inflowMinor, c)} in</>}.
+          </p>
+        )}
+        {!single && s.topCategories.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Top spending categories
+            </div>
+            <ul className="mt-1 space-y-0.5 text-sm">
+              {s.topCategories.map((cat) => (
+                <li key={cat.label} className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: cat.color ?? "#94a3b8" }}
+                    />
+                    <span className="truncate">{cat.label}</span>
+                  </span>
+                  <span className="tabular-nums">{formatMinor(cat.spendingMinor, c)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <HowCalculated s={s} />
+      </div>
+    </details>
   );
 }
 
@@ -178,13 +189,20 @@ function BalanceFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
   }
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500 dark:text-slate-400">
         {b.projected && (
           <span className="rounded-full bg-violet-100 px-2 font-medium text-violet-900 dark:bg-violet-950 dark:text-violet-200">
             Projected
           </span>
         )}
-        Balances at the {at}
+        <span>Balances at the {at}</span>
+        {b.changeMinor !== null && (
+          <span
+            className={`font-medium tabular-nums ${b.changeMinor > 0 ? "text-green-700 dark:text-green-400" : b.changeMinor < 0 ? "text-red-700 dark:text-red-400" : ""}`}
+          >
+            {signedMoney(b.changeMinor, c)} {single ? "over the day" : "over the span"}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-2">
         <Figure label="Cash" value={money(b.cash.endMinor)} />
@@ -193,11 +211,7 @@ function BalanceFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
           value={money(b.cardDebt.endMinor)}
           hint={b.cardDebt.endMinor === null ? "no card counted" : undefined}
         />
-        <Figure
-          label="Cash minus cards"
-          value={money(b.endMinor)}
-          hint={single ? undefined : `from ${money(b.startMinor)}`}
-        />
+        <Figure label="Cash minus cards" value={money(b.endMinor)} />
       </div>
       {b.projection && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
@@ -603,7 +617,10 @@ export function DayPanel({
   onPickDay: (day: string) => void;
 }) {
   const single = isSingleDay(span);
-  const [tab, setTab] = useState<Tab>("transactions");
+  // A tab the user picks stays picked while they move between days like it (past or future).
+  const future = span.from > today;
+  const [chosen, setChosen] = useState<{ tab: Tab; future: boolean } | null>(null);
+  const setTab = (next: Tab) => setChosen({ tab: next, future });
   const [notice, setNotice] = useState<{ kind: "info" | "error"; text: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -638,6 +655,10 @@ export function DayPanel({
   }
 
   const s = summary.data;
+  // A future day with something expected opens on what is expected.
+  const fitting: Tab = future && (s?.expected.count ?? 0) > 0 ? "expected" : "transactions";
+  const tab = chosen && chosen.future === future ? chosen.tab : fitting;
+  const note = single ? (s?.notes[0]?.note ?? null) : null;
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "transactions", label: s ? `Transactions (${s.transactionCount})` : "Transactions" },
     { id: "notes", label: s && s.notes.length > 0 ? `Notes (${s.notes.length})` : "Notes" },
@@ -651,10 +672,22 @@ export function DayPanel({
     <aside
       aria-label="Selected days"
       data-keep-selection
-      className="flex flex-col gap-3 rounded-lg lg:min-h-0 lg:overflow-y-auto border border-slate-200 p-4 dark:border-slate-700"
+      className="flex flex-col rounded-lg border border-slate-200 bg-white lg:min-h-0 lg:overflow-hidden dark:border-slate-700 dark:bg-slate-900"
     >
-      <div className="flex items-start justify-between gap-2">
-        <h2 className="text-base font-semibold">{spanTitle(span)}</h2>
+      <div className="flex items-start justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">{spanTitle(span)}</h2>
+          {note && (
+            <button
+              type="button"
+              onClick={() => setTab("notes")}
+              title="Open the note"
+              className="mt-0.5 block max-w-full truncate text-left text-xs text-slate-500 hover:underline dark:text-slate-400"
+            >
+              Note: {note}
+            </button>
+          )}
+        </div>
         <button
           type="button"
           className={smallButton}
@@ -665,121 +698,121 @@ export function DayPanel({
         </button>
       </div>
 
-      {summary.error && (
-        <p role="alert" className="text-sm text-red-600">
-          {summary.error}
-        </p>
-      )}
-      {summary.loading && <p className="text-sm text-slate-500">Loading...</p>}
-      {s && <SummaryFigures s={s} single={single} />}
+      <div className="flex flex-col gap-3 px-4 pt-3 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        {summary.error && (
+          <p role="alert" className="text-sm text-red-600">
+            {summary.error}
+          </p>
+        )}
+        {summary.loading && <p className="text-sm text-slate-500">Loading...</p>}
+        {s && <BalanceFigures s={s} single={single} />}
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={primaryClass}
-          onClick={() => setAdding(true)}
-          disabled={handAccounts.length === 0}
-        >
-          Add transaction
-        </button>
-        <button type="button" className={buttonClass} onClick={() => setPlanning("new")}>
-          Add expected transaction
-        </button>
-      </div>
-      {handAccounts.length === 0 && (
-        <p className="text-xs text-slate-500">
-          To add a transaction by hand, first{" "}
-          <Link to="/accounts" className="text-blue-600 underline">
-            add an account you keep by hand
-          </Link>{" "}
-          (a Cash account, for example). Expected transactions work with any account.
-        </p>
-      )}
-
-      {notice && (
-        <p
-          role={notice.kind === "error" ? "alert" : "status"}
-          className={`rounded-md border px-3 py-2 text-sm ${
-            notice.kind === "error"
-              ? "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
-              : "border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-200"
-          }`}
-        >
-          {notice.text}
-        </p>
-      )}
-
-      {single && s?.notes[0] && <NoteBox key={span.from} day={span.from} saved={s.notes[0].note} />}
-
-      <div
-        role="tablist"
-        aria-label="Details"
-        className="flex gap-1 border-b border-slate-200 dark:border-slate-700"
-      >
-        {tabs.map((t) => (
+        <div className="flex flex-wrap gap-2">
           <button
-            key={t.id}
             type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              tab === t.id
-                ? "border-blue-600 font-medium text-blue-700 dark:text-blue-400"
-                : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300"
+            className={primaryClass}
+            onClick={() => setAdding(true)}
+            disabled={handAccounts.length === 0}
+          >
+            Add transaction
+          </button>
+          <button type="button" className={buttonClass} onClick={() => setPlanning("new")}>
+            Add expected transaction
+          </button>
+        </div>
+        {handAccounts.length === 0 && (
+          <p className="text-xs text-slate-500">
+            To add a transaction by hand, first{" "}
+            <Link to="/accounts" className="text-blue-600 underline">
+              add an account you keep by hand
+            </Link>{" "}
+            (a Cash account, for example). Expected transactions work with any account.
+          </p>
+        )}
+
+        {notice && (
+          <p
+            role={notice.kind === "error" ? "alert" : "status"}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              notice.kind === "error"
+                ? "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+                : "border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-200"
             }`}
           >
-            {t.label}
-          </button>
-        ))}
-      </div>
+            {notice.text}
+          </p>
+        )}
 
-      <div role="tabpanel">
-        {tab === "transactions" && (
-          <TransactionList span={span} accountId={accountId} onOpen={() => setShowTable(true)} />
-        )}
-        {tab === "notes" &&
-          (single ? (
-            s?.notes[0] ? (
-              <p className="text-sm text-slate-500">Your note for this day is in the box above.</p>
-            ) : (
-              <NoteBox
-                key={span.from}
-                day={span.from}
-                saved=""
-                placeholder="Anything you want to remember about this day"
-              />
-            )
-          ) : s && s.notes.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {s.notes.map((n) => (
-                <li key={n.date}>
-                  <button
-                    type="button"
-                    className="font-medium text-blue-700 hover:underline dark:text-blue-400"
-                    onClick={() => onPickDay(n.date)}
-                  >
-                    {formatDay(n.date)}
-                  </button>
-                  <p className="whitespace-pre-wrap">{n.note}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">
-              No notes in this span. Choose a single day to write one.
-            </p>
+        {s && <MoreFigures s={s} single={single} />}
+
+        <div
+          role="tablist"
+          aria-label="Details"
+          className="sticky top-0 z-10 -mx-4 flex gap-1 border-b border-slate-200 bg-white px-4 pt-1 dark:border-slate-700 dark:bg-slate-900"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+                tab === t.id
+                  ? "border-blue-600 font-medium text-blue-700 dark:text-blue-400"
+                  : "border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300"
+              }`}
+            >
+              {t.label}
+            </button>
           ))}
-        {tab === "expected" && (
-          <ExpectedList
-            span={span}
-            accountId={accountId}
-            today={today}
-            onEditSeries={(id) => void editSeries(id)}
-            onOpenTransaction={(id) => void openTransaction(id)}
-            onNotice={setNotice}
-          />
-        )}
+        </div>
+
+        <div role="tabpanel">
+          {tab === "transactions" && (
+            <TransactionList span={span} accountId={accountId} onOpen={() => setShowTable(true)} />
+          )}
+          {tab === "notes" &&
+            (single ? (
+              s ? (
+                <NoteBox
+                  key={span.from}
+                  day={span.from}
+                  saved={note ?? ""}
+                  placeholder="Anything you want to remember about this day"
+                />
+              ) : null
+            ) : s && s.notes.length > 0 ? (
+              <ul className="space-y-2 text-sm">
+                {s.notes.map((n) => (
+                  <li key={n.date}>
+                    <button
+                      type="button"
+                      className="font-medium text-blue-700 hover:underline dark:text-blue-400"
+                      onClick={() => onPickDay(n.date)}
+                    >
+                      {formatDay(n.date)}
+                    </button>
+                    <p className="whitespace-pre-wrap">{n.note}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No notes in this span. Choose a single day to write one.
+              </p>
+            ))}
+          {tab === "expected" && (
+            <ExpectedList
+              span={span}
+              accountId={accountId}
+              today={today}
+              onEditSeries={(id) => void editSeries(id)}
+              onOpenTransaction={(id) => void openTransaction(id)}
+              onNotice={setNotice}
+            />
+          )}
+        </div>
       </div>
 
       {adding && (
