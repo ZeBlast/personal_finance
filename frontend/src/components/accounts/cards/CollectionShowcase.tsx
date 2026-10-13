@@ -41,9 +41,16 @@ type Sort = "value" | "name";
 
 const money = (minor: number | null) => formatMinor(minor, "USD");
 
-/** TCGplayer's public picture of a card, when the item is matched to a TCGplayer product. */
-const cardImage = (id: string, size: 200 | 400 | 1000 = 200) =>
-  `https://tcgplayer-cdn.tcgplayer.com/product/${id}_${size}w.jpg`;
+/**
+ * TCGplayer's public pictures of a card, when the item is matched to a TCGplayer product. The
+ * sizes its image server has: `200w`, `400w`, and `in_1000x1000` (the largest, about 720 by 1000
+ * for a card); anything else is refused.
+ */
+type ImageSize = "200w" | "400w" | "in_1000x1000";
+const cardImage = (id: string, size: ImageSize = "200w") =>
+  `https://tcgplayer-cdn.tcgplayer.com/product/${id}_${size}.jpg`;
+/** For the close-up: the largest first, smaller ones if it can't be had. */
+const CLOSE_UP_SIZES: ImageSize[] = ["in_1000x1000", "400w", "200w"];
 
 /** How many items the preview shows before "View all". */
 const PREVIEW = 8;
@@ -233,7 +240,7 @@ function PokemonCard({ item, onOpen, large }: { item: Item; onOpen: () => void; 
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [broken, setBroken] = useState(false);
   const picture =
-    item.tcgplayerId && !broken ? cardImage(item.tcgplayerId, large ? 400 : 200) : null;
+    item.tcgplayerId && !broken ? cardImage(item.tcgplayerId, large ? "400w" : "200w") : null;
   return (
     <button
       type="button"
@@ -324,10 +331,12 @@ const MAX_ZOOM = 6;
 function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onClose: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [broken, setBroken] = useState(false);
+  /** Which of CLOSE_UP_SIZES is being tried; past the end, none could be had. */
+  const [attempt, setAttempt] = useState(0);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const stage = useRef<HTMLDivElement>(null);
-  const picture = pokemon && item.tcgplayerId && !broken ? cardImage(item.tcgplayerId, 1000) : null;
+  const size = CLOSE_UP_SIZES[attempt];
+  const picture = pokemon && item.tcgplayerId && size ? cardImage(item.tcgplayerId, size) : null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -365,7 +374,8 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
   }
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (zoom === 1) return;
+    // A press on the zoom buttons is theirs: capturing it here would swallow their click.
+    if (zoom === 1 || (e.target as HTMLElement).closest("button")) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
@@ -408,10 +418,11 @@ function Viewer({ item, pokemon, onClose }: { item: Item; pokemon: boolean; onCl
         >
           {picture ? (
             <img
+              key={picture}
               src={picture}
               alt={item.name}
               draggable={false}
-              onError={() => setBroken(true)}
+              onError={() => setAttempt((a) => a + 1)}
               className="max-h-[80vh] max-w-[80vw] rounded-2xl shadow-2xl lg:max-w-[55vw]"
             />
           ) : (
