@@ -1,17 +1,20 @@
 import { AccountName } from "../components/common/AccountName";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, errorMessage } from "../api/client";
-import { ConfirmDialog } from "../components/common/Modal";
+import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { LimitHistory } from "../components/accounts/LimitHistory";
 import { CashbackSection } from "../components/accounts/CashbackSection";
 import { StatementsButton } from "../components/accounts/StatementsDialog";
 import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
-import { ManualAccountsSection } from "../components/accounts/ManualAccountsSection";
+import {
+  ManualAccountsSection,
+  NewAccountDialog,
+} from "../components/accounts/ManualAccountsSection";
 import { AccountCardsView } from "../components/accounts/cards/AccountCardsView";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { formatMinor } from "../lib/money";
-import { announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
+import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
 
@@ -103,6 +106,8 @@ export function AccountsPage() {
   const [checkingId, setCheckingId] = useState<number | null>(null);
   /** The experimental card view, remembered between visits. */
   const [cardView, setCardView] = usePersistentState("pf.accounts.cardView", false);
+  /** The card view's "Add account" window: choosing what to add, or the manual account form. */
+  const [addingAccount, setAddingAccount] = useState<"choose" | "manual" | null>(null);
 
   const load = useCallback(async (): Promise<PlaidItem[]> => {
     try {
@@ -251,8 +256,63 @@ export function AccountsPage() {
               disconnecting are in the classic view.
             </p>
           </div>
-          {viewSwitch}
+          <div className="flex items-center gap-4">
+            {viewSwitch}
+            <button
+              type="button"
+              onClick={() => setAddingAccount("choose")}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              + Add account
+            </button>
+          </div>
         </div>
+        {addingAccount === "choose" && (
+          <Modal title="Add an account" onClose={() => setAddingAccount(null)} dismissible>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <div className="font-medium">Connect a bank</div>
+                <p className="flex-1 text-sm text-slate-500">
+                  Sign in to your bank through Plaid; its accounts and transactions sync on their
+                  own.
+                </p>
+                <ConnectButton
+                  label="Connect a bank"
+                  primary
+                  onDone={(text, itemId) => {
+                    setAddingAccount(null);
+                    setNotice({ kind: "info", text });
+                    void syncConnection(itemId);
+                  }}
+                  onError={(text) => setNotice({ kind: "error", text })}
+                />
+              </div>
+              <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <div className="font-medium">Keep one by hand</div>
+                <p className="flex-1 text-sm text-slate-500">
+                  Cash, a card or account you update yourself, a loan, an asset or a collection.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAddingAccount("manual")}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+                >
+                  Add a manual account
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+        {addingAccount === "manual" && (
+          <NewAccountDialog
+            onCreated={(text) => {
+              setAddingAccount(null);
+              setNotice({ kind: "info", text });
+              announceDataChanged();
+            }}
+            onClose={() => setAddingAccount(null)}
+          />
+        )}
         {notice && (
           <div
             role={notice.kind === "error" ? "alert" : "status"}

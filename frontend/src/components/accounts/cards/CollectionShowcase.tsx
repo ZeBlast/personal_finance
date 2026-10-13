@@ -53,8 +53,9 @@ const cardImage = (id: string, size: ImageSize = "200w") =>
 /** For the close-up: the largest first, smaller ones if it can't be had. */
 const CLOSE_UP_SIZES: ImageSize[] = ["in_1000x1000", "400w", "200w"];
 
-/** How many items the preview shows before "View all". */
-const PREVIEW = 8;
+/** The preview's narrowest item, in pixels (the grid's minimum column), and the gap between. */
+const PREVIEW_MIN = { pokemon: 104, other: 144 };
+const PREVIEW_GAP = 12;
 
 /**
  * A collection shown for what it is: a preview of its most valuable items (Pokémon cards as cards,
@@ -82,6 +83,19 @@ export function CollectionShowcase({
     [c],
   );
   const pieces = byValue.reduce((n, i) => n + i.quantity, 0);
+  // The preview is one full row across the box: as many items as fit its width.
+  const row = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const hasItems = byValue.length > 0;
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry?.contentRect.width ?? 0));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasItems]);
+  const min = pokemon ? PREVIEW_MIN.pokemon : PREVIEW_MIN.other;
+  const preview = Math.max(1, Math.floor((width + PREVIEW_GAP) / (min + PREVIEW_GAP)));
 
   return (
     <div className="relative overflow-hidden rounded-md border border-slate-200 bg-white p-4 pl-5 dark:border-slate-700 dark:bg-slate-900">
@@ -123,15 +137,13 @@ export function CollectionShowcase({
         <p className="text-sm text-slate-500">Nothing in it yet. Use Manage to add items.</p>
       )}
       {byValue.length > 0 && (
-        <div className="relative">
+        <div className="relative" ref={row}>
           <div
             className="grid gap-3"
-            style={{
-              gridTemplateColumns: `repeat(auto-fill, minmax(${pokemon ? "6.5rem" : "9rem"}, 1fr))`,
-            }}
+            style={{ gridTemplateColumns: `repeat(${preview}, minmax(0, 1fr))` }}
           >
             {byValue
-              .slice(0, PREVIEW)
+              .slice(0, preview)
               .map((item) =>
                 pokemon ? (
                   <PokemonCard key={item.id} item={item} onOpen={() => setOpen(item)} />
@@ -140,13 +152,13 @@ export function CollectionShowcase({
                 ),
               )}
           </div>
-          {byValue.length > PREVIEW && (
+          {byValue.length > preview && (
             <button
               type="button"
               onClick={() => setBrowsing(true)}
               className="mt-3 w-full rounded-md border border-dashed border-slate-300 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
             >
-              and {byValue.length - PREVIEW} more · view all
+              and {byValue.length - preview} more · view all
             </button>
           )}
         </div>

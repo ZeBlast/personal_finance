@@ -1,8 +1,16 @@
-import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  Fragment,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { Modal } from "../../common/Modal";
 import { LimitHistory } from "../LimitHistory";
-import { applyOrder, moveBefore } from "./order";
+import { applyOrder, moveBeside, moveToNewRow, normalizeRows } from "./order";
 import { useNavigate } from "react-router-dom";
 import { api, errorMessage } from "../../../api/client";
 import { useApi } from "../../../hooks/useApi";
@@ -34,9 +42,15 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [managing, setManaging] = useState<Account | null>(null);
   const [statementsOf, setStatementsOf] = useState<Account | null>(null);
   const [limitsOf, setLimitsOf] = useState<Account | null>(null);
-  // The user's order of banks and of cards (dragged into place), remembered in this browser.
-  const [groupOrder, setGroupOrder] = usePersistentState<string[]>("pf.accounts.groupOrder", []);
+  // How the user arranged the groups (in rows) and the cards (dragged into place), remembered in
+  // this browser. The older one-line order of banks seeds the rows until they are first arranged.
+  const [groupOrder] = usePersistentState<string[]>("pf.accounts.groupOrder", []);
+  const [groupRows, setGroupRows] = usePersistentState<string[][]>("pf.accounts.groupRows", []);
   const [cardOrder, setCardOrder] = usePersistentState<string[]>("pf.accounts.cardOrder", []);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const dragNow = useRef<Drag | null>(null);
+  /** Applies a finished drag; set each render so it sees the current rows and cards. */
+  const dropRef = useRef<(d: Drag) => void>(() => {});
 
   const all = accounts.data ?? [];
   const collections = all.filter(isCollection);
@@ -60,41 +74,171 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   if (accounts.error) return <p className="text-sm text-red-600">{accounts.error}</p>;
   if (!accounts.data) return <p className="text-sm text-slate-500">Loading your accounts...</p>;
 
-  const orderedGroups = applyOrder(groups, (g) => `item-${g.item.id}`, groupOrder);
-  const cardsIn = (list: Account[]) => applyOrder(list, (a) => String(a.id), cardOrder);
+  const groupKey = (g: { item: PlaidItem }) => `item-${g.item.id}`;
+  const byKey = new Map(groups.map((g) => [groupKey(g), g]));
+  const keys = [
+    ...(manual.length > 0 ? ["manual"] : []),
+    ...applyOrder(groups, groupKey, groupOrder).map(groupKey),
+  ];
+  const rows = normalizeRows(groupRows, keys);
+  /** Each group's cards in the user's order. */
+  const cardsByGroup = new Map<string, Account[]>([
+    ["manual", applyOrder(manual, (a) => String(a.id), cardOrder)],
+    ...groups.map((g): [string, Account[]] => [
+      groupKey(g),
+      applyOrder(g.accounts, (a) => String(a.id), cardOrder),
+    ]),
+  ]);
 
-  /** Cards of one group, in the user's order, each draggable within the group. */
-  const cardsOf = (groupKey: string, list: Account[]) => {
-    const ordered = cardsIn(list);
-    return ordered.map((a) => (
-      <Draggable
-        key={a.id}
-        kind="card"
-        id={String(a.id)}
-        scope={groupKey}
-        onMove={(from) =>
-          setCardOrder(
-            moveBefore(
-              ordered.map((x) => String(x.id)),
-              from,
-              String(a.id),
-            ).concat(cardOrder.filter((k) => !ordered.some((x) => String(x.id) === k))),
-          )
-        }
-      >
-        <AccountCard
-          account={a}
-          onAdd={() => setAdding(a)}
-          onImport={() => setImporting(a)}
-          onStatements={() => setStatementsOf(a)}
-          onLimits={() => setLimitsOf(a)}
-        />
-      </Draggable>
-    ));
+  dropRef.current = (d) => {
+    const t = d.target;
+    if (!t) return;
+    if (t.type === "row") setGroupRows(moveToNewRow(rows, d.key, t.index));
+    else if (t.type === "beside") setGroupRows(moveBeside(rows, d.key, t.key, t.side));
+    else {
+      const ids = (cardsByGroup.get(d.scope) ?? []).map((a) => String(a.id));
+      const next = moveBeside([ids], d.key, t.id, t.side)[0] ?? ids;
+      setCardOrder(next.concat(cardOrder.filter((k) => !next.includes(k))));
+    }
+  };
+  const show = (d: Drag | null) => {
+    dragNow.current = d;
+    setDrag(d);
   };
 
+  /**
+   * A press that may become a drag: on a group's grip, name or logo it moves the group; on a card,
+   * the card (within its group). It only becomes a drag once the pointer has moved a little, so a
+   * plain click still turns a card over. Pointer events, not the browser's drag and drop, which
+   * the desktop window takes for dropping files.
+   */
+  const onPress = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    const el = e.target as HTMLElement;
+    if (el.closest("button, a, input, select, textarea")) return;
+    const group = el.closest("[data-drag-handle]")?.closest<HTMLElement>("[data-group-key]");
+    const card = el.closest<HTMLElement>("[data-card-id]");
+    const what: Pick<Drag, "kind" | "key" | "scope" | "label"> | null = group
+      ? {
+          kind: "group",
+          key: group.dataset.groupKey!,
+          scope: "groups",
+          label: group.dataset.label ?? "",
+        }
+      : card
+        ? {
+            kind: "card",
+            key: card.dataset.cardId!,
+            scope: card.dataset.cardScope!,
+            label: card.dataset.label ?? "",
+          }
+        : null;
+    if (!what) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let moving = false;
+    const move = (ev: PointerEvent) => {
+      if (!moving) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        moving = true;
+        document.body.style.userSelect = "none";
+      }
+      ev.preventDefault();
+      show({
+        ...what,
+        x: ev.clientX,
+        y: ev.clientY,
+        target: dropTarget(what, ev.clientX, ev.clientY),
+      });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      if (!moving) return;
+      document.body.style.userSelect = "";
+      const d = dragNow.current;
+      show(null);
+      if (d) dropRef.current(d);
+      // The click that ends a drag must not also turn a card over.
+      const swallow = (c: MouseEvent) => {
+        c.stopPropagation();
+        c.preventDefault();
+      };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  /** Cards of one group, in the user's order, each draggable within the group. */
+  const cardsOf = (scope: string) =>
+    (cardsByGroup.get(scope) ?? []).map((a) => {
+      const id = String(a.id);
+      const mark = drag?.target?.type === "card" && drag.target.id === id ? drag.target.side : null;
+      return (
+        <div
+          key={a.id}
+          data-card-id={id}
+          data-card-scope={scope}
+          data-label={a.name}
+          className={`relative ${drag?.kind === "card" && drag.key === id ? "opacity-40" : ""}`}
+        >
+          {mark && <DropBar side={mark} gap="0.5rem" />}
+          <AccountCard
+            account={a}
+            onAdd={() => setAdding(a)}
+            onImport={() => setImporting(a)}
+            onStatements={() => setStatementsOf(a)}
+            onLimits={() => setLimitsOf(a)}
+          />
+        </div>
+      );
+    });
+
+  const groupBox = (key: string) => {
+    const g = byKey.get(key);
+    const count = key === "manual" ? manual.length : (g?.accounts.length ?? 0);
+    const mark =
+      drag?.target?.type === "beside" && drag.target.key === key ? drag.target.side : null;
+    return (
+      <section
+        key={key}
+        data-group-key={key}
+        data-label={g ? g.item.institutionName : "Kept by hand"}
+        style={groupBasis(count)}
+        className={`relative ${drag?.kind === "group" && drag.key === key ? "opacity-40" : ""}`}
+      >
+        {mark && <DropBar side={mark} gap="1rem" />}
+        {g ? (
+          <InstitutionGroup item={g.item}>{cardsOf(key)}</InstitutionGroup>
+        ) : (
+          <>
+            <GroupHeading
+              title="Kept by hand"
+              subtitle="Accounts you add and update yourself"
+              draggable
+            />
+            <CardGrid>{cardsOf("manual")}</CardGrid>
+          </>
+        )}
+      </section>
+    );
+  };
+  const movingGroup = drag?.kind === "group";
+  const slot = (index: number, edge: boolean) => (
+    <RowSlot
+      index={index}
+      showing={movingGroup}
+      edge={edge}
+      targeted={drag?.target?.type === "row" && drag.target.index === index}
+    />
+  );
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" onPointerDown={onPress}>
       {collections.length > 0 && (
         <section className="space-y-4">
           <GroupHeading title="Collections" subtitle="Valued item by item" />
@@ -104,36 +248,31 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
         </section>
       )}
 
-      {/* Groups sit side by side while the window has room, each as wide as its cards. */}
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-8">
-        {manual.length > 0 && (
-          <GroupBox count={manual.length}>
-            <GroupHeading title="Kept by hand" subtitle="Accounts you add and update yourself" />
-            <CardGrid>{cardsOf("manual", manual)}</CardGrid>
-          </GroupBox>
-        )}
-        {orderedGroups.map(({ item, accounts: own }) => (
-          <Draggable
-            key={item.id}
-            kind="group"
-            id={`item-${item.id}`}
-            scope="banks"
-            handleOnly
-            style={groupBasis(own.length)}
-            onMove={(from) =>
-              setGroupOrder(
-                moveBefore(
-                  orderedGroups.map((g) => `item-${g.item.id}`),
-                  from,
-                  `item-${item.id}`,
-                ),
-              )
-            }
-          >
-            <InstitutionGroup item={item}>{cardsOf(`item-${item.id}`, own)}</InstitutionGroup>
-          </Draggable>
+      {/* Groups in the rows the user arranged; in a row they sit side by side while there is
+          room, each as wide as its cards. Moving a group shows places for a line of its own. */}
+      <div>
+        {rows.map((row, i) => (
+          <Fragment key={row.join(" ")}>
+            {slot(i, i === 0)}
+            <div
+              data-row-last={row[row.length - 1]}
+              className="flex flex-wrap items-start gap-x-8 gap-y-8"
+            >
+              {row.map(groupBox)}
+            </div>
+          </Fragment>
         ))}
+        {rows.length > 0 && slot(rows.length, true)}
       </div>
+
+      {drag && (
+        <div
+          className="pointer-events-none fixed z-50 rounded-md bg-slate-900/85 px-3 py-1.5 text-sm text-white shadow-lg"
+          style={{ left: drag.x + 14, top: drag.y + 10 }}
+        >
+          {drag.label}
+        </div>
+      )}
 
       {groups.length === 0 && manual.length === 0 && (
         <p className="text-sm text-slate-500">No accounts yet.</p>
@@ -206,89 +345,91 @@ const groupBasis = (cards: number): CSSProperties => ({
   minWidth: "17rem",
 });
 
-function GroupBox({ count, children }: { count: number; children: ReactNode }) {
-  return <section style={groupBasis(count)}>{children}</section>;
+type DropTarget =
+  | { type: "beside"; key: string; side: "before" | "after" }
+  | { type: "row"; index: number }
+  | { type: "card"; id: string; side: "before" | "after" };
+
+/** A group or card being dragged, where the pointer is, and where it would land. */
+interface Drag {
+  kind: "group" | "card";
+  key: string;
+  /** Cards stay in their group: the group's key. */
+  scope: string;
+  label: string;
+  x: number;
+  y: number;
+  target: DropTarget | null;
 }
 
-/** What is being dragged right now (drag events can't read their data until the drop). */
-let dragging: { kind: string; scope: string; id: string } | null = null;
+/** Where a drag would land with the pointer at (x, y): beside a group or card, or on a new line. */
+function dropTarget(
+  d: Pick<Drag, "kind" | "key" | "scope">,
+  x: number,
+  y: number,
+): DropTarget | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (!el) return null;
+  const side = (box: HTMLElement) => {
+    const r = box.getBoundingClientRect();
+    return x < r.left + r.width / 2 ? ("before" as const) : ("after" as const);
+  };
+  if (d.kind === "card") {
+    const card = el.closest<HTMLElement>("[data-card-id]");
+    if (!card || card.dataset.cardScope !== d.scope || card.dataset.cardId === d.key) return null;
+    return { type: "card", id: card.dataset.cardId!, side: side(card) };
+  }
+  const slot = el.closest<HTMLElement>("[data-row-slot]");
+  if (slot) return { type: "row", index: Number(slot.dataset.rowSlot) };
+  const group = el.closest<HTMLElement>("[data-group-key]");
+  if (group) {
+    if (group.dataset.groupKey === d.key) return null;
+    return { type: "beside", key: group.dataset.groupKey!, side: side(group) };
+  }
+  // The empty end of a row: after its last group.
+  const last = el.closest<HTMLElement>("[data-row-last]")?.dataset.rowLast;
+  return last && last !== d.key ? { type: "beside", key: last, side: "after" } : null;
+}
+
+/** A blue bar in the gap before or after a group or card, where the dragged one would go. */
+function DropBar({ side, gap }: { side: "before" | "after"; gap: string }) {
+  const at = `calc(-${gap} - 2px)`;
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 z-10 w-1 rounded bg-blue-500"
+      style={side === "before" ? { left: at } : { right: at }}
+    />
+  );
+}
 
 /**
- * Something that can be dragged onto another of its kind (and scope: a card stays in its bank)
- * to take its place. With `handleOnly`, the drag starts only from an element marked
- * `data-drag-handle` inside it, so buttons and cards inside still work as usual.
+ * The space above, between or below the rows of groups. While a group is moved it is a place to
+ * drop it on a line of its own; otherwise the ones between rows are just the gap.
  */
-function Draggable({
-  kind,
-  id,
-  scope,
-  handleOnly,
-  style,
-  onMove,
-  children,
+function RowSlot({
+  index,
+  showing,
+  edge,
+  targeted,
 }: {
-  kind: string;
-  id: string;
-  scope: string;
-  handleOnly?: boolean;
-  style?: CSSProperties;
-  onMove: (fromId: string) => void;
-  children: ReactNode;
+  index: number;
+  showing: boolean;
+  edge: boolean;
+  targeted: boolean;
 }) {
-  // Whether the press began on the handle. The browser decides at the press whether something can
-  // be dragged, so the element is always draggable and a drag not from the handle is cancelled.
-  const fromHandle = useRef(!handleOnly);
-  const [over, setOver] = useState(false);
-  const [lifted, setLifted] = useState(false);
-  const accepts = () =>
-    dragging !== null && dragging.kind === kind && dragging.scope === scope && dragging.id !== id;
+  if (!showing) return edge ? null : <div className="h-8" />;
   return (
-    <div
-      style={style}
-      draggable
-      onPointerDown={(e) => {
-        if (handleOnly) {
-          fromHandle.current = (e.target as HTMLElement).closest("[data-drag-handle]") !== null;
-        }
-      }}
-      onDragStart={(e) => {
-        // A card inside a bank being dragged is its own drag (started on it, handled above).
-        if (e.target !== e.currentTarget) return;
-        if (!fromHandle.current) {
-          e.preventDefault();
-          return;
-        }
-        e.stopPropagation();
-        dragging = { kind, scope, id };
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", id);
-        setLifted(true);
-      }}
-      onDragEnd={() => {
-        dragging = null;
-        setLifted(false);
-        if (handleOnly) fromHandle.current = false;
-      }}
-      onDragOver={(e) => {
-        if (!accepts()) return;
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = "move";
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        setOver(false);
-        if (!accepts()) return;
-        e.preventDefault();
-        e.stopPropagation();
-        onMove(dragging!.id);
-      }}
-      className={`rounded-lg transition ${lifted ? "opacity-40" : ""} ${
-        over ? "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-900" : ""
-      }`}
-    >
-      {children}
+    <div data-row-slot={index} className="flex h-12 items-center py-2">
+      <div
+        className={`flex h-full w-full items-center justify-center rounded-md border-2 border-dashed text-xs ${
+          targeted
+            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+            : "border-slate-300 text-slate-400 dark:border-slate-600"
+        }`}
+      >
+        New line here
+      </div>
     </div>
   );
 }
@@ -325,7 +466,7 @@ function GroupHeading({
       {draggable && (
         <span
           data-drag-handle
-          title="Drag to move this bank"
+          title="Drag to move this group, beside another or onto a line of its own"
           className="cursor-grab px-0.5 text-lg leading-none text-slate-400 select-none hover:text-slate-600 active:cursor-grabbing dark:hover:text-slate-200"
         >
           ⠿

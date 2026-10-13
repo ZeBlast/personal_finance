@@ -64,7 +64,7 @@ const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: str
   },
 ];
 
-function NewAccountDialog({
+export function NewAccountDialog({
   onCreated,
   onClose,
 }: {
