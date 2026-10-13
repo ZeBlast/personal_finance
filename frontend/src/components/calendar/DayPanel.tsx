@@ -7,7 +7,7 @@ import { formatMinor } from "../../lib/money";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { Account, Category, Transaction, TransactionPage } from "../../types/api";
-import type { PeriodSummary, PlannedItem, PlannedOccurrence } from "../../types/calendar";
+import type { CalendarEvent, PeriodSummary, PlannedItem } from "../../types/calendar";
 import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog";
 import { buttonClass, primaryClass } from "../investments/styles";
 import { DayTransactionsTable } from "./DayTransactionsTable";
@@ -62,29 +62,13 @@ function Figure({
 
 function SummaryFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
   const c = s.currency;
-  const b = s.balance;
-  const money = (v: number | null): string => (v === null ? "Not known" : formatMinor(v, c));
-  const change = b.changeMinor;
+  const change = s.balance.changeMinor;
   return (
     <div className="space-y-2">
+      <BalanceFigures s={s} single={single} />
       <div className="grid grid-cols-2 gap-2">
-        {single ? (
-          <Figure
-            label={b.projected ? "Total balance (projected)" : "Total balance"}
-            value={money(b.endMinor)}
-            hint="at the end of the day"
-          />
-        ) : (
-          <>
-            <Figure label="Balance at start" value={money(b.startMinor)} />
-            <Figure
-              label={b.projected ? "Balance at end (projected)" : "Balance at end"}
-              value={money(b.endMinor)}
-            />
-          </>
-        )}
         <Figure
-          label="Change in balance"
+          label="Change in cash and cards"
           value={change === null ? "Not known" : signedMoney(change, c)}
           tone={change === null || change === 0 ? undefined : change > 0 ? "good" : "bad"}
           hint={single ? "over the day" : "over the span"}
@@ -100,7 +84,9 @@ function SummaryFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
               hint="to cards and loans, not spending"
             />
             <Figure
-              label={b.projected ? "Debt owed (projected)" : "Debt owed"}
+              label={
+                s.balance.projected ? "Cards and loans owed (projected)" : "Cards and loans owed"
+              }
               value={s.debt.endMinor === null ? "Not known" : formatMinor(s.debt.endMinor, c)}
               hint="at the end"
             />
@@ -168,14 +154,106 @@ function SummaryFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
           </ul>
         </div>
       )}
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        The balance covers your cash accounts and cards, worked out from today&apos;s balance and
-        the transactions the app has.
-        {b.accountsWithoutBalance > 0 &&
-          ` ${b.accountsWithoutBalance} account${b.accountsWithoutBalance === 1 ? " has" : "s have"} no balance yet and ${b.accountsWithoutBalance === 1 ? "is" : "are"} left out.`}
-        {b.accountsCounted === 0 && " There is no account with a known balance to work from."}
-      </p>
+      <HowCalculated s={s} />
     </div>
+  );
+}
+
+/**
+ * Cash, card debt and the two together as separate figures, so the total is never mistaken for
+ * money in the bank. A future day is labelled projected and shows how it was reached.
+ */
+function BalanceFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
+  const c = s.currency;
+  const b = s.balance;
+  const money = (v: number | null): string => (v === null ? "Not known" : formatMinor(v, c));
+  const at = single ? "end of the day" : "end of the span";
+  if (b.accountsCounted === 0) {
+    return (
+      <p className="rounded-md border border-dashed border-slate-300 p-2 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+        No balance to show: none of the chosen accounts is a cash account or card with a known
+        balance. Investment and loan accounts are not part of this calendar&apos;s balance.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+        {b.projected && (
+          <span className="rounded-full bg-violet-100 px-2 font-medium text-violet-900 dark:bg-violet-950 dark:text-violet-200">
+            Projected
+          </span>
+        )}
+        Balances at the {at}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Figure label="Cash" value={money(b.cash.endMinor)} />
+        <Figure
+          label="Card debt"
+          value={money(b.cardDebt.endMinor)}
+          hint={b.cardDebt.endMinor === null ? "no card counted" : undefined}
+        />
+        <Figure
+          label="Cash minus cards"
+          value={money(b.endMinor)}
+          hint={single ? undefined : `from ${money(b.startMinor)}`}
+        />
+      </div>
+      {b.projection && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          <span className="whitespace-nowrap">{formatMinor(b.projection.todayMinor, c)} today</span>
+          {b.projection.inMinor > 0 && (
+            <>
+              {" "}
+              <span className="whitespace-nowrap">
+                + {formatMinor(b.projection.inMinor, c)} expected in
+              </span>
+            </>
+          )}
+          {b.projection.outMinor > 0 && (
+            <>
+              {" "}
+              <span className="whitespace-nowrap">
+                − {formatMinor(b.projection.outMinor, c)} expected out
+              </span>
+            </>
+          )}{" "}
+          <span className="whitespace-nowrap">= {money(b.endMinor)}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** What the figures are made of, folded away until asked for. */
+function HowCalculated({ s }: { s: PeriodSummary }) {
+  const b = s.balance;
+  const names = (list: Array<{ name: string; type: string }>) =>
+    list.map((a) => `${a.name} (${a.type === "credit" ? "card" : "cash"})`).join(", ");
+  return (
+    <details className="text-xs text-slate-500 dark:text-slate-400">
+      <summary className="cursor-pointer">How this is calculated</summary>
+      <div className="mt-1 space-y-1">
+        <p>
+          Cash is your bank and cash accounts; card debt is what is owed on your credit cards; cash
+          minus cards is the first less the second. Loans and investments are left out.
+        </p>
+        <p>
+          A past day is worked out from today&apos;s balance and the posted transactions since, so
+          it is only as good as the history the app has. A future day adds what is still expected:
+          planned items and pending manual entries. A pending card purchase adds to card debt and
+          leaves cash alone until the bill is paid.
+        </p>
+        <p>
+          Money in and out leave out moves between your own accounts and payments toward cards or
+          loans, which is why they can differ from the change in balance.
+        </p>
+        {b.accounts.length > 0 && <p>Counted: {names(b.accounts)}.</p>}
+        {b.withoutBalance.length > 0 && (
+          <p>Left out, no balance known yet: {names(b.withoutBalance)}.</p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -264,29 +342,46 @@ function TransactionList({
   );
 }
 
-function OccurrenceRow({
-  o,
+/** "Planned" or "Pending manual", so it is clear where an expected item comes from. */
+function SourceBadge({ source }: { source: CalendarEvent["source"] }) {
+  return source === "planned" ? (
+    <span className="rounded-full bg-violet-100 px-2 text-xs text-violet-900 dark:bg-violet-950 dark:text-violet-200">
+      Planned
+    </span>
+  ) : (
+    <span className="rounded-full bg-sky-100 px-2 text-xs text-sky-900 dark:bg-sky-950 dark:text-sky-200">
+      Pending manual
+    </span>
+  );
+}
+
+type EventAction = "skip" | "done" | "undo" | "record" | "post" | "open";
+
+function EventRow({
+  e,
   today,
   busy,
   onAct,
   onEditSeries,
 }: {
-  o: PlannedOccurrence;
+  e: CalendarEvent;
   today: string;
   busy: boolean;
-  onAct: (o: PlannedOccurrence, action: "skip" | "done" | "undo" | "record") => void;
-  onEditSeries: (o: PlannedOccurrence) => void;
+  onAct: (e: CalendarEvent, action: EventAction) => void;
+  onEditSeries: (e: CalendarEvent) => void;
 }) {
-  const overdue = o.status === "expected" && o.date < today;
+  const overdue = e.source === "planned" && e.status === "expected" && e.date < today;
+  const carried = e.source === "pending" && e.originalDate !== e.date;
   return (
     <li className="rounded-md border border-slate-200 p-2 text-sm dark:border-slate-700">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate font-medium">{o.merchant}</span>
-            {o.status !== "expected" && (
+            <span className="truncate font-medium">{e.merchant}</span>
+            <SourceBadge source={e.source} />
+            {e.status !== "expected" && (
               <span className="rounded-full bg-slate-200 px-2 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                {o.status === "done" ? "Done" : "Skipped"}
+                {e.status === "done" ? "Done" : "Skipped"}
               </span>
             )}
             {overdue && (
@@ -295,103 +390,145 @@ function OccurrenceRow({
               </span>
             )}
           </div>
-          <div className="text-xs text-slate-500">
-            {formatDay(o.date)}
-            {o.accountName ? ` · ${o.accountName}` : " · any account"}
-            {o.recurring ? ` · ${o.repeats}` : ""}
-            {o.person ? ` · ${o.direction === "out" ? "to" : "from"} ${o.person}` : ""}
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            {carried
+              ? `Entered ${formatDay(e.originalDate)}; still pending; projected ${formatDay(e.date)}`
+              : formatDay(e.date)}
+            {e.accountName ? ` · ${e.accountName}` : " · any account"}
+            {e.recurring && e.repeats ? ` · ${e.repeats}` : ""}
+            {e.person ? ` · ${e.direction === "out" ? "to" : "from"} ${e.person}` : ""}
           </div>
         </div>
         <span
-          className={`shrink-0 tabular-nums ${o.direction === "in" ? "font-medium text-green-700 dark:text-green-400" : ""}`}
+          className={`shrink-0 tabular-nums ${e.direction === "in" ? "font-medium text-green-700 dark:text-green-400" : ""}`}
         >
-          {o.direction === "in" ? "+" : ""}
-          {formatMinor(o.amountMinor, "USD")}
+          {e.direction === "in" ? "+" : "−"}
+          {formatMinor(e.amountMinor, "USD")}
         </span>
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
-        {o.status === "expected" ? (
+        {e.source === "pending" ? (
           <>
-            {o.canRecord && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              onClick={() => onAct(e, "open")}
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              onClick={() => onAct(e, "post")}
+              title="It has gone through: count it in the balance from its date"
+            >
+              Mark posted
+            </button>
+          </>
+        ) : (
+          <>
+            {e.status === "expected" ? (
+              <>
+                {e.canRecord && (
+                  <button
+                    type="button"
+                    className={smallButton}
+                    disabled={busy}
+                    onClick={() => onAct(e, "record")}
+                    title="Add it as a real transaction on its account"
+                  >
+                    Record it
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={smallButton}
+                  disabled={busy}
+                  onClick={() => onAct(e, "done")}
+                  title="Stop expecting it; this does not add a transaction"
+                >
+                  Mark done
+                </button>
+                <button
+                  type="button"
+                  className={smallButton}
+                  disabled={busy}
+                  onClick={() => onAct(e, "skip")}
+                >
+                  Skip this one
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
                 className={smallButton}
                 disabled={busy}
-                onClick={() => onAct(o, "record")}
-                title="Add it as a real transaction on its account"
+                onClick={() => onAct(e, "undo")}
               >
-                Record it
+                Expect it again
               </button>
             )}
             <button
               type="button"
               className={smallButton}
               disabled={busy}
-              onClick={() => onAct(o, "done")}
+              onClick={() => onEditSeries(e)}
             >
-              Mark done
-            </button>
-            <button
-              type="button"
-              className={smallButton}
-              disabled={busy}
-              onClick={() => onAct(o, "skip")}
-            >
-              Skip this one
+              {e.recurring ? "Edit series" : "Edit"}
             </button>
           </>
-        ) : (
-          <button
-            type="button"
-            className={smallButton}
-            disabled={busy}
-            onClick={() => onAct(o, "undo")}
-          >
-            Expect it again
-          </button>
         )}
-        <button
-          type="button"
-          className={smallButton}
-          disabled={busy}
-          onClick={() => onEditSeries(o)}
-        >
-          {o.recurring ? "Edit series" : "Edit"}
-        </button>
       </div>
     </li>
   );
 }
 
+/**
+ * What is still expected in the chosen days (planned items and pending manual entries, the same
+ * ones the Expected count adds up), then those already done or skipped.
+ */
 function ExpectedList({
   span,
   accountId,
   today,
   onEditSeries,
+  onOpenTransaction,
   onNotice,
 }: {
   span: DaySpan;
   accountId: string;
   today: string;
   onEditSeries: (plannedId: number) => void;
+  onOpenTransaction: (id: number) => void;
   onNotice: (n: { kind: "info" | "error"; text: string }) => void;
 }) {
   const query = new URLSearchParams({ from: span.from, to: span.to, includeResolved: "1" });
   if (accountId) query.set("accountId", accountId);
-  const { data, error, loading } = useApi<PlannedOccurrence[]>(`/planned/occurrences?${query}`);
+  const { data, error, loading } = useApi<CalendarEvent[]>(`/calendar/expected?${query}`);
   const [busy, setBusy] = useState(false);
+  const open = data?.filter((e) => e.status === "expected") ?? [];
+  const resolved = data?.filter((e) => e.status !== "expected") ?? [];
 
-  async function act(
-    o: PlannedOccurrence,
-    action: "skip" | "done" | "undo" | "record",
-  ): Promise<void> {
+  async function act(e: CalendarEvent, action: EventAction): Promise<void> {
+    if (action === "open") {
+      onOpenTransaction(e.transactionId!);
+      return;
+    }
     setBusy(true);
     try {
-      if (action === "record") {
-        await api(`/planned/${o.plannedId}/occurrences/${o.date}/record`, { method: "POST" });
-        onNotice({ kind: "info", text: `${o.merchant} was recorded as a transaction.` });
+      if (action === "post") {
+        await api(`/transactions/${e.transactionId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ pending: false }),
+        });
+        onNotice({ kind: "info", text: `${e.merchant} is posted now.` });
+      } else if (action === "record") {
+        await api(`/planned/${e.plannedId}/occurrences/${e.date}/record`, { method: "POST" });
+        onNotice({ kind: "info", text: `${e.merchant} was recorded as a transaction.` });
       } else {
-        await api(`/planned/${o.plannedId}/occurrences/${o.date}`, {
+        await api(`/planned/${e.plannedId}/occurrences/${e.date}`, {
           method: "PUT",
           body: JSON.stringify({
             status: action === "skip" ? "skipped" : action === "done" ? "done" : "expected",
@@ -399,38 +536,46 @@ function ExpectedList({
         });
       }
       announceDataChanged();
-    } catch (e) {
-      onNotice({ kind: "error", text: errorMessage(e, "Could not change that item.") });
+    } catch (err) {
+      onNotice({ kind: "error", text: errorMessage(err, "Could not change that item.") });
     } finally {
       setBusy(false);
     }
   }
 
+  const row = (e: CalendarEvent) => (
+    <EventRow
+      key={e.id}
+      e={e}
+      today={today}
+      busy={busy}
+      onAct={(item, action) => void act(item, action)}
+      onEditSeries={(item) => onEditSeries(item.plannedId!)}
+    />
+  );
+
   return (
-    <div>
+    <div className="space-y-3">
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}
         </p>
       )}
       {loading && <p className="text-sm text-slate-500">Loading...</p>}
-      {data && data.length === 0 && (
+      {data && open.length === 0 && (
         <p className="text-sm text-slate-500">
-          Nothing expected {isSingleDay(span) ? "on this day" : "in this span"}.
+          Nothing still expected {isSingleDay(span) ? "on this day" : "in this span"}.
         </p>
       )}
-      <ul className="space-y-2">
-        {data?.map((o) => (
-          <OccurrenceRow
-            key={`${o.plannedId}-${o.date}`}
-            o={o}
-            today={today}
-            busy={busy}
-            onAct={(item, action) => void act(item, action)}
-            onEditSeries={(item) => onEditSeries(item.plannedId)}
-          />
-        ))}
-      </ul>
+      {open.length > 0 && <ul className="space-y-2">{open.map(row)}</ul>}
+      {resolved.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400">
+            Done or skipped ({resolved.length})
+          </summary>
+          <ul className="mt-2 space-y-2">{resolved.map(row)}</ul>
+        </details>
+      )}
     </div>
   );
 }
@@ -481,6 +626,14 @@ export function DayPanel({
       setPlanning(await api<PlannedItem>(`/planned/${plannedId}`));
     } catch (e) {
       setNotice({ kind: "error", text: errorMessage(e, "Could not open that item.") });
+    }
+  }
+
+  async function openTransaction(id: number): Promise<void> {
+    try {
+      setEditingTx(await api<Transaction>(`/transactions/${id}`));
+    } catch (e) {
+      setNotice({ kind: "error", text: errorMessage(e, "Could not open that transaction.") });
     }
   }
 
@@ -623,6 +776,7 @@ export function DayPanel({
             accountId={accountId}
             today={today}
             onEditSeries={(id) => void editSeries(id)}
+            onOpenTransaction={(id) => void openTransaction(id)}
             onNotice={setNotice}
           />
         )}

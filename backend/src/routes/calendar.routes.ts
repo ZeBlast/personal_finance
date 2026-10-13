@@ -6,6 +6,7 @@ import {
   calendarOverlay,
   createPlanned,
   deletePlanned,
+  expectedEvents,
   getPlanned,
   listNotes,
   listOccurrences,
@@ -77,6 +78,22 @@ export function calendarRoutes(db: AppDb): Router {
   router.get("/calendar/summary", (req, res) => {
     const q = rangeQuery.parse(req.query);
     res.json(periodSummary(db, q.from, q.to, q.accountId, environment(), undefined, q.dateBasis));
+  });
+
+  /**
+   * What is still expected in a span: planned occurrences and pending manual entries, the same list
+   * the grid and the summary count. With includeResolved=1, skipped and done ones too.
+   */
+  router.get("/calendar/expected", (req, res) => {
+    const q = rangeQuery
+      .extend({ includeResolved: z.enum(["0", "1"]).optional() })
+      .parse(req.query);
+    res.json(
+      expectedEvents(db, q.from, q.to, {
+        accountId: q.accountId,
+        includeResolved: q.includeResolved === "1",
+      }),
+    );
   });
 
   router.get("/calendar/notes", (req, res) => {

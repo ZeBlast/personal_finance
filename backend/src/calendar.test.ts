@@ -274,11 +274,11 @@ describe("expected transactions", () => {
       "2026-01-21",
     ]);
     const overlay = (await t.call("get", "/api/calendar/overlay?month=2026-01").expect(200)).body;
-    expect(overlay.expected).toContainEqual({
-      date: "2026-01-05",
+    expect(overlay.expected.find((d: { date: string }) => d.date === "2026-01-05")).toMatchObject({
       count: 1,
       outflowMinor: 120000,
       inflowMinor: 0,
+      items: [{ merchant: "Landlord", amountMinor: 120000, direction: "out", source: "planned" }],
     });
   });
 

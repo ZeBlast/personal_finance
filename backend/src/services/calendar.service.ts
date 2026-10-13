@@ -31,7 +31,11 @@ import { createManualTransaction } from "./manual-transaction.service.js";
 import type { TransactionDto } from "./transaction.service.js";
 import { getSettings } from "./settings.service.js";
 import { accountScope } from "./account-scope.js";
-import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
+import {
+  matchesPendingManual,
+  pendingManualTransactions,
+  projectedDate,
+} from "./pending-manual.service.js";
 
 /**
  * The calendar: a note for any day, transactions the user expects (once or on a schedule), and for
@@ -513,46 +517,181 @@ export function recordOccurrence(
   });
 }
 
+// ---- Expected events: planned occurrences and pending manual entries, as one list ----------
+
+/**
+ * Something still to happen to a balance: an occurrence of a planned transaction, or a manual
+ * entry that is still pending (projected onto the day it can take effect). The grid, the expected
+ * totals and the Expected list all come from this one list, so they always agree.
+ */
+export interface CalendarEvent {
+  /** Stable across requests: `planned:<id>:<date>` or `pending:<transaction id>`. */
+  id: string;
+  source: "planned" | "pending";
+  /** The day it is due (planned) or projected to take effect (pending). */
+  date: string;
+  /** The date it was entered with; differs from `date` for a pending entry carried forward. */
+  originalDate: string;
+  merchant: string;
+  /** Always positive; `direction` says which way the money moves. */
+  amountMinor: number;
+  direction: "out" | "in";
+  accountId: number | null;
+  accountName: string | null;
+  accountType: string | null;
+  categoryName: string | null;
+  status: "expected" | "skipped" | "done";
+  /** Planned only (null for a pending entry). */
+  plannedId: number | null;
+  person: string | null;
+  repeats: string | null;
+  recurring: boolean;
+  canRecord: boolean;
+  /** Pending only: the transaction to open or post. */
+  transactionId: number | null;
+}
+
+/**
+ * The expected events between two dates. A planned occurrence that a pending entry already stands
+ * for (same day, amount, merchant and account) is left out, so it counts once. Skipped and done
+ * occurrences are included only when asked for.
+ */
+export function expectedEvents(
+  db: AppDb,
+  from: string,
+  to: string,
+  options: {
+    accountId?: number | undefined;
+    includeResolved?: boolean | undefined;
+    today?: string | undefined;
+  } = {},
+): CalendarEvent[] {
+  requireSpan(from, to);
+  const today = options.today ?? todayOf();
+  const pending = pendingManualTransactions(db, {
+    to,
+    currency: getSettings(db).currency,
+    accountId: options.accountId,
+  });
+  const events: CalendarEvent[] = [];
+  for (const o of listOccurrences(db, from, to, options)) {
+    if (o.status === "expected" && matchesPendingManual(pending, o)) continue;
+    events.push({
+      id: `planned:${o.plannedId}:${o.date}`,
+      source: "planned",
+      date: o.date,
+      originalDate: o.date,
+      merchant: o.merchant,
+      amountMinor: o.amountMinor,
+      direction: o.direction,
+      accountId: o.accountId,
+      accountName: o.accountName,
+      accountType: o.accountType,
+      categoryName: o.categoryName,
+      status: o.status,
+      plannedId: o.plannedId,
+      person: o.person,
+      repeats: o.repeats,
+      recurring: o.recurring,
+      canRecord: o.canRecord,
+      transactionId: null,
+    });
+  }
+  for (const t of pending) {
+    const date = projectedDate(t.date, today);
+    if (date < from || date > to) continue;
+    events.push({
+      id: `pending:${t.id}`,
+      source: "pending",
+      date,
+      originalDate: t.date,
+      merchant: t.merchant,
+      amountMinor: Math.abs(t.amountMinor),
+      direction: t.amountMinor > 0 ? "out" : "in",
+      accountId: t.accountId,
+      accountName: t.accountName,
+      accountType: t.accountType,
+      categoryName: t.categoryName,
+      status: "expected",
+      plannedId: null,
+      person: null,
+      repeats: null,
+      recurring: false,
+      canRecord: false,
+      transactionId: t.id,
+    });
+  }
+  return events.sort(
+    (a, b) => a.date.localeCompare(b.date) || a.merchant.localeCompare(b.merchant),
+  );
+}
+
+/** Count and totals of the outstanding events. */
+function expectedTotals(events: CalendarEvent[]): {
+  count: number;
+  outflowMinor: number;
+  inflowMinor: number;
+} {
+  const open = events.filter((e) => e.status === "expected");
+  return {
+    count: open.length,
+    outflowMinor: open.filter((e) => e.direction === "out").reduce((s, e) => s + e.amountMinor, 0),
+    inflowMinor: open.filter((e) => e.direction === "in").reduce((s, e) => s + e.amountMinor, 0),
+  };
+}
+
 // ---- Month overlay: notes and expected amounts for the grid ------------------------------
 
 export interface CalendarOverlay {
   month: string;
   notes: Record<string, string>;
-  expected: Array<{ date: string; count: number; outflowMinor: number; inflowMinor: number }>;
+  expected: Array<{
+    date: string;
+    count: number;
+    outflowMinor: number;
+    inflowMinor: number;
+    /** Up to three of the day's events, largest first. */
+    items: Array<{
+      merchant: string;
+      amountMinor: number;
+      direction: "out" | "in";
+      source: "planned" | "pending";
+    }>;
+  }>;
 }
 
-export function calendarOverlay(db: AppDb, month: string, accountId?: number): CalendarOverlay {
+export function calendarOverlay(
+  db: AppDb,
+  month: string,
+  accountId?: number,
+  today: string = todayOf(),
+): CalendarOverlay {
   const from = firstOfMonth(month);
   const to = lastOfMonth(month);
   const notes: Record<string, string> = {};
   for (const n of listNotes(db, from, to)) notes[n.date] = n.note;
 
-  const byDate = new Map<string, { count: number; outflowMinor: number; inflowMinor: number }>();
-  const pending = pendingManualTransactions(db, {
-    from,
-    to,
-    currency: getSettings(db).currency,
-    accountId,
-  });
-  for (const o of listOccurrences(db, from, to, { accountId })) {
-    if (matchesPendingManual(pending, o)) continue;
-    const day = byDate.get(o.date) ?? { count: 0, outflowMinor: 0, inflowMinor: 0 };
-    day.count += 1;
-    if (o.direction === "out") day.outflowMinor += o.amountMinor;
-    else day.inflowMinor += o.amountMinor;
-    byDate.set(o.date, day);
-  }
-  for (const t of pending) {
-    const day = byDate.get(t.date) ?? { count: 0, outflowMinor: 0, inflowMinor: 0 };
-    day.count += 1;
-    if (t.amountMinor > 0) day.outflowMinor += t.amountMinor;
-    else day.inflowMinor -= t.amountMinor;
-    byDate.set(t.date, day);
+  const byDate = new Map<string, CalendarEvent[]>();
+  for (const e of expectedEvents(db, from, to, { accountId, today })) {
+    byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
   }
   return {
     month,
     notes,
-    expected: [...byDate.entries()].map(([date, d]) => ({ date, ...d })),
+    expected: [...byDate.entries()].map(([date, events]) => ({
+      date,
+      ...expectedTotals(events),
+      // The largest first, for the day cell to name.
+      items: [...events]
+        .sort((a, b) => b.amountMinor - a.amountMinor)
+        .slice(0, 3)
+        .map((e) => ({
+          merchant: e.merchant,
+          amountMinor: e.amountMinor,
+          direction: e.direction,
+          source: e.source,
+        })),
+    })),
   };
 }
 
@@ -572,6 +711,15 @@ export interface PeriodSummary {
     projected: boolean;
     accountsCounted: number;
     accountsWithoutBalance: number;
+    /** Cash accounts on their own (null when none is counted). */
+    cash: { startMinor: number | null; endMinor: number | null };
+    /** What is owed on the counted cards (null when none is counted). Cash minus this is the total. */
+    cardDebt: { startMinor: number | null; endMinor: number | null };
+    /** For a projected end: the balance today and the expected money in and out after it. */
+    projection: { todayMinor: number; inMinor: number; outMinor: number } | null;
+    /** The accounts the balance is made of, and those left out for want of a balance. */
+    accounts: Array<{ name: string; type: string }>;
+    withoutBalance: Array<{ name: string; type: string }>;
   };
   /** What is owed on credit cards and loans: lower is better. */
   debt: {
@@ -679,6 +827,57 @@ export function periodSummary(
   const startMinor = balanceAt(addDays(from, -1));
   const endMinor = balanceAt(to);
 
+  // The same balance split in two: what is owed on the counted cards, and cash (the rest). Both are
+  // wound back or forward like the total, so cash minus card debt is always the total.
+  const cards = counted.filter((a) => a.type === "credit");
+  const cardIds = cards.map((a) => a.id);
+  const cardOwedNow = cards.reduce((sum, a) => sum + a.currentBalanceMinor!, 0);
+  const cardOwedAt = (day: string): number => {
+    if (cardIds.length === 0) return 0;
+    if (day > today) {
+      const added = futureOccurrences
+        .filter((o) => o.date <= day && o.accountId !== null && cardIds.includes(o.accountId))
+        .reduce((sum, o) => sum + (o.direction === "out" ? o.amountMinor : -o.amountMinor), 0);
+      return cardOwedNow + added - pendingEffect(day, cardIds);
+    }
+    const row = db.get<{ s: number | null }>(sql`
+      select sum(amount_minor) as s from transactions
+      where pending = 0 and date > ${day}
+        and account_id in (${sql.join(
+          cardIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`);
+    return cardOwedNow - (row?.s ?? 0);
+  };
+  const hasCash = counted.some((a) => a.type !== "credit");
+  const split = (day: string, net: number | null) => {
+    const owed = cardOwedAt(day);
+    return {
+      cashMinor: net === null || !hasCash ? null : net + owed,
+      cardDebtMinor: cardIds.length === 0 ? null : owed,
+    };
+  };
+  const atStart = split(addDays(from, -1), startMinor);
+  const atEnd = split(to, endMinor);
+
+  // For a future end: today's balance and the expected money in and out that lead to it.
+  const projection =
+    to > today && ids.length > 0
+      ? (() => {
+          const upcoming = [
+            ...futureOccurrences
+              .filter((o) => o.date <= to)
+              .map((o) => (o.direction === "out" ? o.amountMinor : -o.amountMinor)),
+            ...pending.filter((t) => ids.includes(t.accountId)).map((t) => t.amountMinor),
+          ];
+          return {
+            todayMinor: balanceAt(today)!,
+            inMinor: upcoming.filter((a) => a < 0).reduce((s, a) => s - a, 0),
+            outMinor: upcoming.filter((a) => a > 0).reduce((s, a) => s + a, 0),
+          };
+        })()
+      : null;
+
   // What is owed on cards and loans, wound back the same way: owed now, less what was added since.
   const debtAccounts = listAccounts(db).filter(
     (a) =>
@@ -737,10 +936,7 @@ export function periodSummary(
   const all = summarize(db, { ...base, groupBy: "none" });
   const byCategory = summarize(db, { ...base, groupBy: "category", limit: 6 });
 
-  const expected = listOccurrences(db, from, to, { accountId }).filter(
-    (o) => !matchesPendingManual(pending, o),
-  );
-  const pendingInPeriod = pending.filter((t) => t.date >= from);
+  const expected = expectedTotals(expectedEvents(db, from, to, { accountId, today }));
 
   return {
     from,
@@ -753,6 +949,13 @@ export function periodSummary(
       projected: to > today,
       accountsCounted: counted.length,
       accountsWithoutBalance: withoutBalance,
+      cash: { startMinor: atStart.cashMinor, endMinor: atEnd.cashMinor },
+      cardDebt: { startMinor: atStart.cardDebtMinor, endMinor: atEnd.cardDebtMinor },
+      projection,
+      accounts: counted.map((a) => ({ name: a.name, type: a.type })),
+      withoutBalance: candidates
+        .filter((a) => a.currentBalanceMinor === null)
+        .map((a) => ({ name: a.name, type: a.type })),
     },
     debt: {
       startMinor: owedStart,
@@ -773,15 +976,7 @@ export function periodSummary(
       .sort((a, b) => b.spendingMinor - a.spendingMinor)
       .slice(0, 5)
       .map((r) => ({ label: r.label, color: r.color, spendingMinor: r.spendingMinor })),
-    expected: {
-      count: expected.length + pendingInPeriod.length,
-      outflowMinor:
-        expected.filter((o) => o.direction === "out").reduce((s, o) => s + o.amountMinor, 0) +
-        pendingInPeriod.filter((t) => t.amountMinor > 0).reduce((s, t) => s + t.amountMinor, 0),
-      inflowMinor:
-        expected.filter((o) => o.direction === "in").reduce((s, o) => s + o.amountMinor, 0) -
-        pendingInPeriod.filter((t) => t.amountMinor < 0).reduce((s, t) => s + t.amountMinor, 0),
-    },
+    expected,
     notes: listNotes(db, from, to),
   };
 }

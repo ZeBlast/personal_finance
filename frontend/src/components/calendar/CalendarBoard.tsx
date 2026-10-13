@@ -43,7 +43,7 @@ function cellLabel(
   date: string,
   day: CalendarDay | undefined,
   note: string | undefined,
-  expectedCount: number,
+  expected: DayExpected | undefined,
 ): string {
   const parts = [
     day
@@ -53,7 +53,17 @@ function cellLabel(
   if (day && day.debtPaidMinor > 0) {
     parts.push(`${formatMinor(day.debtPaidMinor, "USD")} paid toward debt`);
   }
-  if (expectedCount > 0) parts.push(`${expectedCount} expected`);
+  if (expected && expected.count > 0) {
+    const named = expected.items
+      .map(
+        (i) =>
+          `${i.merchant} ${i.direction === "in" ? "+" : "−"}${formatMinor(i.amountMinor, "USD")}`,
+      )
+      .join(", ");
+    parts.push(
+      `${expected.count} expected: ${named}${expected.count > expected.items.length ? ", and more" : ""}`,
+    );
+  }
   if (note) parts.push(`note: ${note}`);
   return `${formatDay(date)}, ${parts.join(", ")}`;
 }
@@ -312,7 +322,7 @@ export function CalendarBoard({
               isToday={date === todayDay}
               day={data.days.get(date)}
               note={data.notes[date]}
-              expectedCount={data.expected.get(date)?.count ?? 0}
+              expected={data.expected.get(date)}
               inside={inSpan(date, selection)}
               isEdge={selection !== null && (date === selection.from || date === selection.to)}
               editing={editing === date}
@@ -353,7 +363,7 @@ function DayCell({
   isToday,
   day,
   note,
-  expectedCount,
+  expected,
   inside,
   isEdge,
   editing,
@@ -370,7 +380,7 @@ function DayCell({
   isToday: boolean;
   day: CalendarDay | undefined;
   note: string | undefined;
-  expectedCount: number;
+  expected: DayExpected | undefined;
   inside: boolean;
   isEdge: boolean;
   editing: boolean;
@@ -384,6 +394,7 @@ function DayCell({
   onDoneEditing: (saved: boolean) => void;
 }) {
   const pressedWhileChosen = useRef(false);
+  const expectedCount = expected?.count ?? 0;
   // The banks involved that day, once each; accounts kept by hand share one "by hand" mark.
   const banks = useMemo(() => {
     const seen = new Map<
@@ -409,7 +420,7 @@ function DayCell({
       role="button"
       tabIndex={0}
       data-date={date}
-      aria-label={cellLabel(date, day, note, expectedCount)}
+      aria-label={cellLabel(date, day, note, expected)}
       aria-pressed={inside}
       onPointerDown={onPress}
       onPointerEnter={onEnter}
@@ -432,7 +443,7 @@ function DayCell({
       <div className="relative flex justify-center">
         {expectedCount > 0 && (
           <span
-            className="absolute top-0 left-0 text-sm font-semibold text-amber-700 dark:text-amber-400"
+            className="absolute top-0 left-0 text-sm font-semibold text-violet-700 dark:text-violet-300"
             title={`${expectedCount} expected`}
             aria-hidden="true"
           >
@@ -460,6 +471,7 @@ function DayCell({
       </div>
 
       {day && <DayTotals day={day} />}
+      {expected && expected.count > 0 && <ExpectedPreview expected={expected} />}
 
       {/* The note, in the middle of the box. On the chosen day there is always a box for it, and
           clicking that box writes in it. Pressing anywhere else still selects days as usual. */}
@@ -549,6 +561,42 @@ function DayCell({
               <span className="pl-1.5 text-xs text-slate-500">+{banks.length - MAX_LOGOS}</span>
             )}
           </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type DayExpected = CalendarOverlay["expected"][number];
+
+/** How many expected items a day names; the rest are "+N more" (all are in the day's panel). */
+const PREVIEW_ITEMS = 2;
+
+/**
+ * The day's largest expected items by name and amount ("Rent −$1,200"), dashed and violet so a
+ * projection never looks like something that already happened.
+ */
+function ExpectedPreview({ expected }: { expected: DayExpected }) {
+  const shown = expected.items.slice(0, PREVIEW_ITEMS);
+  const more = expected.count - shown.length;
+  return (
+    <div className="flex flex-col gap-0.5" aria-hidden="true">
+      {shown.map((i, n) => (
+        <div
+          key={n}
+          title={`Expected (${i.source === "pending" ? "pending manual" : "planned"}): ${i.merchant}`}
+          className="flex items-baseline justify-between gap-1 rounded border border-dashed border-violet-300 bg-violet-50/70 px-1 text-[11px] leading-4 text-violet-900 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-200"
+        >
+          <span className="truncate">{i.merchant}</span>
+          <span className="shrink-0 tabular-nums">
+            {i.direction === "in" ? "+" : "−"}
+            {money(i.amountMinor)}
+          </span>
+        </div>
+      ))}
+      {more > 0 && (
+        <div className="text-center text-[11px] leading-4 text-violet-700 dark:text-violet-300">
+          +{more} more
         </div>
       )}
     </div>

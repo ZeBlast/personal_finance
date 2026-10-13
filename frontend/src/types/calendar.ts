@@ -9,7 +9,47 @@ export interface DayNote {
 export interface CalendarOverlay {
   month: string;
   notes: Record<string, string>;
-  expected: Array<{ date: string; count: number; outflowMinor: number; inflowMinor: number }>;
+  expected: Array<{
+    date: string;
+    count: number;
+    outflowMinor: number;
+    inflowMinor: number;
+    /** Up to three of the day's expected items, largest first. */
+    items: Array<{
+      merchant: string;
+      amountMinor: number;
+      direction: "out" | "in";
+      source: "planned" | "pending";
+    }>;
+  }>;
+}
+
+/**
+ * Something still expected: an occurrence of a planned transaction, or a manual entry still
+ * pending (projected onto the day it can take effect). One list feeds the grid, the totals and
+ * the Expected tab.
+ */
+export interface CalendarEvent {
+  id: string;
+  source: "planned" | "pending";
+  /** Due (planned) or projected (pending). */
+  date: string;
+  /** The date it was entered with; later than `date` never, earlier when carried forward. */
+  originalDate: string;
+  merchant: string;
+  amountMinor: number;
+  direction: "out" | "in";
+  accountId: number | null;
+  accountName: string | null;
+  accountType: string | null;
+  categoryName: string | null;
+  status: "expected" | "skipped" | "done";
+  plannedId: number | null;
+  person: string | null;
+  repeats: string | null;
+  recurring: boolean;
+  canRecord: boolean;
+  transactionId: number | null;
 }
 
 export interface PeriodSummary {
@@ -24,6 +64,14 @@ export interface PeriodSummary {
     projected: boolean;
     accountsCounted: number;
     accountsWithoutBalance: number;
+    /** Cash accounts on their own (null when none is counted). */
+    cash: { startMinor: number | null; endMinor: number | null };
+    /** Owed on the counted cards (null when none is counted). Cash minus this is the total. */
+    cardDebt: { startMinor: number | null; endMinor: number | null };
+    /** For a projected end: the balance today and the expected money in and out after it. */
+    projection: { todayMinor: number; inMinor: number; outMinor: number } | null;
+    accounts: Array<{ name: string; type: string }>;
+    withoutBalance: Array<{ name: string; type: string }>;
   };
   /** What is owed on credit cards and loans. */
   debt: {

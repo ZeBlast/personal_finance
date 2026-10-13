@@ -7,7 +7,12 @@ import {
   updateAnyTransaction,
 } from "./services/manual-transaction.service.js";
 import { netWorthSeries } from "./services/networth-series.service.js";
-import { periodSummary, createPlanned, calendarOverlay } from "./services/calendar.service.js";
+import {
+  periodSummary,
+  createPlanned,
+  calendarOverlay,
+  expectedEvents,
+} from "./services/calendar.service.js";
 import { cashForecast } from "./services/forecast.service.js";
 import { listBills, setBillSettings } from "./services/bills.service.js";
 import { setAccountHidden } from "./services/account.service.js";
@@ -88,9 +93,96 @@ describe("pending manual transactions", () => {
       fill: false,
     });
     expect(postedOnly.totals.spendingMinor).toBe(0);
+    const overlay = calendarOverlay(t.db, "2026-10", t.accountId, TODAY).expected;
+    expect(overlay.find((d) => d.date === "2026-10-12")).toMatchObject({
+      date: "2026-10-12",
+      count: 1,
+      outflowMinor: 2000,
+      inflowMinor: 0,
+    });
+    // The outstanding entry from Oct 5 is carried forward to tomorrow, not left on its own day.
+    expect(overlay.find((d) => d.date === "2026-10-05")).toBeUndefined();
+    expect(overlay.find((d) => d.date === "2026-10-10")).toMatchObject({ count: 1 });
+  });
+
+  it("splits the balance into cash, card debt and the two together, now and projected", () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const made = "2026-10-01T12:00:00Z";
+    createManualBankAccount(
+      t.db,
+      { name: "Checking", kind: "cash", openingBalanceMinor: 100000 },
+      made,
+    );
+    const card = createManualBankAccount(
+      t.db,
+      { name: "Card", kind: "credit_card", openingBalanceMinor: 20000 },
+      made,
+    );
+    const now = periodSummary(t.db, TODAY, TODAY, undefined, "fake", TODAY).balance;
+    expect(now).toMatchObject({
+      endMinor: 80000,
+      cash: { endMinor: 100000 },
+      cardDebt: { endMinor: 20000 },
+      projection: null,
+    });
+    expect(now.accounts.map((a) => a.name).sort()).toEqual(["Card", "Checking"]);
+    // A pending card purchase adds to the card debt; cash stays where it is until the bill is paid.
+    createManualTransaction(
+      t.db,
+      {
+        accountId: card,
+        date: "2026-10-12",
+        merchant: "Shoes",
+        amountMinor: 5000,
+        direction: "out",
+        pending: true,
+      },
+      NOW,
+    );
+    const later = periodSummary(t.db, "2026-10-12", "2026-10-12", undefined, "fake", TODAY).balance;
+    expect(later).toMatchObject({
+      endMinor: 75000,
+      cash: { endMinor: 100000 },
+      cardDebt: { endMinor: 25000 },
+      projection: { todayMinor: 80000, inMinor: 0, outMinor: 5000 },
+    });
+  });
+
+  it("lists the same expected items the totals count, each once, carried forward when overdue", () => {
+    const t = setup();
+    t.pending("2026-10-05");
+    t.pending("2026-10-12", 2000);
+    // A plan the Oct 12 entry already stands for, and one it does not.
+    for (const [merchant, amountMinor] of [
+      ["Coffee", 2000],
+      ["Rent", 50000],
+    ] as const) {
+      createPlanned(
+        t.db,
+        {
+          merchant,
+          amountMinor,
+          direction: "out",
+          accountId: t.accountId,
+          startDate: "2026-10-12",
+          frequency: "once",
+        },
+        NOW,
+      );
+    }
+    const events = expectedEvents(t.db, "2026-10-10", "2026-10-12", { today: TODAY });
     expect(
-      calendarOverlay(t.db, "2026-10", t.accountId).expected.find((d) => d.date === "2026-10-12"),
-    ).toEqual({ date: "2026-10-12", count: 1, outflowMinor: 2000, inflowMinor: 0 });
+      events.map((e) => [e.source, e.date, e.originalDate, e.merchant, e.amountMinor]),
+    ).toEqual([
+      ["pending", "2026-10-10", "2026-10-05", "Coffee", 1000],
+      ["pending", "2026-10-12", "2026-10-12", "Coffee", 2000],
+      ["planned", "2026-10-12", "2026-10-12", "Rent", 50000],
+    ]);
+    const s = t.summary("2026-10-10", "2026-10-12");
+    expect(s.expected).toEqual({ count: 3, outflowMinor: 53000, inflowMinor: 0 });
+    // The matched plan and its pending entry move the balance once.
+    expect(s.balance.endMinor).toBe(10000 - 1000 - 2000 - 50000);
   });
 
   it("forecasts outstanding and future charges once, and excludes entries outside the forecast", () => {

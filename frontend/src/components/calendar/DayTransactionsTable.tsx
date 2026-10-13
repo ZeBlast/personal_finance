@@ -5,7 +5,7 @@ import { useApi } from "../../hooks/useApi";
 import { useDateBasis } from "../../hooks/useDateBasis";
 import { formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
-import type { PlannedOccurrence } from "../../types/calendar";
+import type { CalendarEvent } from "../../types/calendar";
 import type { Transaction, TransactionPage } from "../../types/api";
 import { spanTitle, type DaySpan } from "./range";
 
@@ -41,8 +41,12 @@ export function DayTransactionsTable({
     plannedQuery.set("accountId", accountId);
   }
   const txs = useApi<TransactionPage>(`/transactions?${txQuery}`);
-  const planned = useApi<PlannedOccurrence[]>(`/planned/occurrences?${plannedQuery}`);
-  const expected = (planned.data ?? []).filter((o) => o.status === "expected");
+  const planned = useApi<CalendarEvent[]>(`/calendar/expected?${plannedQuery}`);
+  // A pending entry already listed below (its own date is in these days) is not listed twice.
+  const listed = new Set((txs.data?.items ?? []).map((t) => t.id));
+  const expected = (planned.data ?? []).filter(
+    (o) => o.status === "expected" && !(o.transactionId !== null && listed.has(o.transactionId)),
+  );
   const error = txs.error ?? planned.error;
   const empty = txs.data && planned.data && txs.data.items.length === 0 && expected.length === 0;
 
@@ -74,11 +78,13 @@ export function DayTransactionsTable({
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {expected.map((o) => (
                 <tr
-                  key={`p${o.plannedId}-${o.date}`}
+                  key={o.id}
                   className="bg-violet-50/60 text-slate-600 dark:bg-violet-950/30 dark:text-slate-300"
                 >
                   <td className="px-2 py-2 whitespace-nowrap">{formatDay(o.date)}</td>
-                  <td className="px-2 py-2 text-slate-400">—</td>
+                  <td className="px-2 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                    {o.source === "pending" ? `Pending since ${formatDay(o.originalDate)}` : "—"}
+                  </td>
                   <td className="max-w-56 min-w-32 px-2 py-2 font-medium">{o.merchant}</td>
                   <td className="px-2 py-2">{o.categoryName ?? "Uncategorized"}</td>
                   <td className="px-2 py-2" />
@@ -93,7 +99,7 @@ export function DayTransactionsTable({
                   </td>
                   <td className="w-44 min-w-36 px-2 py-2">
                     <span className="rounded-xl bg-violet-100 px-2 py-0.5 text-xs leading-tight font-medium text-violet-900">
-                      Expected
+                      {o.source === "pending" ? "Expected · pending manual" : "Expected · planned"}
                     </span>
                   </td>
                 </tr>
