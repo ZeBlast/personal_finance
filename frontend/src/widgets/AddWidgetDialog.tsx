@@ -19,7 +19,7 @@ export function AddWidgetDialog({
   const countOf = (id: string) => placed.filter((p) => p.widgetType === id).length;
 
   return (
-    <Modal title="Add a widget" onClose={onClose} wide>
+    <Modal title="Add a widget" onClose={onClose} wide dismissible>
       <div className="space-y-5">
         {WIDGET_GROUPS.map((group) => {
           const inGroup = widgets.filter((w) => w.group === group);

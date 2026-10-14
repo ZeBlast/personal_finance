@@ -50,7 +50,7 @@ export function SecurityDetailDialog({
 }) {
   const { data, error, loading } = useApi<SecurityDetail>(`/investments/securities/${securityId}`);
   return (
-    <Modal title={title} onClose={onClose} wide>
+    <Modal title={title} onClose={onClose} wide dismissible>
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}
@@ -214,7 +214,7 @@ export function InvestmentTransactionDialog({
     `/investments/transactions/${transactionId}`,
   );
   return (
-    <Modal title="Investment transaction" onClose={onClose} wide>
+    <Modal title="Investment transaction" onClose={onClose} wide dismissible>
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}
