@@ -21,7 +21,8 @@ const GROUPS: Result["group"][] = ["Pages", "Accounts", "Categories", "Transacti
 const PAGE_WORDS: Record<string, string> = {
   "/": "home overview",
   "/transactions": "spending purchases",
-  "/planning": "forecast bills subscriptions paychecks",
+  "/planning": "forecast bills paychecks",
+  "/subscriptions": "recurring memberships streaming netflix renewals",
   "/goals": "savings target",
   "/investments": "tsp retirement brokerage",
   "/data": "backup export folder diagnostics",

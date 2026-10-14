@@ -833,6 +833,42 @@ export const subscriptionReviews = sqliteTable("subscription_reviews", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/**
+ * A subscription the user keeps track of: one they added, or one found in the history (a recurring
+ * series, by `recurring_key`) they added details to. Billing is `recurring` (every N weeks, months
+ * or years), `installments` (charged monthly for `term_months` months) or `prepaid` (charged once,
+ * lasting `term_months` months from the start). Upcoming charges of one the user added come from a
+ * planned transaction (`planned_id`), so they show on the calendar and in the forecast.
+ */
+export const trackedSubscriptions = sqliteTable("tracked_subscriptions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  /** What each charge costs, in cents, positive. */
+  amountMinor: integer("amount_minor").notNull(),
+  billing: text("billing").notNull(),
+  /** For `recurring`: `weekly`, `monthly` or `yearly`. */
+  frequency: text("frequency"),
+  repeatEvery: integer("repeat_every").notNull().default(1),
+  startDate: text("start_date").notNull(),
+  termMonths: integer("term_months"),
+  accountId: integer("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  categoryId: integer("category_id").references(() => categories.id, { onDelete: "set null" }),
+  /** Details about the account with the service, as the user wants to keep them. */
+  email: text("email"),
+  username: text("username"),
+  website: text("website"),
+  notes: text("notes"),
+  /** `active` or `cancelled` (from `cancelled_on`). */
+  status: text("status").notNull().default("active"),
+  cancelledOn: text("cancelled_on"),
+  recurringKey: text("recurring_key").unique(),
+  plannedId: integer("planned_id").references(() => plannedTransactions.id, {
+    onDelete: "set null",
+  }),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 /** A file attached to a transaction (a receipt, a warranty), kept inside the encrypted database. */
 export const attachments = sqliteTable(
   "attachments",

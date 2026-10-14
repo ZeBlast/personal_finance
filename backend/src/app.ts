@@ -17,6 +17,7 @@ import { merchantsRoutes } from "./routes/merchants.routes.js";
 import { calendarRoutes } from "./routes/calendar.routes.js";
 import { sandboxRoutes } from "./routes/sandbox.routes.js";
 import { planningRoutes } from "./routes/planning.routes.js";
+import { trackedSubscriptionsRoutes } from "./routes/tracked-subscriptions.routes.js";
 import { cashbackRoutes } from "./routes/cashback.routes.js";
 import { tspRoutes } from "./routes/tsp.routes.js";
 import { taxesRoutes } from "./routes/taxes.routes.js";
@@ -107,6 +108,7 @@ export function createApp({
   app.use("/api", calendarRoutes(db));
   app.use("/api", cashbackRoutes(db));
   app.use("/api", planningRoutes(db));
+  app.use("/api", trackedSubscriptionsRoutes(db));
   app.use("/api", sandboxRoutes(db));
   app.use("/api", tspRoutes(db));
   app.use("/api", taxesRoutes(db));

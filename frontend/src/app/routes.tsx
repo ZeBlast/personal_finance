@@ -15,6 +15,7 @@ import { ReportsPage } from "../pages/ReportsPage";
 import { ReviewPage } from "../pages/ReviewPage";
 import { SandboxPage } from "../pages/SandboxPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { SubscriptionsPage } from "../pages/SubscriptionsPage";
 import { TaxesPage } from "../pages/TaxesPage";
 import { TransactionsPage } from "../pages/TransactionsPage";
 
@@ -32,6 +33,7 @@ export const routes: AppRoute[] = [
   { path: "/review", label: "Review", Page: ReviewPage },
   { path: "/calendar", label: "Calendar", Page: CalendarPage },
   { path: "/planning", label: "Planning", Page: PlanningPage },
+  { path: "/subscriptions", label: "Subscriptions", Page: SubscriptionsPage },
   { path: "/goals", label: "Goals", Page: GoalsPage },
   { path: "/categories", label: "Categories", Page: CategoriesPage },
   { path: "/accounts", label: "Accounts", Page: AccountsPage },

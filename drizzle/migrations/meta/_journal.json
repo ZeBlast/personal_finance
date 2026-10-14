@@ -274,6 +274,13 @@
       "when": 1791923516272,
       "tag": "0038_rule_direction",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791938520108,
+      "tag": "0039_tracked_subscriptions",
+      "breakpoints": true
     }
   ]
 }

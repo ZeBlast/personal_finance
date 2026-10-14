@@ -9,29 +9,23 @@ import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { CADENCE_LABEL } from "../lib/insights";
-import type { Cadence } from "../types/insights";
 import type {
   BillStatus,
   CardBill,
   Forecast,
   Paycheck,
-  RecurringChange,
-  Subscription,
-  SubscriptionReview,
-  SubscriptionStatus,
 } from "../types/planning";
 import { Select } from "../components/common/Select";
 
-type Tab = "forecast" | "bills" | "subscriptions" | "paychecks";
+type Tab = "forecast" | "bills" | "paychecks";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "forecast", label: "Cash-flow forecast" },
   { id: "bills", label: "Card bills" },
-  { id: "subscriptions", label: "Subscriptions" },
   { id: "paychecks", label: "Paychecks" },
 ];
 
-/** Looking ahead: the cash forecast, card bills, and recurring charges to review. */
+/** Looking ahead: the cash forecast, card bills, and paychecks (subscriptions have their own page). */
 export function PlanningPage() {
   const [tab, setTab] = useState<Tab>("forecast");
   return (
@@ -39,8 +33,8 @@ export function PlanningPage() {
       <div>
         <h1 className="text-2xl font-semibold">Planning</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Where your cash is heading, what your cards will ask for, and what you pay for every
-          month.
+          Where your cash is heading, what your cards will ask for, and what you are paid.
+          Subscriptions have their own page.
         </p>
       </div>
       <div role="tablist" className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
@@ -63,7 +57,6 @@ export function PlanningPage() {
       </div>
       {tab === "forecast" && <ForecastTab />}
       {tab === "bills" && <BillsTab />}
-      {tab === "subscriptions" && <SubscriptionsTab />}
       {tab === "paychecks" && <PaychecksTab />}
     </section>
   );
@@ -443,214 +436,6 @@ function BillDialog({ bill, onClose }: { bill: CardBill; onClose: (saved: boolea
         </div>
       </form>
     </Modal>
-  );
-}
-
-// ---- Subscriptions -----------------------------------------------------------------------------
-
-const DECISIONS: Array<{ value: SubscriptionStatus | ""; label: string }> = [
-  { value: "", label: "Not decided" },
-  { value: "keep", label: "Keep" },
-  { value: "cancel", label: "Cancel it" },
-  { value: "cancelled", label: "Cancelled" },
-];
-
-function SubscriptionsTab() {
-  const review = useApi<SubscriptionReview>("/subscriptions");
-  const [showLapsed, setShowLapsed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (review.error)
-    return (
-      <p role="alert" className="text-sm text-red-600">
-        {review.error}
-      </p>
-    );
-  if (!review.data) return <p className="text-sm text-slate-500">Loading...</p>;
-  const data = review.data;
-  const money = (n: number) => formatMinor(n, data.currency);
-  const shown = data.subscriptions.filter((s) => showLapsed || s.status === "active");
-
-  async function decide(
-    s: Subscription,
-    status: SubscriptionStatus | "",
-    note?: string,
-  ): Promise<void> {
-    try {
-      await api(`/subscriptions/${encodeURIComponent(s.key)}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          merchant: s.merchant,
-          status: status === "" ? null : status,
-          note: note ?? s.review?.note ?? null,
-        }),
-      });
-      setError(null);
-      review.reload();
-    } catch (e) {
-      setError(errorMessage(e, "Could not save that."));
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <dl className="grid grid-cols-3 gap-3 text-sm">
-        <Stat label="Per month" value={money(data.totals.monthlyMinor)} />
-        <Stat label="Per year" value={money(data.totals.yearlyMinor)} />
-        <Stat label="Marked to cancel (per year)" value={money(data.totals.toCancelYearlyMinor)} />
-      </dl>
-      {error && (
-        <p role="alert" className="text-sm text-red-600">
-          {error}
-        </p>
-      )}
-      <RecentChanges changes={data.changes} money={money} />
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={showLapsed}
-          onChange={(e) => setShowLapsed(e.target.checked)}
-        />
-        Also show ones that seem to have stopped
-      </label>
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-slate-500">
-          <tr>
-            <th className="py-1 font-medium">Merchant</th>
-            <th className="py-1 font-medium">How often</th>
-            <th className="py-1 text-right font-medium">Usual</th>
-            <th className="py-1 text-right font-medium">Per year</th>
-            <th className="py-1 font-medium">Last / next</th>
-            <th className="py-1 font-medium">Your decision</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((s) => (
-            <tr key={s.key} className="border-t border-slate-100 align-top dark:border-slate-800">
-              <td className="py-1.5">
-                <div className="font-medium">{s.merchant}</div>
-                <div className="text-xs text-slate-500">{s.accountNames.join(", ")}</div>
-                {s.priceChange && (
-                  <div className="text-xs text-amber-700 dark:text-amber-400">
-                    Price went from {money(s.priceChange.fromMinor)} to{" "}
-                    {money(s.priceChange.toMinor)} on {formatDay(s.priceChange.date)}
-                  </div>
-                )}
-                {s.chargedAfterCancel && (
-                  <div className="text-xs font-medium text-red-600">
-                    Still charged after you cancelled it
-                  </div>
-                )}
-              </td>
-              <td className="py-1.5">{CADENCE_LABEL[s.cadence as Cadence] ?? s.cadence}</td>
-              <td className="py-1.5 text-right tabular-nums">
-                {money(s.typicalAmountMinor)}
-                {s.amountVaries && <span className="text-xs text-slate-400"> varies</span>}
-              </td>
-              <td className="py-1.5 text-right font-medium tabular-nums">{money(s.yearlyMinor)}</td>
-              <td className="py-1.5 text-xs text-slate-500">
-                {formatDay(s.lastDate)}
-                <br />
-                {s.status === "active"
-                  ? `next ${formatDay(s.nextExpected)}`
-                  : "seems to have stopped"}
-              </td>
-              <td className="py-1.5">
-                <Select
-                  aria-label={`Decision for ${s.merchant}`}
-                  value={s.review?.status ?? ""}
-                  onChange={(e) => void decide(s, e.target.value as SubscriptionStatus | "")}
-                  className="rounded border border-slate-300 px-1 py-0.5 text-xs dark:border-slate-600"
-                >
-                  {DECISIONS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </Select>
-              </td>
-            </tr>
-          ))}
-          {shown.length === 0 && (
-            <tr>
-              <td colSpan={6} className="py-3 text-slate-500">
-                No recurring charges found yet. They show up after a few months of history.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-const CHANGE_TEXT: Record<RecurringChange["kind"], string> = {
-  price_up: "Price went up",
-  price_down: "Price went down",
-  new: "New recurring charge",
-  charged_after_cancel: "Still charged after you cancelled it",
-};
-
-/** Recent price changes, new recurring charges, and charges after cancelling, newest first. */
-function RecentChanges({
-  changes,
-  money,
-}: {
-  changes: RecurringChange[];
-  money: (n: number) => string;
-}) {
-  return (
-    <section
-      aria-label="What changed recently"
-      className="rounded-md border border-slate-200 p-3 dark:border-slate-700"
-    >
-      <h2 className="text-sm font-semibold">What changed recently</h2>
-      {changes.length === 0 ? (
-        <p className="mt-1 text-sm text-slate-500">
-          No price changes or new recurring charges in the last few months.
-        </p>
-      ) : (
-        <ul className="mt-2 space-y-1.5 text-sm">
-          {changes.map((c) => {
-            const bad = c.kind === "price_up" || c.kind === "charged_after_cancel";
-            return (
-              <li
-                key={`${c.key}-${c.kind}`}
-                className="flex flex-wrap items-baseline justify-between gap-2"
-              >
-                <span>
-                  <span
-                    className={`mr-2 rounded-xl px-2 py-0.5 text-xs font-medium ${
-                      bad
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
-                        : c.kind === "price_down"
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
-                          : "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-                    }`}
-                  >
-                    {CHANGE_TEXT[c.kind]}
-                  </span>
-                  <span className="font-medium">{c.merchant}</span>
-                  <span className="text-slate-500">
-                    {" "}
-                    {c.fromMinor !== null
-                      ? `${money(c.fromMinor)} → ${money(c.toMinor)}`
-                      : money(c.toMinor)}
-                    {" · "}
-                    {c.kind === "new" ? "since" : "on"} {formatDay(c.date)}
-                  </span>
-                </span>
-                <span
-                  className={`tabular-nums ${c.yearlyDeltaMinor > 0 ? "text-red-600" : "text-green-700 dark:text-green-400"}`}
-                >
-                  {c.yearlyDeltaMinor > 0 ? "+" : "−"}
-                  {money(Math.abs(c.yearlyDeltaMinor))} a year
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
   );
 }
 

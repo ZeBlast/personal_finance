@@ -154,3 +154,41 @@ export interface DuplicatePair {
   key: string;
   transactions: [Transaction, Transaction];
 }
+
+export type SubscriptionBilling = "recurring" | "installments" | "prepaid";
+export type SubscriptionFrequency = "weekly" | "monthly" | "yearly";
+
+/** A subscription the user keeps track of (see the backend's tracked-subscriptions service). */
+export interface TrackedSubscription {
+  id: number;
+  name: string;
+  /** What each charge costs, in cents. */
+  amountMinor: number;
+  billing: SubscriptionBilling;
+  frequency: SubscriptionFrequency | null;
+  repeatEvery: number;
+  startDate: string;
+  termMonths: number | null;
+  accountId: number | null;
+  accountName: string | null;
+  categoryId: number | null;
+  categoryName: string | null;
+  email: string | null;
+  username: string | null;
+  website: string | null;
+  notes: string | null;
+  status: "active" | "cancelled";
+  cancelledOn: string | null;
+  recurringKey: string | null;
+  onCalendar: boolean;
+  nextCharge: string | null;
+  endDate: string | null;
+  chargesLeft: number | null;
+  monthlyMinor: number;
+  ended: boolean;
+}
+
+export interface TrackedSubscriptionList {
+  subscriptions: TrackedSubscription[];
+  totals: { monthlyMinor: number; yearlyMinor: number; active: number };
+}
