@@ -11,14 +11,13 @@ export function isTopDialog(dialog: object): boolean {
 /**
  * A simple centered dialog. Rendered in the page (not a native dialog) so it behaves the same
  * everywhere. Every dialog can be closed with its × button or Escape (wherever the focus is; with
- * dialogs on top of each other, only the top one closes). A click outside closes it too when it is
- * `dismissible`.
+ * dialogs on top of each other, only the top one closes), or a click outside it.
  */
 export function Modal({
   title,
   onClose,
   wide,
-  dismissible,
+  dismissible = true,
   children,
 }: {
   title: string;
@@ -26,8 +25,8 @@ export function Modal({
   /** A wider dialog, for forms; "full" nearly fills the screen, for tables. */
   wide?: boolean | "full";
   /**
-   * Also closes on a click outside the window. For dialogs with nothing to lose (menus, lists) or
-   * that ask before losing changes; other forms leave it off so a stray click keeps what was typed.
+   * Closes on a click outside the window (the default). Pass `false` to keep a dialog open on an
+   * outside click; forms that track unsaved changes ask before discarding them either way.
    */
   dismissible?: boolean;
   children: ReactNode;
