@@ -7,8 +7,10 @@ import { namesAgree } from "./paypal-mirror.service.js";
 import {
   clearRefundAllocation,
   ensureRefundAllocation,
+  reallocateRefundsOf,
   refundAllocation,
 } from "./refund-allocation.service.js";
+import { REIMBURSED_NOTE } from "./split.service.js";
 import { getTransaction, type TransactionDto } from "./transaction.service.js";
 
 /**
@@ -233,6 +235,18 @@ export function setRefundOf(
     .where(eq(transactions.id, id))
     .run();
   if (wasAllocated) clearRefundAllocation(db, id);
+  // A purchase split by what was kept has a part for what this gave back; without it that part no
+  // longer adds up, so the purchase counts whole again (the user can split it once more).
+  const previous = refund.refund_of_id;
+  if (previous !== null && previous !== originalId) {
+    const kept = db.all<{ n: number }>(sql`
+      select count(*) as n from transaction_splits
+      where transaction_id = ${previous} and note = ${REIMBURSED_NOTE}`)[0]!.n;
+    if (kept > 0) {
+      db.run(sql`delete from transaction_splits where transaction_id = ${previous}`);
+      reallocateRefundsOf(db, previous, now);
+    }
+  }
   if (originalId !== null) ensureRefundAllocation(db, id, now);
   return getTransaction(db, id);
 }

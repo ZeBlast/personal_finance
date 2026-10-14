@@ -44,6 +44,15 @@ describe("building a split", () => {
     });
   });
 
+  it("takes one part of what was kept when a reimbursed part is set aside", () => {
+    // $170 with $80 reimbursed: the $90 kept may go to a single category.
+    expect(buildSplit([part("90", "1")], 9_000, 1)).toEqual({
+      ok: true,
+      parts: [{ categoryId: 1, amountMinor: 9_000, note: null }],
+    });
+    expect(buildSplit([], 9_000, 1)).toMatchObject({ ok: false });
+  });
+
   it("says what is wrong", () => {
     const msg = (r: ReturnType<typeof buildSplit>) => (r.ok ? "" : r.message);
     expect(msg(buildSplit([part("100")], 10_000))).toMatch(/at least two/);

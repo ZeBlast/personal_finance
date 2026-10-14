@@ -165,6 +165,48 @@ describe("dividing a refund of a split purchase across its categories", () => {
   });
 });
 
+describe("splitting a reimbursed purchase by what was kept", () => {
+  it("splits only what is left after the reimbursement, and sets the reimbursed part aside", async () => {
+    const { t, add, fun, food, link, split, spending } = await setup();
+    const dinner = await add({
+      date: "2026-10-20",
+      merchant: "Steakhouse",
+      amountMinor: 17000,
+      direction: "out",
+      categoryId: fun,
+    });
+    const back = await add({
+      date: "2026-10-21",
+      merchant: "Alex",
+      amountMinor: 8000,
+      direction: "in",
+    });
+    await link(back, dinner);
+
+    // $90 kept: $60 Fun, $30 Meals. The full $170 is no longer asked for.
+    const saved = (
+      await split(dinner, [
+        { categoryId: fun, amountMinor: 6000 },
+        { categoryId: food, amountMinor: 3000 },
+      ])
+    ).body;
+    expect(saved.splits).toHaveLength(3);
+    expect(saved.splits.at(-1)).toMatchObject({ amountMinor: 8000, note: "Reimbursed" });
+    const before = await spending();
+    // The first purchase in setup ($120 Fun / $50 Meals, its refund not linked) is there too.
+    expect(before["Fun"]).toBe(12000 + 6000);
+    expect(before["Meals"]).toBe(5000 + 3000);
+
+    // A total that is neither the purchase nor what was kept is refused.
+    await split(dinner, [{ categoryId: fun, amountMinor: 5000 }], 400);
+
+    // Unlinking the reimbursement leaves the purchase whole again.
+    await link(back, null);
+    const whole = (await t.call("get", `/api/transactions/${dinner}`).expect(200)).body;
+    expect(whole.splits).toEqual([]);
+  });
+});
+
 describe("dividing cents in proportion", () => {
   it("adds up exactly", () => {
     expect(allocateProportionally(8000, [12000, 5000])).toEqual([5647, 2353]);

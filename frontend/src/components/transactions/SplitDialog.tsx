@@ -16,6 +16,9 @@ interface Part {
   note: string;
 }
 
+/** The note the app puts on the reimbursed part of a purchase split by what was kept. */
+export const REIMBURSED_NOTE = "Reimbursed";
+
 /** The size of a transaction, as people read it (always positive), in cents. */
 const sizeOf = (t: Transaction): number => Math.abs(t.amountMinor);
 
@@ -58,13 +61,20 @@ const percentOf = (part: number, total: number): string =>
 export function buildSplit(
   parts: Part[],
   amountMinor: number,
+  /** Fewest parts allowed: 1 when a reimbursed part is set aside as well. */
+  minParts = 2,
 ):
   | {
       ok: true;
       parts: Array<{ categoryId: number | null; amountMinor: number; note: string | null }>;
     }
   | { ok: false; message: string } {
-  if (parts.length < 2) return { ok: false, message: "Split it into at least two parts." };
+  if (parts.length < minParts) {
+    return {
+      ok: false,
+      message: minParts > 1 ? "Split it into at least two parts." : "Add at least one part.",
+    };
+  }
   const sign = amountMinor < 0 ? -1 : 1;
   const out = [];
   for (const [i, p] of parts.entries()) {
@@ -126,17 +136,17 @@ export function SplitDialog(props: SplitDialogProps) {
  * note; the parts must add up to the transaction. Totals and budgets then count each part in its
  * own category; the bank's record of the transaction does not change.
  */
-function CategorySplitDialog({
-  transaction: t,
-  categories,
-  onSaved,
-  onClose,
-}: SplitDialogProps) {
+function CategorySplitDialog({ transaction: t, categories, onSaved, onClose }: SplitDialogProps) {
   const id = useId();
   const options = categoryOptions(categories.filter((c) => c.active));
+  // A purchase with reimbursements linked is split by what was kept; the app sets the reimbursed
+  // part aside on its own (and shows it here only as a note).
+  const reimbursed = t.amountMinor > 0 ? Math.min(t.refundedMinor, t.amountMinor - 1) : 0;
+  const target = t.amountMinor - reimbursed;
+  const ownSplits = t.splits.filter((s) => !(reimbursed > 0 && s.note === REIMBURSED_NOTE));
   const [initial] = useState<Part[]>(() =>
-    t.splits.length > 0
-      ? t.splits.map((s) => ({
+    ownSplits.length > 0
+      ? ownSplits.map((s) => ({
           categoryId: s.categoryId === null ? "" : String(s.categoryId),
           amount: (Math.abs(s.amountMinor) / 100).toFixed(2),
           note: s.note ?? "",
@@ -144,7 +154,7 @@ function CategorySplitDialog({
       : [
           {
             categoryId: t.category ? String(t.category.id) : "",
-            amount: (sizeOf(t) / 100).toFixed(2),
+            amount: (Math.abs(target) / 100).toFixed(2),
             note: "",
           },
           { categoryId: "", amount: "", note: "" },
@@ -156,7 +166,7 @@ function CategorySplitDialog({
   const dirty = JSON.stringify(parts) !== JSON.stringify(initial);
   const { requestClose, confirm } = useUnsavedGuard(dirty && !busy, onClose);
 
-  const total = sizeOf(t);
+  const total = Math.abs(target);
   const amountOf = (p: Part): number => parseMoneyToMinor(p.amount, "USD") ?? 0;
   const used = parts.reduce((n, p) => n + amountOf(p), 0);
   const left = total - used;
@@ -221,7 +231,8 @@ function CategorySplitDialog({
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    const built = buildSplit(parts, t.amountMinor);
+    // With a reimbursed part set aside, one part of your own is enough.
+    const built = buildSplit(parts, target, reimbursed > 0 ? 1 : 2);
     if (!built.ok) {
       setError(built.message);
       return;
@@ -234,9 +245,16 @@ function CategorySplitDialog({
       {confirm}
       <form onSubmit={(e) => void submit(e)} className="space-y-3 text-sm">
         <p className="text-slate-600 dark:text-slate-300">
-          {formatMinor(sizeOf(t), t.currency)} across categories. Totals and budgets count each part
-          in its own category.
+          {formatMinor(total, t.currency)} across categories. Totals and budgets count each part in
+          its own category.
         </p>
+        {reimbursed > 0 && (
+          <p className="rounded-md bg-blue-50 px-3 py-2 text-blue-900 dark:bg-blue-950 dark:text-blue-200">
+            {formatMinor(reimbursed, t.currency)} of the {formatMinor(sizeOf(t), t.currency)} was
+            reimbursed, so only what you kept is split. The reimbursed part is set aside on its own
+            and doesn&apos;t count as your spending.
+          </p>
+        )}
         {!t.splitValid && t.splits.length > 0 && (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
             The amount changed since this was split, so it counts whole until the parts add up
@@ -346,7 +364,7 @@ function CategorySplitDialog({
               <button
                 type="button"
                 aria-label={`Remove part ${i + 1}`}
-                disabled={parts.length <= 2}
+                disabled={parts.length <= (reimbursed > 0 ? 1 : 2)}
                 onClick={() => removePart(i)}
                 className="px-1 text-slate-400 hover:text-red-600 disabled:opacity-30"
               >

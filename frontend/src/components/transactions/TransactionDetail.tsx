@@ -83,6 +83,12 @@ export function TransactionDetail({
   const [preview, setPreview] = useState<RulePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // A link (refund, transfer, same purchase) changes the other transaction too: its tags, what was
+  // refunded of it. Everything showing transactions reloads, not just this row.
+  const linkChanged = (updated: Transaction): void => {
+    onSaved(updated);
+    announceDataChanged();
+  };
 
   const options = categoryOptions(categories);
   const shownMerchant = merchant.trim() || t.providerMerchant;
@@ -166,6 +172,8 @@ export function TransactionDetail({
         updated = await api<Transaction>(`/transactions/${t.id}`);
       }
       onSaved(updated, ruleResult);
+      // A new rule can recategorize other rows: lists and tags everywhere refresh.
+      announceDataChanged();
     } catch (e) {
       setError(errorMessage(e, "Could not save the changes."));
       setSaving(false);
@@ -367,7 +375,7 @@ export function TransactionDetail({
             <TransferLink
               transaction={t}
               transferChosen={transfer === "yes"}
-              onChanged={(updated) => onSaved(updated)}
+              onChanged={linkChanged}
             />
           )}
         </div>
@@ -380,10 +388,10 @@ export function TransactionDetail({
               can't be found.
             </p>
           )}
-          <MirrorLink transaction={t} onChanged={(updated) => onSaved(updated)} />
+          <MirrorLink transaction={t} onChanged={linkChanged} />
         </div>
 
-        <RefundLink transaction={t} onChanged={(updated) => onSaved(updated)} />
+        <RefundLink transaction={t} onChanged={linkChanged} />
 
         <div>
           <label htmlFor={`${id}-online`} className="block text-sm font-medium">
