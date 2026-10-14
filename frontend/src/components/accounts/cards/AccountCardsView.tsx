@@ -23,6 +23,7 @@ import { ManualTransactionDialog } from "../../transactions/ManualTransactionDia
 import { BankCsvImportDialog } from "../BankCsvImportDialog";
 import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
+import { HideToggle } from "../HideToggle";
 import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
 
 /**
@@ -193,6 +194,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             onImport={() => setImporting(a)}
             onStatements={() => setStatementsOf(a)}
             onLimits={() => setLimitsOf(a)}
+            onHiddenChanged={() => accounts.reload()}
           />
         </div>
       );
@@ -640,15 +642,19 @@ function AccountCard({
   onImport,
   onStatements,
   onLimits,
+  onHiddenChanged,
 }: {
   account: Account;
   onAdd: () => void;
   onImport: () => void;
   onStatements: () => void;
   onLimits: () => void;
+  /** After the account was hidden or shown again, so the cards refresh. */
+  onHiddenChanged: () => void;
 }) {
   const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
+  const [hideError, setHideError] = useState<string | null>(null);
   const color = a.color ?? "#94a3b8";
   const payment = a.type === "credit" || a.type === "depository";
   const credit = a.type === "credit";
@@ -788,7 +794,25 @@ function AccountCard({
               </>
             )}
           </dl>
-          <div className="mt-auto flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+          {hideError && (
+            <p role="alert" className="mt-1 text-xs text-red-600">
+              {hideError}
+            </p>
+          )}
+          <div
+            className="mt-auto flex flex-wrap gap-1.5"
+            onClick={(e) => e.stopPropagation()}
+            // Enter or Space on a button here must not turn the card over.
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <HideToggle
+              account={a}
+              onChanged={() => {
+                setHideError(null);
+                onHiddenChanged();
+              }}
+              onError={setHideError}
+            />
             <BackButton onClick={() => navigate(`/transactions?account=${a.id}`)}>
               Transactions
             </BackButton>
