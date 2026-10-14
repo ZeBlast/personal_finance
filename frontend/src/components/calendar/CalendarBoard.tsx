@@ -27,6 +27,7 @@ import {
 import { Select } from "../common/Select";
 import { showsSource, type CalendarFilters } from "./filters";
 import { MonthOverview } from "./MonthOverview";
+import { cellDensity, type CellDensity } from "./density";
 
 /** How far the wheel turns before the month changes, and the pause before it can change again. */
 const WHEEL_STEP = 60;
@@ -171,11 +172,30 @@ export function CalendarBoard({
   const toggleOff = useRef(false);
   const grid = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
+  // The space the month gets: day boxes show less when they are small, instead of cutting off.
+  const gridArea = useRef<HTMLDivElement>(null);
+  const [gridSize, setGridSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = gridArea.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setGridSize((s) =>
+        Math.round(s.width) === Math.round(width) && Math.round(s.height) === Math.round(height)
+          ? s
+          : { width, height },
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const basis = useDateBasis();
   const institutions = useInstitutions();
   const data = useMonths(month, accountId, basis);
   const weeks = useMemo(() => fullMonthGrid(month), [month]);
+  const density = cellDensity(gridSize.width, gridSize.height, weeks.length);
   // The cash forecast covers all bank accounts, so it is shown only for all accounts.
   const gridFrom = weeks[0]![0]!.date;
   const gridTo = weeks.at(-1)!.at(-1)!.date;
@@ -381,7 +401,7 @@ export function CalendarBoard({
             ›
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {data.loading && <span className="text-xs text-slate-500">Loading...</span>}
           {data.refreshing && (
             <span className="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
@@ -447,7 +467,7 @@ export function CalendarBoard({
           <div key={d}>{d}</div>
         ))}
       </div>
-      <div className="mt-1 min-h-0 flex-1 overflow-hidden">
+      <div ref={gridArea} className="mt-1 min-h-0 flex-1 overflow-hidden">
         <div
           key={month}
           ref={grid}
@@ -464,6 +484,7 @@ export function CalendarBoard({
               {week.map(({ date, inMonth }) => (
                 <DayCell
                   key={date}
+                  density={density}
                   date={date}
                   inMonth={inMonth}
                   isToday={date === todayDay}
@@ -512,8 +533,11 @@ export function CalendarBoard({
 
 const MAX_DOTS = 6;
 const MAX_LOGOS = 3;
+/** In a compact box: fewer, smaller category dots and one bank logo. */
+const COMPACT_DOTS = 3;
 
 function DayCell({
+  density,
   date,
   inMonth,
   isToday,
@@ -537,6 +561,8 @@ function DayCell({
   onEditNote,
   onDoneEditing,
 }: {
+  /** How much the box has room to show (see density.ts). */
+  density: CellDensity;
   date: string;
   inMonth: boolean;
   isToday: boolean;
@@ -566,6 +592,8 @@ function DayCell({
   onDoneEditing: (saved: boolean) => void;
 }) {
   const pressedWhileChosen = useRef(false);
+  const full = density === "full";
+  const tiny = density === "tiny";
   const expectedCount = expected?.count ?? 0;
   const low = forecast !== undefined && forecast.cashMinor < lowCash;
   // The banks involved that day, once each; accounts kept by hand share one "by hand" mark.
@@ -611,7 +639,7 @@ function DayCell({
       onMouseDown={(e) => {
         if (editing) e.preventDefault();
       }}
-      className={`relative flex min-h-0 touch-none flex-col gap-0.5 overflow-hidden px-1 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${
+      className={`relative flex min-h-0 touch-none flex-col overflow-hidden text-xs outline-none ${tiny ? "gap-0 px-0.5 py-0.5" : "gap-0.5 px-1 py-1"} focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset ${
         inside
           ? isEdge
             ? "bg-blue-100 dark:bg-blue-900"
@@ -625,15 +653,17 @@ function DayCell({
       <div className="relative flex justify-center">
         {expectedCount > 0 && (
           <span
-            className="absolute top-0 left-0 text-sm font-semibold text-violet-700 dark:text-violet-300"
+            className={`absolute top-0 left-0 font-semibold text-violet-700 dark:text-violet-300 ${full ? "text-sm" : "text-[10px] leading-3"}`}
             title={`${expectedCount} expected`}
             aria-hidden="true"
           >
-            ↻{expectedCount}
+            ↻{tiny ? "" : expectedCount}
           </span>
         )}
         <span
-          className={`flex h-10 w-10 items-center justify-center rounded-full text-2xl font-semibold ${
+          className={`flex items-center justify-center rounded-full font-semibold ${
+            full ? "h-10 w-10 text-2xl" : tiny ? "h-5 w-5 text-xs" : "h-7 w-7 text-base"
+          } ${
             isToday
               ? "bg-white text-slate-900 shadow ring-1 ring-slate-300"
               : "text-slate-700 dark:text-slate-200"
@@ -643,7 +673,7 @@ function DayCell({
         </span>
         {pendingCount > 0 && (
           <span
-            className="absolute top-0 right-0 text-sm text-amber-600"
+            className={`absolute top-0 right-0 text-amber-600 ${full ? "text-sm" : "text-[10px] leading-3"}`}
             title={`${pendingCount} pending`}
             aria-hidden="true"
           >
@@ -653,16 +683,25 @@ function DayCell({
       </div>
 
       {unavailable && (
-        <div className="text-center text-[11px] text-red-600 dark:text-red-400">Not loaded</div>
+        <div className="truncate text-center text-[10px] text-red-600 dark:text-red-400">
+          {tiny ? "—" : "Not loaded"}
+        </div>
       )}
-      {day && <DayTotals day={day} />}
-      {expected && expected.count > 0 && <ExpectedPreview expected={expected} />}
-      {forecast && <ForecastPreview forecast={forecast} low={low} />}
+      {day && <DayTotals day={day} density={density} />}
+      {full && expected && expected.count > 0 && <ExpectedPreview expected={expected} />}
+      {forecast && !tiny && (full || low) && (
+        <ForecastPreview forecast={forecast} low={low} compact={!full} />
+      )}
 
       {/* The note, in the middle of the box. On the chosen day there is always a box for it, and
-          clicking that box writes in it. Pressing anywhere else still selects days as usual. */}
+          clicking that box writes in it. Pressing anywhere else still selects days as usual. In a
+          tiny box a pencil marks a note; choosing the day still lets you write it. */}
       <div className="flex min-h-0 flex-1 items-center justify-center px-0.5">
-        {editing ? (
+        {tiny && note && !editing && !chosen ? (
+          <span className="text-[10px] text-slate-500" title={note} aria-hidden="true">
+            ✎
+          </span>
+        ) : editing ? (
           <NoteEditor date={date} note={note ?? ""} onDone={onDoneEditing} />
         ) : note || chosen ? (
           <div
@@ -688,7 +727,7 @@ function DayCell({
               }
             }}
             title={chosen ? (note ? "Click to edit this note" : "Click to write a note") : note}
-            className={`line-clamp-3 min-h-5 w-full rounded px-1 py-0.5 text-center text-[10px] ${
+            className={`${full ? "line-clamp-3 min-h-5" : "line-clamp-1 min-h-4"} w-full rounded px-1 py-0.5 text-center text-[10px] ${
               note
                 ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600"
                 : "border border-dashed border-slate-300 dark:border-slate-600"
@@ -699,52 +738,54 @@ function DayCell({
         ) : null}
       </div>
 
-      {day && (
+      {day && !tiny && (
         <div className="flex items-end justify-between gap-1">
-          <span className="flex flex-wrap items-center gap-0.5">
-            {day.categories.slice(0, MAX_DOTS).map((c) => (
+          <span className="flex min-w-0 flex-wrap items-center gap-0.5">
+            {day.categories.slice(0, full ? MAX_DOTS : COMPACT_DOTS).map((c) => (
               <span
                 key={c.categoryId ?? "none"}
                 title={`${c.name}: ${c.count}`}
-                className="h-3 w-3 rounded-full"
+                className={`rounded-full ${full ? "h-3 w-3" : "h-2 w-2"}`}
                 style={{ backgroundColor: c.color ?? "#94a3b8" }}
               />
             ))}
-            {day.categories.length > MAX_DOTS && (
+            {day.categories.length > (full ? MAX_DOTS : COMPACT_DOTS) && (
               <span
-                className="text-xs text-slate-500"
+                className="text-[10px] text-slate-500"
                 title={day.categories
-                  .slice(MAX_DOTS)
+                  .slice(full ? MAX_DOTS : COMPACT_DOTS)
                   .map((c) => c.name)
                   .join(", ")}
               >
-                +{day.categories.length - MAX_DOTS}
+                +{day.categories.length - (full ? MAX_DOTS : COMPACT_DOTS)}
               </span>
             )}
           </span>
-          <span className="flex items-center -space-x-1">
-            {banks.slice(0, MAX_LOGOS).map((b) =>
+          <span className="flex shrink-0 items-center -space-x-1">
+            {banks.slice(0, full ? MAX_LOGOS : 1).map((b) =>
               b.logo ? (
                 <img
                   key={b.key}
                   src={b.logo}
                   alt={b.name}
                   title={b.name}
-                  className="h-6 w-6 rounded-full bg-white object-contain ring-1 ring-white dark:ring-slate-900"
+                  className={`rounded-full bg-white object-contain ring-1 ring-white dark:ring-slate-900 ${full ? "h-6 w-6" : "h-4 w-4"}`}
                 />
               ) : (
                 <span
                   key={b.key}
                   title={b.name}
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ring-1 ring-white dark:ring-slate-900"
+                  className={`flex items-center justify-center rounded-full font-bold text-white ring-1 ring-white dark:ring-slate-900 ${full ? "h-6 w-6 text-[11px]" : "h-4 w-4 text-[9px]"}`}
                   style={{ backgroundColor: b.color ?? "#475569" }}
                 >
                   {b.key === "manual" ? "✋" : b.name.slice(0, 1).toUpperCase()}
                 </span>
               ),
             )}
-            {banks.length > MAX_LOGOS && (
-              <span className="pl-1.5 text-xs text-slate-500">+{banks.length - MAX_LOGOS}</span>
+            {banks.length > (full ? MAX_LOGOS : 1) && (
+              <span className="pl-1.5 text-[10px] text-slate-500">
+                +{banks.length - (full ? MAX_LOGOS : 1)}
+              </span>
             )}
           </span>
         </div>
@@ -761,8 +802,19 @@ type ForecastDay = CalendarForecast["days"][number];
  * (plans and pending entries are already named above), and the cash left in the bank accounts,
  * marked when it falls below the warning level.
  */
-function ForecastPreview({ forecast, low }: { forecast: ForecastDay; low: boolean }) {
-  const extra = forecast.events.filter((e) => e.source === "card_bill" || e.source === "recurring");
+function ForecastPreview({
+  forecast,
+  low,
+  compact = false,
+}: {
+  forecast: ForecastDay;
+  low: boolean;
+  /** Only the cash line (a compact box shows it just when cash runs low). */
+  compact?: boolean;
+}) {
+  const extra = compact
+    ? []
+    : forecast.events.filter((e) => e.source === "card_bill" || e.source === "recurring");
   return (
     <div className="flex flex-col gap-0.5" aria-hidden="true">
       {extra.slice(0, 2).map((e, n) => (
@@ -794,7 +846,7 @@ function ForecastPreview({ forecast, low }: { forecast: ForecastDay; low: boolea
         }`}
         title="Projected cash in your bank accounts at the end of the day"
       >
-        {low ? "Low cash " : "Cash "}≈ {money(forecast.cashMinor)}
+        {compact ? "" : low ? "Low cash " : "Cash "}≈ {money(forecast.cashMinor)}
       </div>
     </div>
   );
@@ -844,8 +896,26 @@ function ExpectedPreview({ expected }: { expected: DayExpected }) {
   );
 }
 
-/** Money out, money in, and debt paid that day, as plain numbers under the date. */
-function DayTotals({ day }: { day: CalendarDay }) {
+/**
+ * Money out, money in, and debt paid that day, as plain numbers under the date. A tiny box shows
+ * only the day's net (money in less money out); a compact one shows them smaller, on one line.
+ */
+function DayTotals({ day, density }: { day: CalendarDay; density: CellDensity }) {
+  if (density === "tiny") {
+    const net = day.inflowMinor - day.outflowMinor;
+    if (net === 0) return null;
+    return (
+      <div
+        className={`truncate text-center text-[10px] leading-3 font-semibold tabular-nums ${
+          net > 0 ? "text-green-700 dark:text-green-400" : "text-slate-700 dark:text-slate-200"
+        }`}
+        title="Money in less money out"
+      >
+        {net > 0 ? "+" : "−"}
+        {money(Math.abs(net))}
+      </div>
+    );
+  }
   const parts = [
     day.outflowMinor > 0 && (
       <span key="out" className="text-slate-700 dark:text-slate-200">
@@ -870,7 +940,9 @@ function DayTotals({ day }: { day: CalendarDay }) {
   if (parts.length === 0) return null;
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm leading-5 font-semibold tabular-nums"
+      className={`flex items-center justify-center gap-x-1.5 font-semibold tabular-nums ${
+        density === "full" ? "flex-wrap text-sm leading-5" : "overflow-hidden text-[11px] leading-4"
+      }`}
       title="Money out · money in · paid toward debt"
     >
       {parts}
