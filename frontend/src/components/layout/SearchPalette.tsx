@@ -21,14 +21,20 @@ const GROUPS: Result["group"][] = ["Pages", "Accounts", "Categories", "Transacti
 const PAGE_WORDS: Record<string, string> = {
   "/": "home overview",
   "/transactions": "spending purchases",
-  "/planning": "forecast bills paychecks",
-  "/subscriptions": "recurring memberships streaming netflix renewals",
-  "/goals": "savings target",
-  "/investments": "tsp retirement brokerage",
-  "/data": "backup export folder diagnostics",
+  "/transactions/review": "uncategorized duplicates queue",
+  "/transactions/categories": "rules merchants",
+  "/planning": "forecast bills paychecks planning",
+  "/planning/subscriptions": "recurring memberships streaming netflix renewals",
+  "/planning/budgets": "limits",
+  "/planning/goals": "savings target",
+  "/accounts/investments": "tsp retirement brokerage",
+  "/reports": "month report",
+  "/reports/insights": "category explorer utilization recurring",
+  "/reports/net-worth": "history analytics",
+  "/reports/network": "graph",
+  "/settings/data": "backup export folder diagnostics",
   "/settings": "plaid preferences",
   "/taxes": "irs fica withholding",
-  "/network": "graph",
 };
 
 const matches = (text: string, q: string): boolean => text.toLowerCase().includes(q);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { api } from "../../api/client";
-import { routes } from "../../app/routes";
+import { areas, migrateNavOrder } from "../../app/routes";
 import { useApi } from "../../hooks/useApi";
 import type { Settings } from "../../types/api";
 import { SearchPalette } from "./SearchPalette";
@@ -46,8 +46,9 @@ export function Sidebar() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // The nine areas, in the user's order (an order saved before the areas carries over).
   const shown = useMemo(
-    () => orderRoutes(routes, order ?? settings.data?.navOrder ?? []),
+    () => orderRoutes(areas, migrateNavOrder(order ?? settings.data?.navOrder ?? [])),
     [order, settings.data],
   );
 

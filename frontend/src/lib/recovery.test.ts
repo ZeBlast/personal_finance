@@ -10,7 +10,7 @@ describe("adviceFor", () => {
       transient: false,
       fixPath: "/accounts",
     });
-    expect(adviceFor("storage_error").fixPath).toBe("/data");
+    expect(adviceFor("storage_error").fixPath).toBe("/settings/data");
     expect(adviceFor("wrong_environment").fixPath).toBe("/settings");
   });
 
@@ -34,7 +34,7 @@ describe("adviceFor", () => {
       const a = adviceFor(code);
       expect(a.summary.length, String(code)).toBeGreaterThan(10);
       expect(a.action.length, String(code)).toBeGreaterThan(10);
-      if (a.fixPath) expect(["/accounts", "/settings", "/data"]).toContain(a.fixPath);
+      if (a.fixPath) expect(["/accounts", "/settings", "/settings/data"]).toContain(a.fixPath);
     }
   });
 

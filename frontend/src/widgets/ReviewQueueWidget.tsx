@@ -27,7 +27,7 @@ export default defineWidget({
       <WidgetState loading={queue.loading || loose.loading} error={queue.error ?? loose.error}>
         <button
           type="button"
-          onClick={() => navigate("/review")}
+          onClick={() => navigate("/transactions/review")}
           title="Open the Review tab"
           className="grid h-full w-full grid-cols-2 gap-2 rounded-md text-left hover:bg-slate-50 dark:hover:bg-slate-700/50"
         >

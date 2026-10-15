@@ -45,7 +45,7 @@ const ADVICE: Record<string, Advice> = {
     summary: "The data could not be saved on this computer.",
     action:
       "Check that the disk has free space, then sync again. Nothing was lost; the next sync continues from the last saved point.",
-    fixPath: "/data",
+    fixPath: "/settings/data",
     transient: false,
   },
   token_unreadable: {
@@ -81,7 +81,7 @@ const FALLBACK: Advice = {
   summary: "The sync failed for a reason the app does not recognize.",
   action:
     "Try Sync now again. If it keeps failing, copy the report on the Data page when asking for help.",
-  fixPath: "/data",
+  fixPath: "/settings/data",
   transient: true,
 };
 

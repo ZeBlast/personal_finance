@@ -71,14 +71,14 @@ export default defineWidget({
                     {b.overspent
                       ? `${money(-b.remainingMinor)} over budget`
                       : `${money(b.remainingMinor)} left`}{" "}
-                    · {b.percentUsed}%
+                    Â· {b.percentUsed}%
                   </div>
                 </li>
               ))}
             </ul>
           </div>
         )}
-        <Link to="/budgets" className="mt-3 inline-block text-xs text-blue-600 underline">
+        <Link to="/planning/budgets" className="mt-3 inline-block text-xs text-blue-600 underline">
           Manage budgets
         </Link>
       </WidgetState>
