@@ -173,10 +173,11 @@ function check(db: AppDb, input: TrackedSubscriptionInput): void {
   if (!clean(input.name)) throw new AppError(400, "invalid_name", "Enter the subscription's name.");
   if (
     !Number.isInteger(input.amountMinor) ||
-    input.amountMinor < 1 ||
+    // 0 is allowed: a free subscription kept only to keep track of it.
+    input.amountMinor < 0 ||
     input.amountMinor > MAX_AMOUNT
   ) {
-    throw new AppError(400, "invalid_amount", "Enter what each charge costs.");
+    throw new AppError(400, "invalid_amount", "Enter what each charge costs (0 if it is free).");
   }
   if (!BILLINGS.includes(input.billing)) {
     throw new AppError(400, "invalid_billing", "Choose how it is billed.");
@@ -260,7 +261,13 @@ function syncPlanned(db: AppDb, id: number, today: string, now: string): void {
   }
   const schedule = subscriptionSchedule(scheduleOf(row), today);
   let plannedId: number | null = null;
-  if (row.recurringKey === null && row.status === "active" && schedule.nextCharge !== null) {
+  // A free one has no charges to show on the calendar.
+  if (
+    row.recurringKey === null &&
+    row.status === "active" &&
+    row.amountMinor > 0 &&
+    schedule.nextCharge !== null
+  ) {
     const start = schedule.nextCharge;
     const base: PlannedInput = {
       merchant: row.name,

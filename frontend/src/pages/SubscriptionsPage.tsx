@@ -89,6 +89,9 @@ export function billingText(s: {
   repeatEvery: number;
   termMonths: number | null;
 }): string {
+  if (s.amountMinor === 0) {
+    return s.billing === "recurring" ? "Free" : `Free, for ${s.termMonths} months`;
+  }
   const amount = money(s.amountMinor);
   if (s.billing === "installments") return `${amount} a month for ${s.termMonths} months`;
   if (s.billing === "prepaid") return `${amount} once, for ${s.termMonths} months`;
@@ -363,9 +366,10 @@ export function buildSubscription(
   d: Draft,
 ): { ok: true; body: Record<string, unknown> } | { ok: false; message: string } {
   if (!d.name.trim()) return { ok: false, message: "Enter the subscription's name." };
-  const amount = parseMoneyToMinor(d.amount, "USD");
-  if (amount === null || amount <= 0) {
-    return { ok: false, message: "Enter what each charge costs, such as 15.49." };
+  // Blank or 0 is a free subscription, kept only to keep track of it.
+  const amount = d.amount.trim() === "" ? 0 : parseMoneyToMinor(d.amount, "USD");
+  if (amount === null || amount < 0) {
+    return { ok: false, message: "Enter what each charge costs, such as 15.49 (0 if free)." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.startDate)) {
     return { ok: false, message: "Choose the day it starts." };
@@ -481,7 +485,8 @@ function SubscriptionDialog({
             <input
               value={d.amount}
               inputMode="decimal"
-              placeholder="0.00"
+              placeholder="0.00 if free"
+              title="Leave it at 0 for a free subscription you only want to keep track of."
               onChange={(e) => set({ amount: e.target.value })}
               className={inputClass}
             />

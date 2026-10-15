@@ -168,5 +168,41 @@ describe("tracking subscriptions", () => {
       .call("post", "/api/tracked-subscriptions")
       .send({ name: "X", amountMinor: 100, billing: "recurring", startDate: "2026-01-01" })
       .expect(400);
+    await t
+      .call("post", "/api/tracked-subscriptions")
+      .send({
+        name: "X",
+        amountMinor: -100,
+        billing: "recurring",
+        frequency: "monthly",
+        startDate: "2026-01-01",
+      })
+      .expect(400);
+  });
+
+  it("keeps track of a free one, which costs nothing and stays off the calendar", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const list = (
+      await t
+        .call("post", "/api/tracked-subscriptions")
+        .send({
+          name: "Free tier",
+          amountMinor: 0,
+          billing: "recurring",
+          frequency: "monthly",
+          startDate: "2099-01-01",
+          email: "me@example.com",
+        })
+        .expect(201)
+    ).body;
+    expect(list.subscriptions[0]).toMatchObject({
+      name: "Free tier",
+      amountMinor: 0,
+      monthlyMinor: 0,
+      onCalendar: false,
+      nextCharge: "2099-01-01",
+    });
+    expect(list.totals).toMatchObject({ monthlyMinor: 0, active: 1 });
   });
 });

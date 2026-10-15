@@ -17,6 +17,12 @@ describe("subscriptions page", () => {
     expect(billingText({ ...base, billing: "prepaid", termMonths: 6 })).toBe(
       "$15.49 once, for 6 months",
     );
+    expect(
+      billingText({ ...base, amountMinor: 0, billing: "recurring", frequency: "monthly" }),
+    ).toBe("Free");
+    expect(billingText({ ...base, amountMinor: 0, billing: "prepaid", termMonths: 12 })).toBe(
+      "Free, for 12 months",
+    );
   });
 
   it("turns a recurring charge from the history into a subscription to track", () => {
@@ -51,7 +57,12 @@ describe("subscriptions page", () => {
       typicalAmountMinor: 4000,
       firstDate: "2026-01-01",
     } as unknown as Subscription);
-    expect(buildSubscription({ ...draft, amount: "" })).toMatchObject({ ok: false });
+    // Blank or 0: a free one, for keeping track only.
+    expect(buildSubscription({ ...draft, amount: "" })).toMatchObject({
+      ok: true,
+      body: { amountMinor: 0 },
+    });
+    expect(buildSubscription({ ...draft, amount: "-1" })).toMatchObject({ ok: false });
     expect(buildSubscription({ ...draft, billing: "installments", termMonths: "0" })).toMatchObject(
       { ok: false },
     );
