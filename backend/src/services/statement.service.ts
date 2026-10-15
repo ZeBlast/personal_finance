@@ -73,6 +73,14 @@ export interface StatementSummary extends Period {
   creditsMinor: number;
   /** How much the balance rose (positive) or fell over the period. */
   netMinor: number;
+  /**
+   * What was owed when the period closed: the statement's "new balance" (for the open period, the
+   * balance so far). Worked out from the card's current balance less what posted since, so it is
+   * null when the bank gives no balance.
+   */
+  newBalanceMinor: number | null;
+  /** What was owed when the period before it closed: the statement's "previous balance". */
+  previousBalanceMinor: number | null;
   count: number;
   /** Spending by category: charges less the refunds in the same category. */
   categories: Array<{
@@ -96,6 +104,7 @@ function requireCard(db: Pick<AppDb, "select">, accountId: number) {
     .select({
       id: accounts.id,
       type: accounts.type,
+      currentBalanceMinor: accounts.currentBalanceMinor,
       closingDay: accounts.statementClosingDay,
       dueDay: accounts.statementDueDay,
     })
@@ -167,6 +176,17 @@ export function statements(
     from transactions t left join categories c on c.id = t.category_id
     where t.account_id = ${accountId} and t.pending = 0 and t.date between ${from} and ${to}`);
 
+  // The balance owed at the end of a day: today's balance less everything posted after that day.
+  // Posted only, as the bank's balance (and the statement) leave pending charges out.
+  const later = db.all<{ date: string; amount: number }>(sql`
+    select date, amount_minor as amount from transactions
+    where account_id = ${accountId} and pending = 0 and date >= ${periods[periods.length - 1]!.start}`);
+  const balanceAt = (day: string): number | null =>
+    card.currentBalanceMinor === null
+      ? null
+      : card.currentBalanceMinor -
+        later.filter((r) => r.date > day).reduce((n, r) => n + r.amount, 0);
+
   return {
     ...base,
     periods: periods.map((p) => {
@@ -203,6 +223,8 @@ export function statements(
         paymentsMinor,
         creditsMinor,
         netMinor: chargesMinor - paymentsMinor - creditsMinor,
+        newBalanceMinor: balanceAt(p.current ? today : p.end),
+        previousBalanceMinor: balanceAt(addDays(p.start, -1)),
         count: inside.length,
         categories: [...byCategory.values()]
           .filter((c) => c.spendingMinor !== 0)

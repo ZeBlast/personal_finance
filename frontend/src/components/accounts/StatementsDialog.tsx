@@ -19,6 +19,10 @@ interface Period {
   paymentsMinor: number;
   creditsMinor: number;
   netMinor: number;
+  /** Owed when the period closed (the statement's new balance; the open one: so far). */
+  newBalanceMinor: number | null;
+  /** Owed when the period before closed (the statement's previous balance). */
+  previousBalanceMinor: number | null;
   count: number;
   categories: Array<{
     id: number | null;
@@ -185,8 +189,11 @@ export function StatementsDialog({ account, onClose }: { account: Account; onClo
                   <span className="text-xs font-medium">
                     {p.current ? "Open now" : `Closed ${formatDay(p.end)}`}
                   </span>
-                  <span className="text-xs text-slate-500 tabular-nums">
-                    {money(p.chargesMinor)}
+                  <span
+                    className="text-xs text-slate-500 tabular-nums"
+                    title={p.newBalanceMinor !== null ? "New balance" : "Charges"}
+                  >
+                    {money(p.newBalanceMinor ?? p.chargesMinor)}
                   </span>
                 </button>
               ))}
@@ -204,6 +211,24 @@ export function StatementsDialog({ account, onClose }: { account: Account; onClo
                       <p className="text-xs text-slate-500">Payment due {formatDay(period.due)}</p>
                     )}
                   </div>
+                  {period.newBalanceMinor !== null && (
+                    <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium">
+                          {period.current ? "Balance so far" : "New balance"}
+                        </span>
+                        <span className="text-xl font-semibold tabular-nums">
+                          {money(period.newBalanceMinor)}
+                        </span>
+                      </div>
+                      {period.previousBalanceMinor !== null && (
+                        <p className="text-xs text-slate-500">
+                          Previous balance {money(period.previousBalanceMinor)}
+                          {period.current ? "" : " · worked out from your card's balance today"}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <dl className="grid grid-cols-2 gap-2">
                     <Stat label="Charges" value={money(period.chargesMinor)} />
                     <Stat label="Payments" value={money(period.paymentsMinor)} />

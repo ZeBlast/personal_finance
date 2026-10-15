@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { accounts } from "../../drizzle/schema.js";
 import { statementPeriods, statements } from "./services/statement.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
@@ -109,6 +111,41 @@ describe("a card's statements", () => {
     ]);
     expect(sept.merchants[0]).toMatchObject({ name: "Grocer", spendingMinor: 2000, count: 1 });
     expect(s.periods.find((p) => p.start === "2026-08-16")!.chargesMinor).toBe(3000);
+
+    // Each statement's new balance: what is owed today, less what posted after it closed.
+    await add({ date: "2026-10-18", merchant: "Cafe", amountMinor: 1000, direction: "out" });
+    t.db.update(accounts).set({ currentBalanceMinor: 9000 }).where(eq(accounts.id, card)).run();
+    const b = statements(t.db, card, 3, "2026-10-20");
+    expect(b.periods[0]).toMatchObject({
+      current: true,
+      newBalanceMinor: 9000,
+      previousBalanceMinor: 8000,
+    });
+    expect(b.periods.find((p) => p.start === "2026-09-16")).toMatchObject({
+      newBalanceMinor: 8000,
+      previousBalanceMinor: 7800,
+    });
+    expect(b.periods.find((p) => p.start === "2026-08-16")).toMatchObject({
+      newBalanceMinor: 7800,
+      previousBalanceMinor: 4800,
+    });
+  });
+
+  it("have no new balance when the bank gives none", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const card = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Visa", kind: "credit_card" })
+        .expect(201)
+    ).body.id as number;
+    t.db.update(accounts).set({ currentBalanceMinor: null }).where(eq(accounts.id, card)).run();
+    await t
+      .call("put", `/api/accounts/${card}/statement-settings`)
+      .send({ closingDay: 15, dueDay: 10 })
+      .expect(200);
+    expect(statements(t.db, card, 2, "2026-10-20").periods[1]!.newBalanceMinor).toBeNull();
   });
 
   it("are only for credit cards, and take days of the month", async () => {
