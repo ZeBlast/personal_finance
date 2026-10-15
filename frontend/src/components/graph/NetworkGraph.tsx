@@ -8,6 +8,7 @@ import {
   DEFAULT_OPTIONS,
   LINK_COLORS,
   neighbours,
+  spendingParts,
   type GraphData,
   type GraphLink,
   type GraphNode,
@@ -962,9 +963,21 @@ function Details({
   return (
     <div className="absolute bottom-3 left-3 max-h-[60%] w-80 overflow-y-auto rounded-lg bg-white/95 p-3 text-sm shadow-lg ring-1 ring-slate-200 dark:bg-slate-800/95 dark:ring-slate-600">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <div className="text-xs text-slate-500">{KIND_LABEL[node.kind]}</div>
-          <div className="font-semibold">{node.label}</div>
+          {single ? (
+            // A single transaction's name opens it on the Transactions page, highlighted.
+            <button
+              type="button"
+              onClick={() => onOpen(single.id)}
+              title="Open on the Transactions page"
+              className="text-left font-semibold text-blue-700 hover:underline dark:text-blue-300"
+            >
+              {node.label}
+            </button>
+          ) : (
+            <div className="font-semibold">{node.label}</div>
+          )}
         </div>
         <button
           type="button"
@@ -983,14 +996,18 @@ function Details({
             value={`${single.amountMinor < 0 ? "+" : "−"}${money(Math.abs(single.amountMinor))}`}
           />
           <Row label="Account" value={accountName.get(single.accountId) ?? ""} />
-          <Row
-            label="Category"
-            value={
-              single.subcategoryName
-                ? `${single.categoryName ?? ""} › ${single.subcategoryName}`
-                : (single.categoryName ?? "Uncategorized")
-            }
-          />
+          {spendingParts(single).map((p, i, all) => (
+            <Row
+              key={i}
+              label={i === 0 ? (all.length > 1 ? "Categories" : "Category") : ""}
+              value={
+                (p.subcategoryName
+                  ? `${p.categoryName ?? ""} › ${p.subcategoryName}`
+                  : (p.categoryName ?? "Uncategorized")) +
+                (all.length > 1 ? ` · ${money(Math.abs(p.amountMinor))}` : "")
+              }
+            />
+          ))}
           {single.pending && <Row label="Status" value="Pending" />}
         </dl>
       ) : (

@@ -138,6 +138,44 @@ describe("graph model", () => {
     );
   });
 
+  it("puts a split transaction in every category it is split across", () => {
+    const split: GraphData = {
+      ...data,
+      transactions: [
+        tx({
+          id: 9,
+          amountMinor: 3000,
+          merchant: "Big box",
+          splits: [
+            {
+              amountMinor: 2000,
+              categoryId: 5,
+              categoryName: "Groceries",
+              categoryColor: "#16a34a",
+            },
+            { amountMinor: 1000, categoryId: 7, categoryName: "Dining", categoryColor: null },
+          ],
+        }),
+      ],
+    };
+    const m = buildModel(split, {
+      ...DEFAULT_OPTIONS,
+      groupMerchants: false,
+      openClusters: new Set([clusterNode(10, 5), clusterNode(10, 7)]),
+    });
+    expect(m.nodes.find((n) => n.id === clusterNode(10, 5))).toMatchObject({
+      weightMinor: 2000,
+      transactionIds: [9],
+    });
+    expect(m.nodes.find((n) => n.id === clusterNode(10, 7))).toMatchObject({
+      weightMinor: 1000,
+      transactionIds: [9],
+    });
+    // One node for the transaction, linked from both categories.
+    expect(m.nodes.filter((n) => n.id === txNode(9))).toHaveLength(1);
+    expect(neighbours(m).get(txNode(9))).toEqual(new Set([clusterNode(10, 5), clusterNode(10, 7)]));
+  });
+
   it("filters by search, and can leave out income, transfers, and idle accounts", () => {
     const found = buildModel(data, { ...DEFAULT_OPTIONS, search: "cafe" });
     expect(ids(found)).toEqual(

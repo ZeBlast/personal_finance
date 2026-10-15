@@ -60,6 +60,20 @@ export interface GraphTransaction {
   /** Money in that counts as income; `source` is who paid it. */
   income: boolean;
   source: string | null;
+  /** Its parts when split across categories (empty when not split, or the parts don't add up). */
+  splits: GraphSplit[];
+}
+
+/** One part of a split transaction, with its category as for a transaction. */
+export interface GraphSplit {
+  /** Plaid's sign: positive is money out. */
+  amountMinor: number;
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  subcategoryId: number | null;
+  subcategoryName: string | null;
+  subcategoryColor: string | null;
 }
 
 export interface Graph {
@@ -148,6 +162,54 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
 
   const truncated = rows.length > MAX_GRAPH_TRANSACTIONS;
   const groups = merchantGroupNames(db);
+
+  // The parts of transactions split across categories, when they add up (otherwise the
+  // transaction counts whole, in its own category, as everywhere else).
+  const shownIds = rows.slice(0, MAX_GRAPH_TRANSACTIONS).map((r) => r.id);
+  const splitRows =
+    shownIds.length === 0
+      ? []
+      : db.all<{
+          transaction_id: number;
+          amount_minor: number;
+          category_id: number | null;
+          category_name: string | null;
+          category_color: string | null;
+          sub_id: number | null;
+          sub_name: string | null;
+          sub_color: string | null;
+        }>(sql`
+    select s.transaction_id, s.amount_minor,
+      coalesce(pc.id, c.id) as category_id, coalesce(pc.name, c.name) as category_name,
+      coalesce(pc.color, c.color) as category_color,
+      (case when pc.id is not null then c.id end) as sub_id,
+      (case when pc.id is not null then c.name end) as sub_name,
+      (case when pc.id is not null then c.color end) as sub_color
+    from transaction_splits s
+      join transactions t on t.id = s.transaction_id
+      left join categories c on c.id = s.category_id
+      left join categories pc on pc.id = c.parent_id
+    where s.transaction_id in (${sql.join(
+      shownIds.map((id) => sql`${id}`),
+      sql`, `,
+    )})
+      and (select sum(x.amount_minor) from transaction_splits x
+        where x.transaction_id = s.transaction_id) = t.amount_minor
+    order by s.transaction_id, s.position, s.id`);
+  const splits = new Map<number, GraphSplit[]>();
+  for (const s of splitRows) {
+    const list = splits.get(s.transaction_id) ?? [];
+    list.push({
+      amountMinor: s.amount_minor,
+      categoryId: s.category_id,
+      categoryName: s.category_name,
+      categoryColor: s.category_color,
+      subcategoryId: s.sub_id,
+      subcategoryName: s.sub_name,
+      subcategoryColor: s.sub_color,
+    });
+    splits.set(s.transaction_id, list);
+  }
   return {
     from,
     to,
@@ -180,6 +242,7 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
       person: r.person,
       income: r.income === 1,
       source: r.income === 1 ? (r.source ?? r.merchant) : null,
+      splits: splits.get(r.id) ?? [],
     })),
     truncated,
   };

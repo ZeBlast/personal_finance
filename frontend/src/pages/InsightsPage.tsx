@@ -323,17 +323,27 @@ function UtilizationSection() {
 
 export function InsightsPage() {
   return (
-    <section className="max-w-4xl space-y-5">
-      <div>
+    <section className="@container space-y-5">
+      <div className="max-w-4xl">
         <h1 className="text-2xl font-semibold">Insights</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Patterns the app can see in your own data. Nothing here is advice, and nothing is
           estimated beyond what is stated.
         </p>
       </div>
-      <CategoryExplorer />
-      <RecurringSection />
-      <UtilizationSection />
+      {/* Spending by category and credit utilization side by side when the page has room for
+          both (decided by the page's own width, not the window's); one above the other if not. */}
+      <div className="grid items-start gap-5 @min-[72rem]:grid-cols-2">
+        <div className="min-w-0">
+          <CategoryExplorer />
+        </div>
+        <div className="min-w-0">
+          <UtilizationSection />
+        </div>
+      </div>
+      <div className="max-w-5xl">
+        <RecurringSection />
+      </div>
     </section>
   );
 }

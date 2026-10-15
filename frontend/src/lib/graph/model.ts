@@ -54,6 +54,25 @@ export interface GraphTx {
   person?: string | null;
   income: boolean;
   source: string | null;
+  /** The parts of a transaction split across categories (absent or empty when not split). */
+  splits?: GraphSplit[] | undefined;
+}
+
+/** One part of a split transaction: its category (as for a transaction) and amount. */
+export interface GraphSplit {
+  /** Plaid's sign, like the transaction's: positive is money out. */
+  amountMinor: number;
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  subcategoryId?: number | null;
+  subcategoryName?: string | null;
+  subcategoryColor?: string | null;
+}
+
+/** What a spending transaction is filed under: each part of its split, or itself whole. Pure. */
+export function spendingParts(t: GraphTx): GraphSplit[] {
+  return t.splits && t.splits.length > 0 ? t.splits : [t];
 }
 
 export type NodeKind = "institution" | "account" | "income" | "person" | "cluster" | "transaction";
@@ -339,63 +358,68 @@ export function buildModel(data: GraphData, options: ModelOptions = DEFAULT_OPTI
       continue;
     }
 
-    // Spending (and money in that is not income, such as refunds) goes into a category cluster.
+    // Spending (and money in that is not income, such as refunds) goes into a category cluster:
+    // a transaction split across categories goes into each of them, with that part's amount.
     if (!options.showSpending) continue;
     const owner: Owner = options.groupCategories
       ? null
       : grouped(t.accountId)
         ? account
         : t.accountId;
-    const cluster = clusterNode(owner, t.categoryId);
-    const color = t.categoryColor ?? UNCATEGORIZED_COLOR;
-    const clusterOf = (id: string, label: string, c: string): GraphNode => {
-      const node = nodes.get(id) ?? {
-        id,
-        kind: "cluster" as const,
-        label,
-        color: c,
-        weightMinor: 0,
-        transactionIds: [],
-        ...(typeof owner === "number" ? { accountId: owner } : {}),
-        open: options.openClusters.has(id),
-      };
-      node.weightMinor += t.amountMinor; // refunds take away
-      node.transactionIds.push(t.id);
-      nodes.set(id, node);
-      return node;
-    };
-    const node = clusterOf(cluster, t.categoryName ?? "Uncategorized", color);
-    addLink(account, cluster, "spends", amount);
-    // A subcategory gets its own cluster under the category's, holding its transactions.
-    let holder = node;
-    let txColor = color;
-    if (t.subcategoryId != null) {
-      const sub = subclusterNode(owner, t.subcategoryId);
-      txColor = t.subcategoryColor ?? color;
-      holder = clusterOf(sub, t.subcategoryName ?? "Subcategory", txColor);
-      addLink(cluster, sub, "spends", amount);
-    }
-    if (holder.open) {
-      if (options.groupMerchants) {
-        // One node per merchant (a merchant group counts as one) in the open group.
-        const name = t.merchantGroup ?? t.merchant;
-        const id = merchantNode(holder.id, name);
-        const m = nodes.get(id) ?? {
+    for (const part of spendingParts(t)) {
+      const partAmount = Math.abs(part.amountMinor);
+      const cluster = clusterNode(owner, part.categoryId);
+      const color = part.categoryColor ?? UNCATEGORIZED_COLOR;
+      const clusterOf = (id: string, label: string, c: string): GraphNode => {
+        const node = nodes.get(id) ?? {
           id,
-          kind: "transaction" as const,
-          label: name,
-          color: txColor,
+          kind: "cluster" as const,
+          label,
+          color: c,
           weightMinor: 0,
           transactionIds: [],
           ...(typeof owner === "number" ? { accountId: owner } : {}),
+          open: options.openClusters.has(id),
         };
-        m.weightMinor += amount;
-        m.transactionIds.push(t.id);
-        nodes.set(id, m);
-        addLink(holder.id, id, "spends", amount);
-      } else {
-        addTx(t, txColor);
-        addLink(holder.id, txNode(t.id), "spends", amount);
+        node.weightMinor += part.amountMinor; // refunds take away
+        if (!node.transactionIds.includes(t.id)) node.transactionIds.push(t.id);
+        nodes.set(id, node);
+        return node;
+      };
+      const node = clusterOf(cluster, part.categoryName ?? "Uncategorized", color);
+      addLink(account, cluster, "spends", partAmount);
+      // A subcategory gets its own cluster under the category's, holding its transactions.
+      let holder = node;
+      let txColor = color;
+      if (part.subcategoryId != null) {
+        const sub = subclusterNode(owner, part.subcategoryId);
+        txColor = part.subcategoryColor ?? color;
+        holder = clusterOf(sub, part.subcategoryName ?? "Subcategory", txColor);
+        addLink(cluster, sub, "spends", partAmount);
+      }
+      if (holder.open) {
+        if (options.groupMerchants) {
+          // One node per merchant (a merchant group counts as one) in the open group.
+          const name = t.merchantGroup ?? t.merchant;
+          const id = merchantNode(holder.id, name);
+          const m = nodes.get(id) ?? {
+            id,
+            kind: "transaction" as const,
+            label: name,
+            color: txColor,
+            weightMinor: 0,
+            transactionIds: [],
+            ...(typeof owner === "number" ? { accountId: owner } : {}),
+          };
+          m.weightMinor += partAmount;
+          if (!m.transactionIds.includes(t.id)) m.transactionIds.push(t.id);
+          nodes.set(id, m);
+          addLink(holder.id, id, "spends", partAmount);
+        } else {
+          // One node for the transaction, linked from every category it is split across.
+          if (!nodes.has(txNode(t.id))) addTx(t, txColor);
+          addLink(holder.id, txNode(t.id), "spends", partAmount);
+        }
       }
     }
   }
