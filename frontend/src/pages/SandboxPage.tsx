@@ -20,6 +20,7 @@ import {
   NODE_DEFS,
   nodeDef,
   takeHomeTemplate,
+  withAutofill,
   wouldLoop,
   type DataValues,
   type Graph,
@@ -636,7 +637,11 @@ function NodeBox({
             key={p.key}
             def={p}
             value={node.params[p.key]}
-            onChange={(v) => onChange({ params: { ...node.params, [p.key]: v } })}
+            onChange={(v) =>
+              onChange({
+                params: withAutofill(node.kind, node.params, { ...node.params, [p.key]: v }),
+              })
+            }
           />
         ))}
 

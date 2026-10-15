@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { evaluate, newNode, takeHomeTemplate, toYearly, wouldLoop, type Graph } from "./graph";
+import {
+  evaluate,
+  newNode,
+  takeHomeTemplate,
+  toYearly,
+  withAutofill,
+  wouldLoop,
+  type Graph,
+} from "./graph";
 import { stateTax } from "./dmvTaxes";
 import { federalIncomeTax, payrollTax } from "./taxes";
 
@@ -70,13 +78,21 @@ describe("the sandbox graph", () => {
     const pay = newNode("income", "pay", 0, 0);
     pay.params = { amount: 100_000, period: "yearly", hours: 40 };
     const md = newNode("state_tax", "md", 0, 0);
-    md.params = { ...md.params, state: "MD", status: "single" };
+    md.params = withAutofill("state_tax", md.params, {
+      ...md.params,
+      state: "MD",
+      status: "single",
+    });
     const county = newNode("local_tax", "county", 0, 0);
     county.params = { ...county.params, place: "montgomery", status: "single" };
+    // Settings change as on the page: what they imply is filled in (or cleared) as well.
+    const set = (node: ReturnType<typeof newNode>, change: Record<string, string | number>) => {
+      node.params = withAutofill("state_tax", node.params, { ...node.params, ...change });
+    };
     const flat = newNode("state_tax", "flat", 0, 0);
-    flat.params = { ...flat.params, state: "custom_flat", rate: 5, deduction: "10000" };
+    set(flat, { state: "custom_flat", rate: 5, deduction: "10000" });
     const own = newNode("state_tax", "own", 0, 0);
-    own.params = { ...own.params, state: "custom_brackets", brackets: "0 1, 50000 2" };
+    set(own, { state: "custom_brackets", brackets: "0 1, 50000 2" });
     const r = evaluate({
       nodes: [pay, md, county, flat, own],
       wires: ["md", "county", "flat", "own"].map((id, n) =>
@@ -94,7 +110,11 @@ describe("the sandbox graph", () => {
   it("explains brackets it cannot read, and old places that are gone", () => {
     const pay = newNode("income", "pay", 0, 0);
     const bad = newNode("state_tax", "bad", 0, 0);
-    bad.params = { ...bad.params, state: "custom_brackets", brackets: "lots" };
+    bad.params = withAutofill("state_tax", bad.params, {
+      ...bad.params,
+      state: "custom_brackets",
+      brackets: "lots",
+    });
     const old = newNode("state_tax", "old", 0, 0);
     old.params = { ...old.params, state: "CA" };
     const r = evaluate({
@@ -130,6 +150,40 @@ describe("the sandbox graph", () => {
     expect(evaluate({ nodes: [arlington], wires: [] }).outputs["a"]).toEqual({
       total: 250,
       relief: 250,
+    });
+  });
+
+  it("fills in a state's official deduction and brackets, keeping the user's own", () => {
+    const node = newNode("state_tax", "s", 0, 0);
+    // A new node starts in Virginia, already filled in.
+    expect(node.params).toMatchObject({
+      state: "VA",
+      deduction: "8750",
+      brackets: "0 2, 3000 3, 5000 5, 17000 5.75",
+    });
+    // Choosing Maryland swaps in Maryland's; married filing jointly then takes its own.
+    const md = withAutofill("state_tax", node.params, { ...node.params, state: "MD" });
+    expect(md["deduction"]).toBe("3350");
+    expect(String(md["brackets"])).toMatch(/^0 2, 1000 3/);
+    const married = withAutofill("state_tax", md, { ...md, status: "married_joint" });
+    expect(married["deduction"]).toBe("6700");
+    expect(String(married["brackets"])).toMatch(/150000 5,/);
+    // A deduction the user typed stays when the state changes; untouched brackets still update.
+    const typed = { ...md, deduction: "5000" };
+    const dc = withAutofill("state_tax", typed, { ...typed, state: "DC" });
+    expect(dc["deduction"]).toBe("5000");
+    expect(String(dc["brackets"])).toMatch(/^0 4, 10000 6/);
+    // Filled-in figures give the same tax as the official ones.
+    const filled = evaluate({ nodes: [{ ...node, params: md }], wires: [] });
+    expect(filled.errors["s"]).toBeUndefined();
+    // Your own rate starts from blank boxes, but keeps a deduction you typed.
+    expect(withAutofill("state_tax", md, { ...md, state: "custom_flat" })).toMatchObject({
+      deduction: "",
+      brackets: "",
+    });
+    expect(withAutofill("state_tax", typed, { ...typed, state: "custom_flat" })).toMatchObject({
+      deduction: "5000",
+      brackets: "",
     });
   });
 

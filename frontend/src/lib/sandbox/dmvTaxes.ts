@@ -155,6 +155,23 @@ export function stateTax(
   };
 }
 
+/**
+ * A state's official standard deduction and brackets for a filing status and year, as the node
+ * shows them (married filing jointly has its own; the others use the single figures).
+ */
+export function officialStateFigures(
+  code: StateCode,
+  status: FilingStatus,
+  year: TaxYear,
+): { standardDeduction: number; brackets: Brackets } {
+  const rules = rulesFor(code, year);
+  const married = status === "married_joint";
+  return {
+    standardDeduction: married ? rules.standardDeduction.married : rules.standardDeduction.single,
+    brackets: married ? rules.married : rules.single,
+  };
+}
+
 // ---- Maryland county income tax ----------------------------------------------------------------
 
 export interface MarylandCounty {

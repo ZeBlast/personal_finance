@@ -1,8 +1,9 @@
-import { bracketTax, parseBrackets } from "./brackets";
+import { bracketTax, formatBrackets, parseBrackets } from "./brackets";
 import {
   DMV_TAX_YEARS,
   MARYLAND_COUNTIES,
   marylandLocalTax,
+  officialStateFigures,
   STATE_CHOICES,
   stateTax,
   VIRGINIA_VEHICLE_LOCALITIES,
@@ -86,6 +87,41 @@ interface NodeDef {
     params: Record<string, ParamValue>,
     ctx: Ctx,
   ) => Record<string, number>;
+  /**
+   * After a setting changes (`after`, from `before`), other settings it fills in: such as a
+   * state's official deduction and brackets once the state is chosen.
+   */
+  autofill?: (
+    before: Record<string, ParamValue>,
+    after: Record<string, ParamValue>,
+  ) => Record<string, ParamValue>;
+}
+
+/** The official deduction and brackets the state tax node shows for its settings, or null. */
+function stateFigureText(
+  p: Record<string, ParamValue>,
+): { deduction: string; brackets: string } | null {
+  const state = String(p["state"] ?? "");
+  if (!isStateCode(state)) return null;
+  const f = officialStateFigures(
+    state,
+    String(p["status"] ?? "single") as FilingStatus,
+    dmvYear(p),
+  );
+  return { deduction: String(f.standardDeduction), brackets: formatBrackets(f.brackets) };
+}
+
+/**
+ * A node's settings after one changed, with what that fills in (see NodeDef.autofill). Pure, so
+ * it can be tested; the page applies it as the user edits.
+ */
+export function withAutofill(
+  kind: NodeKind,
+  before: Record<string, ParamValue>,
+  after: Record<string, ParamValue>,
+): Record<string, ParamValue> {
+  const fill = nodeDef(kind).autofill?.(before, after) ?? {};
+  return { ...after, ...fill };
 }
 
 export const PERIODS: Array<{ value: string; label: string; perYear: number }> = [
@@ -426,18 +462,36 @@ export const NODE_DEFS = {
       statusParam,
       {
         key: "deduction",
-        label: "Standard deduction (blank = official)",
+        label: "Standard deduction (filled in for the state; blank = official)",
         type: "text",
         default: "",
       },
       { key: "rate", label: "Flat rate (my own)", type: "percent", default: 5 },
       {
         key: "brackets",
-        label: "Brackets: from %, … (my own, or to replace the state's)",
+        label: "Brackets: from %, … (filled in for the state; change them to use your own)",
         type: "text",
         default: "",
       },
     ],
+    // Choosing Maryland, DC or Virginia (or changing the filing status or year) fills in that
+    // state's official deduction and brackets, unless the user had typed their own there.
+    autofill: (before, after) => {
+      const next = stateFigureText(after);
+      const previous = stateFigureText(before);
+      const untouched = (key: "deduction" | "brackets") => {
+        const value = String(before[key] ?? "").trim();
+        return value === "" || (previous !== null && value === previous[key]);
+      };
+      const fill: Record<string, ParamValue> = {};
+      for (const key of ["deduction", "brackets"] as const) {
+        // Never over what this change itself typed in that box, nor over the user's own figures.
+        if (after[key] !== before[key] || !untouched(key)) continue;
+        // Your own rate or brackets start from blank, not from the state's figures.
+        fill[key] = next ? next[key] : "";
+      }
+      return fill;
+    },
     compute: (i, p) => {
       const gross = sum(i["income"]);
       const income = gross - sum(i["pretax"]);
@@ -602,7 +656,8 @@ export const nodeDef = (kind: NodeKind): NodeDef => NODE_DEFS[kind] as NodeDef;
 export function newNode(kind: NodeKind, id: string, x: number, y: number): SandboxNode {
   const params: Record<string, ParamValue> = {};
   for (const p of nodeDef(kind).params) params[p.key] = p.default;
-  return { id, kind, x, y, params };
+  // Starting settings fill in what they imply (a state tax node starts with its state's figures).
+  return { id, kind, x, y, params: withAutofill(kind, params, params) };
 }
 
 export interface Evaluation {
