@@ -653,6 +653,25 @@ export const NODE_DEFS = {
 export type NodeKind = keyof typeof NODE_DEFS;
 export const nodeDef = (kind: NodeKind): NodeDef => NODE_DEFS[kind] as NodeDef;
 
+/** The canvas grid: the dots are this many units apart, and nodes snap to them. */
+export const GRID = 24;
+
+/** A position on the nearest grid dot. Pure. */
+export const snapToGrid = (n: number): number => Math.round(n / GRID) * GRID;
+
+/** Spending (an expense, or spending from your data) shows in yellow; other money in green. */
+export function isSpendingNode(node: Pick<SandboxNode, "kind" | "params">): boolean {
+  return node.kind === "expense" || (node.kind === "data" && node.params["source"] === "spending");
+}
+
+/** A node's colour: its group's, or yellow for spending. Pure. */
+export function nodeAccent(node: Pick<SandboxNode, "kind" | "params">): string {
+  if (isSpendingNode(node)) return "#eab308";
+  return { Money: "#16a34a", Math: "#64748b", Taxes: "#dc2626", Results: "#2563eb" }[
+    nodeDef(node.kind).group
+  ];
+}
+
 export function newNode(kind: NodeKind, id: string, x: number, y: number): SandboxNode {
   const params: Record<string, ParamValue> = {};
   for (const p of nodeDef(kind).params) params[p.key] = p.default;

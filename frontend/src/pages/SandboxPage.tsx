@@ -16,9 +16,12 @@ import { VIRGINIA_VEHICLE_LOCALITIES } from "../lib/sandbox/dmvTaxes";
 import {
   evaluate,
   newId,
+  isSpendingNode,
   newNode,
   NODE_DEFS,
+  nodeAccent,
   nodeDef,
+  snapToGrid,
   takeHomeTemplate,
   withAutofill,
   wouldLoop,
@@ -133,7 +136,11 @@ function MathSandbox() {
     const id = newId("n");
     update((g) => ({
       ...g,
-      nodes: [...g.nodes, newNode(kind, id, cx + Math.random() * 40, cy + Math.random() * 40)],
+      // On a grid dot near the middle (a little apart, so new nodes don't sit exactly on top).
+      nodes: [
+        ...g.nodes,
+        newNode(kind, id, snapToGrid(cx + Math.random() * 72), snapToGrid(cy + Math.random() * 72)),
+      ],
     }));
     setSelected({ kind: "node", id });
   };
@@ -170,8 +177,9 @@ function MathSandbox() {
           <h1 className="text-2xl font-semibold">Sandbox</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Try out ideas: add nodes on the left, drag from an output (right side) to an input (left
-            side) to wire them. Drag the background to move around, scroll to zoom, Delete removes
-            what is selected. Money is yearly.
+            side) to wire them. Nodes snap to the grid as you drag them (hold Alt to place one
+            freely). Drag the background to move around, scroll to zoom, Delete removes what is
+            selected. Money is yearly; spending is yellow.
           </p>
         </div>
         <div className="flex items-center gap-2 text-sm">
@@ -380,20 +388,22 @@ function Canvas({
     e.stopPropagation();
     setSelected({ kind: "node", id: node.id });
     const start = { x: e.clientX, y: e.clientY, nx: node.x, ny: node.y };
-    track((m) =>
+    track((m) => {
+      // Nodes snap to the grid's dots; holding Alt places one freely.
+      const place = (v: number) => (m.altKey ? v : snapToGrid(v));
       update((g) => ({
         ...g,
         nodes: g.nodes.map((n) =>
           n.id === node.id
             ? {
                 ...n,
-                x: start.nx + (m.clientX - start.x) / view.zoom,
-                y: start.ny + (m.clientY - start.y) / view.zoom,
+                x: place(start.nx + (m.clientX - start.x) / view.zoom),
+                y: place(start.ny + (m.clientY - start.y) / view.zoom),
               }
             : n,
         ),
-      })),
-    );
+      }));
+    });
   };
 
   const wireStart = (e: ReactPointerEvent, node: string, port: string): void => {
@@ -572,9 +582,9 @@ function NodeBox({
 }) {
   const def = nodeDef(node.kind);
   const [renaming, setRenaming] = useState(false);
-  const accent = { Money: "#16a34a", Math: "#64748b", Taxes: "#dc2626", Results: "#2563eb" }[
-    def.group
-  ];
+  const accent = nodeAccent(node);
+  // Yellow (spending) takes dark text in its title bar so it stays readable.
+  const darkText = isSpendingNode(node);
   return (
     <div
       className={`pointer-events-auto absolute rounded-lg border bg-white text-xs shadow-md dark:bg-slate-900 ${
@@ -589,7 +599,9 @@ function NodeBox({
     >
       <div
         onPointerDown={onDrag}
-        className="flex cursor-move items-center justify-between gap-1 rounded-t-lg px-2 py-1.5 text-white"
+        className={`flex cursor-move items-center justify-between gap-1 rounded-t-lg px-2 py-1.5 ${
+          darkText ? "text-slate-900" : "text-white"
+        }`}
         style={{ backgroundColor: accent }}
         title={def.description}
       >
@@ -608,7 +620,9 @@ function NodeBox({
               if (e.key === "Enter") e.currentTarget.blur();
               if (e.key === "Escape") setRenaming(false);
             }}
-            className="w-full min-w-0 rounded bg-white/20 px-1 font-semibold text-white outline-none"
+            className={`w-full min-w-0 rounded bg-white/20 px-1 font-semibold outline-none ${
+              darkText ? "text-slate-900" : "text-white"
+            }`}
           />
         ) : (
           <span
@@ -625,7 +639,9 @@ function NodeBox({
           aria-label={`Remove ${node.title ?? def.label}`}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onRemove}
-          className="px-1 text-white/80 hover:text-white"
+          className={`px-1 ${
+            darkText ? "text-slate-900/70 hover:text-slate-900" : "text-white/80 hover:text-white"
+          }`}
         >
           ✕
         </button>

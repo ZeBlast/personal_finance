@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   evaluate,
   newNode,
+  nodeAccent,
+  snapToGrid,
   takeHomeTemplate,
   toYearly,
   withAutofill,
@@ -185,6 +187,19 @@ describe("the sandbox graph", () => {
       deduction: "5000",
       brackets: "",
     });
+  });
+
+  it("snaps to the grid, and shows spending in yellow", () => {
+    expect(snapToGrid(37)).toBe(48);
+    expect(snapToGrid(-13)).toBe(-24);
+    expect(snapToGrid(48)).toBe(48);
+    const expense = newNode("expense", "e", 0, 0);
+    const income = newNode("income", "i", 0, 0);
+    const data = newNode("data", "d", 0, 0);
+    expect(nodeAccent(expense)).toBe("#eab308");
+    expect(nodeAccent(data)).toBe("#eab308"); // "From my data" starts on spending
+    expect(nodeAccent({ ...data, params: { ...data.params, source: "income" } })).toBe("#16a34a");
+    expect(nodeAccent(income)).toBe("#16a34a");
   });
 
   it("works out FICA and FERS from pay", () => {
