@@ -61,6 +61,8 @@ export interface FlowNode {
     /** Vehicle tax. */
     locality?: string;
     vehicleValue?: number;
+    /** The relief percent from the bill, for a locality whose relief was not confirmed. */
+    vehicleRelief?: number;
     /** A flat rate (percent) instead of the official figures, for state or local tax. */
     customRate?: number | null;
     /** The "custom" tax type. */
@@ -158,7 +160,7 @@ export function taxFor(node: FlowNode, income: number, pretax: number, ficaExemp
       return virginiaVehicleTax({
         value: t.vehicleValue ?? 0,
         ratePer100: t.customRate ?? place?.ratePer100 ?? 0,
-        reliefPercent: place?.reliefPercent ?? 0,
+        reliefPercent: place?.reliefPercent ?? t.vehicleRelief ?? 0,
         exemptUpTo: place?.exemptUpTo ?? 0,
       }).total;
     }
@@ -320,7 +322,7 @@ export function defaultFlow(): FlowGraph {
       node({
         id: "fica",
         kind: "tax",
-        label: "Social Security & Medicare",
+        label: "FICA (Social Security & Medicare)",
         x: 408,
         y: 288,
         tax: { type: "fica" },

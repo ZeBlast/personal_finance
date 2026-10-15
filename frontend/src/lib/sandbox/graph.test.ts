@@ -117,6 +117,38 @@ describe("the sandbox graph", () => {
     });
   });
 
+  it("uses Loudoun's 2026 relief, and the user's relief where a locality's is not confirmed", () => {
+    const loudoun = newNode("vehicle_tax", "l", 0, 0);
+    loudoun.params = { ...loudoun.params, locality: "loudoun", value: 20_000, fees: 0 };
+    // $3.09 per $100 on $20,000 is $618; 41% relief takes off $253.38.
+    expect(evaluate({ nodes: [loudoun], wires: [] }).outputs["l"]).toEqual({
+      total: 364.62,
+      relief: 253.38,
+    });
+    const arlington = newNode("vehicle_tax", "a", 0, 0);
+    arlington.params = { ...arlington.params, locality: "arlington", value: 10_000, relief: 50 };
+    expect(evaluate({ nodes: [arlington], wires: [] }).outputs["a"]).toEqual({
+      total: 250,
+      relief: 250,
+    });
+  });
+
+  it("works out FICA and FERS from pay", () => {
+    const pay = newNode("income", "pay", 0, 0);
+    pay.params = { amount: 100_000, period: "yearly", hours: 40 };
+    const fica = newNode("payroll_tax", "fica", 0, 0);
+    const fers = newNode("fers", "fers", 0, 0);
+    const r = evaluate({
+      nodes: [pay, fica, fers],
+      wires: [
+        wire("1", "pay", "yearly", "fica", "wages"),
+        wire("2", "pay", "yearly", "fers", "pay"),
+      ],
+    });
+    expect(r.outputs["fica"]).toMatchObject({ total: 7_650, additional: 0, effective: 0.0765 });
+    expect(r.outputs["fers"]).toEqual({ contribution: 4_400, rest: 95_600 });
+  });
+
   it("uses figures from the user's data", () => {
     const n = newNode("data", "s", 0, 0);
     n.params = { source: "spending", months: "6" };

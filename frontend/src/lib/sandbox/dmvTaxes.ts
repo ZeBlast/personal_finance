@@ -264,8 +264,11 @@ export interface VehicleLocality {
   name: string;
   /** Dollars per $100 of assessed value. */
   ratePer100: number;
-  /** The state's relief (PPTRA) on the first $20,000 of value, as a percent of the tax. */
-  reliefPercent: number;
+  /**
+   * The state's relief (PPTRA) on the first $20,000 of value, as a percent of the tax; null when
+   * it was not confirmed, so the user's own figure (from their bill) is used.
+   */
+  reliefPercent: number | null;
   /** Vehicles valued at or below this owe nothing (0 for none). */
   exemptUpTo: number;
   source: string;
@@ -292,9 +295,61 @@ export const VIRGINIA_VEHICLE_LOCALITIES: VehicleLocality[] = [
     id: "loudoun",
     name: "Loudoun County",
     ratePer100: 3.09,
-    reliefPercent: 0,
+    reliefPercent: 41,
     exemptUpTo: 0,
-    source: "Loudoun Board of Supervisors, tax year 2026 rate (relief % not confirmed: enter it)",
+    source: "Loudoun County, Property Tax Rates 2026 (vehicle rate $3.09, relief 41%)",
+  },
+  // Rates below are each locality's personal property rate from the Virginia Department of
+  // Taxation's local tax survey (tax year 2025), as reported by tax-rate sites; the relief
+  // percentage was not confirmed for 2026, so the node uses the one the user enters from a bill.
+  {
+    id: "arlington",
+    name: "Arlington County (relief not confirmed)",
+    ratePer100: 5.0,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source:
+      "Arlington County $5.00 per $100; its relief is tiered, so enter the share from your bill",
+  },
+  {
+    id: "alexandria",
+    name: "City of Alexandria (relief not confirmed)",
+    ratePer100: 5.33,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source: "City of Alexandria car tax page, $5.33 per $100",
+  },
+  {
+    id: "fairfax_city",
+    name: "City of Fairfax (relief not confirmed)",
+    ratePer100: 4.13,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source: "Virginia Department of Taxation survey, tax year 2025, $4.13 per $100",
+  },
+  {
+    id: "falls_church",
+    name: "City of Falls Church (relief not confirmed)",
+    ratePer100: 5.0,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source: "Virginia Department of Taxation survey, tax year 2025, $5.00 per $100",
+  },
+  {
+    id: "manassas",
+    name: "City of Manassas (relief not confirmed)",
+    ratePer100: 3.6,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source: "Virginia Department of Taxation survey, tax year 2025, $3.60 per $100",
+  },
+  {
+    id: "manassas_park",
+    name: "City of Manassas Park (relief not confirmed)",
+    ratePer100: 3.5,
+    reliefPercent: null,
+    exemptUpTo: 0,
+    source: "Virginia Department of Taxation survey, tax year 2025, $3.50 per $100",
   },
 ];
 

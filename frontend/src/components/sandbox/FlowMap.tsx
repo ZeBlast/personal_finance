@@ -767,6 +767,18 @@ function NodeEditor({
                   className={field}
                 />
               </label>
+              {VIRGINIA_VEHICLE_LOCALITIES.find((l) => l.id === (tax.locality ?? "fairfax_county"))
+                ?.reliefPercent === null && (
+                <label className="block">
+                  State relief on the first $20,000 (%, from your bill)
+                  <input
+                    type="number"
+                    value={tax.vehicleRelief ?? 0}
+                    onChange={(e) => setTax({ vehicleRelief: Number(e.target.value) })}
+                    className={field}
+                  />
+                </label>
+              )}
             </>
           )}
           {tax.type === "custom" && (

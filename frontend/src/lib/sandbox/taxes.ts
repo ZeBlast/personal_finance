@@ -98,20 +98,42 @@ export function federalIncomeTax(
 
 export interface PayrollTax {
   socialSecurity: number;
+  /** All Medicare: the 1.45% plus any additional 0.9%. */
   medicare: number;
+  /** The additional 0.9% Medicare on wages above the threshold (part of `medicare`). */
+  additionalMedicare: number;
   total: number;
 }
 
-/** Social Security and Medicare withheld from a year's wages (the employee's share). */
+/** Social Security and Medicare (FICA) withheld from a year's wages (the employee's share). */
 export function payrollTax(wages: number, status: FilingStatus, year: TaxYear): PayrollTax {
   const w = Math.max(0, wages);
   const socialSecurity = Math.min(w, SOCIAL_SECURITY_WAGE_BASE[year]) * SOCIAL_SECURITY_RATE;
-  const medicare =
-    w * MEDICARE_RATE +
-    Math.max(0, w - ADDITIONAL_MEDICARE_FROM[status]) * ADDITIONAL_MEDICARE_RATE;
+  const additional = Math.max(0, w - ADDITIONAL_MEDICARE_FROM[status]) * ADDITIONAL_MEDICARE_RATE;
+  const medicare = w * MEDICARE_RATE + additional;
   return {
     socialSecurity: round2(socialSecurity),
     medicare: round2(medicare),
+    additionalMedicare: round2(additional),
     total: round2(socialSecurity + medicare),
   };
+}
+
+/**
+ * FERS: the retirement contribution withheld from a federal employee's basic pay. The rate depends
+ * on when the employee was first hired (and is higher for law enforcement officers, firefighters
+ * and air traffic controllers). The contribution is not pre-tax: it still counts as taxable income.
+ */
+export const FERS_PLANS: Array<{ value: string; label: string; rate: number }> = [
+  { value: "fers", label: "FERS (hired before 2013): 0.8%", rate: 0.008 },
+  { value: "fers_rae", label: "FERS-RAE (hired in 2013): 3.1%", rate: 0.031 },
+  { value: "fers_frae", label: "FERS-FRAE (hired 2014 or later): 4.4%", rate: 0.044 },
+  { value: "fers_special", label: "FERS, special category (before 2013): 1.3%", rate: 0.013 },
+  { value: "fers_rae_special", label: "FERS-RAE, special category: 3.6%", rate: 0.036 },
+  { value: "fers_frae_special", label: "FERS-FRAE, special category: 4.9%", rate: 0.049 },
+];
+
+/** The FERS contribution on a year's basic pay at `rate` (0-1). */
+export function fersContribution(basicPay: number, rate: number): number {
+  return round2(Math.max(0, basicPay) * Math.max(0, rate));
 }

@@ -12,6 +12,8 @@ import {
 } from "./dmvTaxes";
 import {
   federalIncomeTax,
+  FERS_PLANS,
+  fersContribution,
   FILING_STATUSES,
   payrollTax,
   TAX_YEARS,
@@ -338,20 +340,59 @@ export const NODE_DEFS = {
     },
   },
   payroll_tax: {
-    label: "Social Security & Medicare",
+    label: "FICA (Social Security & Medicare)",
     group: "Taxes",
     description:
-      "The employee's share of FICA: 6.2% Social Security up to the wage base, 1.45% Medicare.",
+      "The employee's share of FICA: 6.2% Social Security up to the wage base, 1.45% Medicare, and the additional 0.9% Medicare on wages above $200,000 ($250,000 married filing jointly).",
     inputs: [{ id: "wages", label: "Wages" }],
     outputs: [
       { id: "total", label: "Total", format: "money" },
       { id: "ss", label: "Social Security", format: "money" },
       { id: "medicare", label: "Medicare", format: "money" },
+      { id: "additional", label: "Additional Medicare", format: "money" },
+      { id: "effective", label: "Effective rate", format: "percent" },
     ],
     params: [statusParam, yearParam],
     compute: (i, p) => {
-      const t = payrollTax(sum(i["wages"]), String(p["status"]) as FilingStatus, federalYear(p));
-      return { total: t.total, ss: t.socialSecurity, medicare: t.medicare };
+      const wages = sum(i["wages"]);
+      const t = payrollTax(wages, String(p["status"]) as FilingStatus, federalYear(p));
+      return {
+        total: t.total,
+        ss: t.socialSecurity,
+        medicare: t.medicare,
+        additional: t.additionalMedicare,
+        effective: wages > 0 ? t.total / wages : 0,
+      };
+    },
+  },
+  fers: {
+    label: "FERS retirement",
+    group: "Taxes",
+    description:
+      "A federal employee's FERS retirement contribution, withheld from basic pay: 0.8%, 3.1% or 4.4% by when you were first hired (higher for law enforcement, firefighters and air traffic controllers), or your own rate. It is not pre-tax: income tax is still worked out on the full pay.",
+    inputs: [{ id: "pay", label: "Basic pay" }],
+    outputs: [
+      { id: "contribution", label: "Contribution", format: "money" },
+      { id: "rest", label: "Pay after FERS", format: "money" },
+    ],
+    params: [
+      {
+        key: "plan",
+        label: "Plan",
+        type: "select",
+        options: [
+          ...FERS_PLANS.map((f) => ({ value: f.value, label: f.label })),
+          { value: "custom", label: "My own rate" },
+        ],
+        default: "fers_frae",
+      },
+      { key: "rate", label: "Rate (my own)", type: "percent", default: 4.4 },
+    ],
+    compute: (i, p) => {
+      const pay = sum(i["pay"]);
+      const plan = FERS_PLANS.find((f) => f.value === String(p["plan"]));
+      const contribution = fersContribution(pay, plan ? plan.rate : num(p["rate"]) / 100);
+      return { contribution, rest: pay - contribution };
     },
   },
   state_tax: {
@@ -523,7 +564,12 @@ export const NODE_DEFS = {
       },
       { key: "value", label: "Vehicle value", type: "money", default: 20_000 },
       { key: "rate", label: "Rate per $100 (my own)", type: "number", default: 4 },
-      { key: "relief", label: "Relief on first $20,000 (my own)", type: "percent", default: 0 },
+      {
+        key: "relief",
+        label: "Relief on first $20,000 (my own, or where not confirmed)",
+        type: "percent",
+        default: 0,
+      },
       { key: "fees", label: "Yearly fees", type: "money", default: 0 },
     ],
     compute: (_i, p) => {
@@ -531,7 +577,8 @@ export const NODE_DEFS = {
       const t = virginiaVehicleTax({
         value: num(p["value"]),
         ratePer100: locality ? locality.ratePer100 : num(p["rate"]),
-        reliefPercent: locality ? locality.reliefPercent : num(p["relief"]),
+        // A locality whose relief was not confirmed uses the one entered from the bill.
+        reliefPercent: locality?.reliefPercent ?? num(p["relief"]),
         exemptUpTo: locality?.exemptUpTo ?? 0,
         yearlyFees: num(p["fees"]),
       });

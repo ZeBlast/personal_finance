@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { federalIncomeTax, payrollTax, STANDARD_DEDUCTION } from "./taxes";
+import {
+  federalIncomeTax,
+  FERS_PLANS,
+  fersContribution,
+  payrollTax,
+  STANDARD_DEDUCTION,
+} from "./taxes";
 
 describe("federal income tax", () => {
   it("applies the standard deduction and the brackets (2026, single)", () => {
@@ -36,6 +42,7 @@ describe("payroll tax", () => {
     expect(payrollTax(100_000, "single", 2026)).toEqual({
       socialSecurity: 6_200,
       medicare: 1_450,
+      additionalMedicare: 0,
       total: 7_650,
     });
   });
@@ -44,6 +51,17 @@ describe("payroll tax", () => {
     const p = payrollTax(300_000, "single", 2026);
     expect(p.socialSecurity).toBe(round(184_500 * 0.062));
     expect(p.medicare).toBe(round(300_000 * 0.0145 + 100_000 * 0.009));
+    expect(p.additionalMedicare).toBe(900);
+  });
+});
+
+describe("FERS", () => {
+  it("withholds the plan's share of basic pay", () => {
+    const rate = (v: string) => FERS_PLANS.find((f) => f.value === v)!.rate;
+    expect(fersContribution(100_000, rate("fers"))).toBe(800);
+    expect(fersContribution(100_000, rate("fers_rae"))).toBe(3_100);
+    expect(fersContribution(100_000, rate("fers_frae"))).toBe(4_400);
+    expect(fersContribution(-5, 0.044)).toBe(0);
   });
 });
 
