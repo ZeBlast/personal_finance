@@ -5,22 +5,28 @@ import { buildAllocations, type AllocationRow, type TspFund } from "../../lib/ts
 import { Modal } from "../common/Modal";
 import { AllocationEditor } from "./AllocationEditor";
 import { buttonClass, inputClass, primaryClass } from "./styles";
+import { importTspActivity } from "./tspActivity";
 
 /**
  * Creates a Thrift Savings Plan account kept by hand, with the split of future contributions between
- * funds. What it already holds is entered afterwards (Edit holdings), and a recurring contribution
- * is set up on the account itself.
+ * funds, and (optionally) its past activity from the TSP's Investment Activity Detail file. What it
+ * already holds can also be entered afterwards (Edit holdings), and a recurring contribution is set
+ * up on the account itself.
  */
 export function TspAccountDialog({
   onCreated,
   onCancel,
 }: {
-  onCreated: (id: number) => void;
+  /** With a note on the activity file, when one was imported (or could not be). */
+  onCreated: (id: number, note?: string) => void;
   onCancel: () => void;
 }) {
   const funds = useApi<TspFund[]>("/tsp/funds");
   const [name, setName] = useState("TSP");
   const [rows, setRows] = useState<AllocationRow[]>([{ symbol: "TSP-C", percent: "100" }]);
+  const [activity, setActivity] = useState<File | null>(null);
+  // A new account holds nothing yet, so the file's units are what it holds.
+  const [updateHoldings, setUpdateHoldings] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,7 +48,19 @@ export function TspAccountDialog({
         method: "POST",
         body: JSON.stringify({ name: name.trim(), allocations: built.allocations }),
       });
-      onCreated(created.id);
+      let note: string | undefined;
+      if (activity) {
+        // The account exists either way; a file that cannot be read is said so, not lost.
+        try {
+          note = `TSP account created. ${await importTspActivity(created.id, activity, updateHoldings)}`;
+        } catch (e) {
+          note = `TSP account created, but the activity file could not be imported: ${errorMessage(
+            e,
+            "it could not be read",
+          )} Try again from the account's Import TSP activity button.`;
+        }
+      }
+      onCreated(created.id, note);
     } catch (e) {
       setError(errorMessage(e, "Could not create the account."));
       setBusy(false);
@@ -80,6 +98,54 @@ export function TspAccountDialog({
               idPrefix="new-tsp"
             />
           </div>
+        </fieldset>
+        <fieldset className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+          <legend className="px-1 font-medium">Past activity (optional)</legend>
+          <p className="text-slate-600 dark:text-slate-300">
+            The Investment Activity Detail file from tsp.gov records every past contribution with
+            its fund, units and price, as this account&apos;s activity.
+          </p>
+          <label className={`${buttonClass} inline-block cursor-pointer`}>
+            {activity ? "Choose a different file" : "Choose activity file (CSV)"}
+            <input
+              type="file"
+              accept=".csv,text/csv,text/plain"
+              className="sr-only"
+              onChange={(e) => {
+                setActivity(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {activity && (
+            <span className="ml-2 text-slate-600 dark:text-slate-300">
+              {activity.name}{" "}
+              <button
+                type="button"
+                className="text-xs text-slate-500 underline"
+                onClick={() => setActivity(null)}
+              >
+                Remove
+              </button>
+            </span>
+          )}
+          {activity && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={updateHoldings}
+                onChange={(e) => setUpdateHoldings(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                Add the units in this file to what the account holds
+                <span className="block text-xs text-slate-500">
+                  Leave it on unless you will enter today&apos;s holdings yourself, or they would be
+                  counted twice.
+                </span>
+              </span>
+            </label>
+          )}
         </fieldset>
         {error && (
           <p role="alert" className="text-red-600">

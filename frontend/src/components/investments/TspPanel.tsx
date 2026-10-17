@@ -30,6 +30,7 @@ import { ConfirmDialog, Modal } from "../common/Modal";
 import { AllocationEditor } from "./AllocationEditor";
 import { buttonClass, inputClass, primaryClass } from "./styles";
 import { RetirementProjection } from "./RetirementProjection";
+import { importTspActivity } from "./tspActivity";
 import { Select } from "../common/Select";
 
 type Notice = { kind: "info" | "error"; text: string };
@@ -352,44 +353,32 @@ function AllocationSection({
   );
 }
 
-function ActivitySection({
+/**
+ * Importing the TSP's Investment Activity Detail file into an account. Used in the account's TSP
+ * panel and from the account's own Import button.
+ */
+export function ActivitySection({
   accountId,
   busy,
   run,
+  defaultUpdateHoldings = false,
 }: {
   accountId: number;
   busy: boolean;
   run: (work: () => Promise<string | void>, failure: string) => Promise<void>;
+  /** Start with "add the units to the holdings" on (for an account that holds nothing yet). */
+  defaultUpdateHoldings?: boolean;
 }) {
-  const [updateHoldings, setUpdateHoldings] = useState(false);
+  const [updateHoldings, setUpdateHoldings] = useState(defaultUpdateHoldings);
 
   async function importFile(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    await run(async () => {
-      const csv = await file.text();
-      const r = await api<{
-        added: number;
-        alreadyThere: number;
-        skipped: number;
-        from: string | null;
-        to: string | null;
-        holdingsUpdated: boolean;
-      }>(`/accounts/${accountId}/tsp/activity/import`, {
-        method: "POST",
-        body: JSON.stringify({ csv, updateHoldings }),
-      });
-      const range = r.from && r.to ? ` from ${formatDay(r.from)} to ${formatDay(r.to)}` : "";
-      return [
-        `Recorded ${r.added} contribution${r.added === 1 ? "" : "s"}${range}.`,
-        r.alreadyThere > 0 ? `${r.alreadyThere} were already there.` : "",
-        r.skipped > 0 ? `${r.skipped} for unknown funds were skipped.` : "",
-        r.holdingsUpdated ? "The units were added to the holdings." : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-    }, "Could not read that file.");
+    await run(
+      () => importTspActivity(accountId, file, updateHoldings),
+      "Could not read that file.",
+    );
   }
 
   return (

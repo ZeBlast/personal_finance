@@ -14,6 +14,7 @@ import {
 import { buttonClass, primaryClass } from "../components/investments/styles";
 import { TransactionForm } from "../components/investments/TransactionForm";
 import { TspAccountDialog } from "../components/investments/TspAccountDialog";
+import { TspActivityDialog } from "../components/investments/TspActivityDialog";
 import { TspPanel } from "../components/investments/TspPanel";
 import { TSP_SUBTYPE } from "../lib/tsp";
 import { ConnectButton } from "../components/plaid/ConnectButton";
@@ -36,6 +37,7 @@ type Dialog =
   | "holdings"
   | "import-holdings"
   | "import-transactions"
+  | "import-tsp-activity"
   | "transaction"
   | "delete-account"
   | null;
@@ -363,13 +365,24 @@ export function InvestmentsPage() {
               >
                 Add transaction
               </button>
-              <button
-                type="button"
-                className={buttonClass}
-                onClick={() => setDialog("import-transactions")}
-              >
-                Import transactions (CSV)
-              </button>
+              {manualSelected.subtype === TSP_SUBTYPE ? (
+                // A TSP account reads the TSP's own Investment Activity Detail file.
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => setDialog("import-tsp-activity")}
+                >
+                  Import TSP activity (CSV)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => setDialog("import-transactions")}
+                >
+                  Import transactions (CSV)
+                </button>
+              )}
               <button
                 type="button"
                 className={`${buttonClass} ml-auto text-red-700 dark:text-red-400`}
@@ -698,10 +711,11 @@ export function InvestmentsPage() {
 
       {dialog === "new-tsp" && (
         <TspAccountDialog
-          onCreated={(id) => {
+          onCreated={(id, note) => {
             setAccountId(String(id));
             changed(
-              "TSP account created. Enter what it holds with “Edit holdings”, and add a recurring contribution below.",
+              note ??
+                "TSP account created. Import its activity file or enter what it holds with “Edit holdings”, and add a recurring contribution below.",
             );
           }}
           onCancel={() => setDialog(null)}
@@ -729,6 +743,15 @@ export function InvestmentsPage() {
           kind={dialog === "import-holdings" ? "holdings" : "transactions"}
           accountId={manualSelected.id}
           accountName={manualSelected.name}
+          onDone={changed}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog === "import-tsp-activity" && manualSelected && (
+        <TspActivityDialog
+          accountId={manualSelected.id}
+          accountName={manualSelected.name}
+          holdsNothing={manualSelected.valueMinor === 0}
           onDone={changed}
           onCancel={() => setDialog(null)}
         />
