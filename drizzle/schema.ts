@@ -922,6 +922,35 @@ export const sandboxSaves = sqliteTable(
  * A savings goal: a target amount, by a date or open-ended. Progress is the current balance of
  * the accounts linked to it plus an amount the user keeps by hand (money set aside elsewhere).
  */
+/** The user's own labels for transactions ("vacation 2026", "work trip"), across categories. */
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    color: text("color"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("tags_name_unique").on(table.name)],
+);
+
+/** Which transactions carry which tags. */
+export const transactionTags = sqliteTable(
+  "transaction_tags",
+  {
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("transaction_tags_unique").on(table.transactionId, table.tagId),
+    index("transaction_tags_tag_idx").on(table.tagId),
+  ],
+);
+
 export const goals = sqliteTable("goals", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),

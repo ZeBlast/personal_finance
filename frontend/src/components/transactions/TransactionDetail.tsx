@@ -3,6 +3,7 @@ import { api, errorMessage } from "../../api/client";
 import { categoryOptions } from "../../hooks/useCategories";
 import { cashbackBadge, formatRate } from "../../lib/cashback";
 import { Attachments } from "./Attachments";
+import { TagEditor } from "./TagEditor";
 import { formatMinor } from "../../lib/money";
 import { categoryLabel, formatDay } from "../../lib/time";
 import type { Category, Rule, RulePreview, Transaction } from "../../types/api";
@@ -415,6 +416,8 @@ export function TransactionDetail({
             sometimes wrong, and your choice is kept when the account syncs.
           </p>
         </div>
+
+        <TagEditor transactionId={t.id} />
 
         <Attachments transactionId={t.id} />
 

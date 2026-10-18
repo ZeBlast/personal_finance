@@ -21,7 +21,16 @@ import {
   ROLLOVERS,
   updateBudget,
 } from "../services/budget.service.js";
+import { spendingMonitor } from "../services/monitor.service.js";
 import { getSettings } from "../services/settings.service.js";
+import {
+  createTag,
+  deleteTag,
+  listTags,
+  setTransactionTags,
+  transactionTagList,
+  updateTag,
+} from "../services/tag.service.js";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Use YYYY-MM");
@@ -37,6 +46,8 @@ const summaryQuery = z.object({
   /** One bank's accounts (its name), or "manual" for accounts kept by hand. */
   institution: z.string().min(1).max(200).optional(),
   category: z.union([z.literal("none"), z.coerce.number().int().positive()]).optional(),
+  merchant: z.string().max(200).optional(),
+  tagId: z.coerce.number().int().positive().optional(),
   rollupToParent: flag.optional(),
   includeTransfers: flag.optional(),
   includePending: flag.optional(),
@@ -100,6 +111,52 @@ export function analyticsRoutes(db: AppDb): Router {
     );
   });
 
+  /** A spending monitor: this month so far against recent months, narrowed any of four ways. */
+  router.get("/analytics/monitor", (req, res) => {
+    const q = z
+      .object({
+        category: z.coerce.number().int().positive().optional(),
+        accountId: z.coerce.number().int().positive().optional(),
+        merchant: z.string().max(200).optional(),
+        tag: z.string().max(80).optional(),
+        today: date.optional(),
+      })
+      .parse(req.query);
+    res.json(spendingMonitor(db, q, q.today));
+  });
+
+  // ---- Tags ----
+
+  const tagBody = z
+    .object({
+      name: z.string().trim().min(1).max(80),
+      color: z.string().max(20).nullable().optional(),
+    })
+    .strict();
+  router.get("/tags", (_req, res) => {
+    res.json(listTags(db));
+  });
+  router.post("/tags", (req, res) => {
+    res.status(201).json(createTag(db, tagBody.parse(req.body)));
+  });
+  router.put("/tags/:id", (req, res) => {
+    res.json(updateTag(db, idParam.parse(req.params["id"]), tagBody.parse(req.body)));
+  });
+  router.delete("/tags/:id", (req, res) => {
+    deleteTag(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+  router.get("/transactions/:id/tags", (req, res) => {
+    res.json(transactionTagList(db, idParam.parse(req.params["id"])));
+  });
+  router.put("/transactions/:id/tags", (req, res) => {
+    const body = z
+      .object({ tagIds: z.array(z.number().int().positive()).max(50) })
+      .strict()
+      .parse(req.body);
+    res.json(setTransactionTags(db, idParam.parse(req.params["id"]), body.tagIds));
+  });
+
   router.get("/analytics/summary", (req, res) => {
     const q = summaryQuery.parse(req.query);
     res.json(
@@ -110,6 +167,8 @@ export function analyticsRoutes(db: AppDb): Router {
         accountId: q.accountId,
         institution: q.institution,
         category: q.category,
+        merchant: q.merchant,
+        tagId: q.tagId,
         rollupToParent: q.rollupToParent,
         includeTransfers: q.includeTransfers ?? false,
         includePending: q.includePending ?? true,
