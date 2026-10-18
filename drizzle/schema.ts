@@ -253,6 +253,8 @@ export const transactions = sqliteTable(
     index("transactions_account_date_idx").on(table.accountId, table.date),
     index("transactions_pending_id_idx").on(table.pendingPlaidTransactionId),
     index("transactions_category_idx").on(table.categoryId),
+    // transaction_lines looks up each charge's refunds; without this, every lookup scans the table.
+    index("transactions_refund_of_idx").on(table.refundOfId),
   ],
 );
 

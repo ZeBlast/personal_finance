@@ -1,0 +1,1 @@
+CREATE INDEX `transactions_refund_of_idx` ON `transactions` (`refund_of_id`);
