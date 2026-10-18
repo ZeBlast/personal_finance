@@ -874,8 +874,37 @@ export const trackedSubscriptions = sqliteTable("tracked_subscriptions", {
   plannedId: integer("planned_id").references(() => plannedTransactions.id, {
     onDelete: "set null",
   }),
+  /** When a free trial ends and the first real charge comes, `YYYY-MM-DD`. */
+  trialEndsOn: text("trial_ends_on"),
+  /** What its payments' merchant contains, to find them; null uses the found series or the name. */
+  paymentMatch: text("payment_match"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+/** Transactions the user said are not payments of a subscription, though they match it. */
+export const subscriptionPaymentExclusions = sqliteTable(
+  "subscription_payment_exclusions",
+  {
+    subscriptionId: integer("subscription_id")
+      .notNull()
+      .references(() => trackedSubscriptions.id, { onDelete: "cascade" }),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("subscription_payment_exclusions_unique").on(
+      table.subscriptionId,
+      table.transactionId,
+    ),
+  ],
+);
+
+/** Renewal inbox items the user has dealt with: by key, which names the item and its date. */
+export const renewalDismissals = sqliteTable("renewal_dismissals", {
+  key: text("key").primaryKey(),
+  dismissedAt: text("dismissed_at").notNull(),
 });
 
 /** A file attached to a transaction (a receipt, a warranty), kept inside the encrypted database. */

@@ -133,6 +133,10 @@ export interface TrackedSubscriptionInput {
   notes?: string | null | undefined;
   /** A recurring series found in the history this is (see recurring.service). */
   recurringKey?: string | null | undefined;
+  /** When a free trial ends. */
+  trialEndsOn?: string | null | undefined;
+  /** What its payments' merchant contains, to find them in the history. */
+  paymentMatch?: string | null | undefined;
 }
 
 export interface TrackedSubscriptionDto extends Schedule {
@@ -155,6 +159,8 @@ export interface TrackedSubscriptionDto extends Schedule {
   status: "active" | "cancelled";
   cancelledOn: string | null;
   recurringKey: string | null;
+  trialEndsOn: string | null;
+  paymentMatch: string | null;
   /** Its upcoming charges show on the calendar. */
   onCalendar: boolean;
 }
@@ -199,6 +205,9 @@ function check(db: AppDb, input: TrackedSubscriptionInput): void {
       throw new AppError(400, "invalid_term", "Enter how many months it lasts (1 to 120).");
     }
   }
+  if (clean(input.trialEndsOn) && !DAY.test(input.trialEndsOn!.trim())) {
+    throw new AppError(400, "invalid_date", "Choose the day the trial ends.");
+  }
   if (input.accountId) {
     const a = db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, input.accountId));
     if (!a.get()) throw new AppError(400, "unknown_account", "That account does not exist.");
@@ -228,6 +237,8 @@ function columnsOf(input: TrackedSubscriptionInput) {
     username: clean(input.username),
     website: clean(input.website),
     notes: clean(input.notes),
+    trialEndsOn: clean(input.trialEndsOn),
+    paymentMatch: clean(input.paymentMatch),
   };
 }
 
@@ -337,6 +348,8 @@ export function listTrackedSubscriptions(
       status: row.status as "active" | "cancelled",
       cancelledOn: row.cancelledOn,
       recurringKey: row.recurringKey,
+      trialEndsOn: row.trialEndsOn,
+      paymentMatch: row.paymentMatch,
       onCalendar: row.plannedId !== null,
     };
   });

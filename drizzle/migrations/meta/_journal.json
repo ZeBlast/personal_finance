@@ -309,6 +309,13 @@
       "when": 1792343834120,
       "tag": "0043_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1792343835725,
+      "tag": "0044_renewals",
+      "breakpoints": true
     }
   ]
 }
