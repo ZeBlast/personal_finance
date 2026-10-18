@@ -3,6 +3,7 @@ import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, browserTabUrl, errorMessage, insideTauri } from "../api/client";
 import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/api";
 import { Select } from "../components/common/Select";
+import { StatusOverview } from "../components/data/StatusOverview";
 
 const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
   fake: "Built-in sample banks. Nothing leaves your computer and no Plaid account is needed.",
@@ -239,8 +240,9 @@ export function SettingsPage() {
   const tabUrl = browserTabUrl();
 
   return (
-    <section className="max-w-xl space-y-8">
+    <section className="max-w-xl space-y-8 xl:max-w-4xl">
       <h1 className="text-2xl font-semibold">Settings</h1>
+      <StatusOverview />
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}

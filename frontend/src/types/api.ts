@@ -268,6 +268,18 @@ export interface Rule {
 export interface RulePreview {
   matchCount: number;
   sample: Array<{ id: number; date: string; merchant: string; amountMinor: number }>;
+  /** With a category: how many transactions saving the rule would really change. */
+  changeCount?: number;
+  changes?: Array<{
+    id: number;
+    date: string;
+    merchant: string;
+    amountMinor: number;
+    from: string | null;
+    to: string | null;
+  }>;
+  /** Matches whose category was chosen by hand, which rules never change. */
+  manualCount?: number;
 }
 
 export interface ApplyResult {

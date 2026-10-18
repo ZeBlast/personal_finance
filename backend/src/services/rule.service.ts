@@ -418,13 +418,39 @@ export function reorderRules(db: AppDb, orderedIds: number[]): RuleDto[] {
   return listRules(db);
 }
 
+export interface RuleChange {
+  id: number;
+  date: string;
+  merchant: string;
+  amountMinor: number;
+  from: string | null;
+  to: string | null;
+}
+
 export interface RulePreview {
   matchCount: number;
   sample: Array<{ id: number; date: string; merchant: string; amountMinor: number }>;
+  /**
+   * With the rule's category given: what saving it would really change, after the order rules are
+   * tried in and the categories chosen by hand (which rules never change).
+   */
+  changeCount?: number;
+  /** A few of those changes, newest first. */
+  changes?: RuleChange[];
+  /** Matching transactions whose category was chosen by hand, so stay as they are. */
+  manualCount?: number;
 }
 
-/** How many existing transactions a rule would match (any category state), with a few examples. */
-export function previewRule(db: AppDb, rule: RuleLike): RulePreview {
+/**
+ * How many existing transactions a rule would match (any category state), with a few examples.
+ * Given the category it files into (and, when editing, which rule it is), also what saving it
+ * would really change: each transaction's category with the rule in its place among the others
+ * (a new rule goes to the top), compared with what it has now.
+ */
+export function previewRule(
+  db: AppDb,
+  rule: RuleLike & { categoryId?: number | undefined; ruleId?: number | undefined },
+): RulePreview {
   const rows = db
     .select({
       ...subjectColumns,
@@ -432,10 +458,10 @@ export function previewRule(db: AppDb, rule: RuleLike): RulePreview {
     })
     .from(transactions)
     .all();
-  const matches = rows
-    .filter((row) => ruleMatches(rule, toSubject(row)))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
-  return {
+  const newestFirst = (a: { date: string; id: number }, b: { date: string; id: number }) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id;
+  const matches = rows.filter((row) => ruleMatches(rule, toSubject(row))).sort(newestFirst);
+  const preview: RulePreview = {
     matchCount: matches.length,
     sample: matches.slice(0, 5).map((row) => ({
       id: row.id,
@@ -443,5 +469,61 @@ export function previewRule(db: AppDb, rule: RuleLike): RulePreview {
       merchant: toSubject(row).merchant,
       amountMinor: row.amountMinor,
     })),
+  };
+  if (rule.categoryId === undefined) return preview;
+
+  // The rules with this one in its place: replacing itself when edited, on top when new.
+  const others = activeRules(db).filter((r) => r.id !== rule.ruleId);
+  const existing =
+    rule.ruleId === undefined ? undefined : activeRules(db).find((r) => r.id === rule.ruleId);
+  const candidate: RuleRow = {
+    id: rule.ruleId ?? -1,
+    name: "preview",
+    field: rule.field,
+    operator: rule.operator,
+    matchValue: rule.matchValue,
+    direction: rule.direction ?? null,
+    categoryId: rule.categoryId,
+    priority: existing?.priority ?? Math.min(0, ...others.map((r) => r.priority)) - 10,
+    enabled: true,
+  } as RuleRow;
+  const ordered = [...others, candidate].sort((a, b) => a.priority - b.priority || a.id - b.id);
+  const split = getDiningSplit(db);
+  const names = new Map(
+    db
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .all()
+      .map((c) => [c.id, c.name]),
+  );
+  const changes: RuleChange[] = [];
+  let manualCount = 0;
+  for (const row of [...rows].sort(newestFirst)) {
+    const subject = toSubject(row);
+    const touches =
+      ruleMatches(rule, subject) ||
+      (rule.ruleId !== undefined && row.categoryRuleId === rule.ruleId);
+    if (!touches) continue;
+    if (row.categorySource === "manual") {
+      if (ruleMatches(rule, subject)) manualCount += 1;
+      continue;
+    }
+    const match = firstMatch(ordered, subject);
+    const next = splitCategory(split, match?.categoryId ?? null, isOnline(row));
+    if (next === row.categoryId) continue;
+    changes.push({
+      id: row.id,
+      date: row.date,
+      merchant: subject.merchant,
+      amountMinor: row.amountMinor,
+      from: row.categoryId === null ? null : (names.get(row.categoryId) ?? null),
+      to: next === null ? null : (names.get(next) ?? null),
+    });
+  }
+  return {
+    ...preview,
+    changeCount: changes.length,
+    changes: changes.slice(0, 8),
+    manualCount,
   };
 }

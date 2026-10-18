@@ -24,7 +24,7 @@ export function ReportsPage() {
   };
 
   return (
-    <section className="max-w-4xl space-y-4">
+    <section className="@container max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Month report</h1>
@@ -119,62 +119,65 @@ export function ReportsPage() {
             <Card label="Transactions" value={String(data.transactionCount)} />
           </div>
 
-          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-            <h2 className="mb-2 font-semibold">Spending by category</h2>
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-slate-500">
-                <tr>
-                  <th className="py-1 font-medium">Category</th>
-                  <th className="py-1 text-right font-medium">{monthLabel(month)}</th>
-                  <th className="py-1 text-right font-medium">
-                    {monthLabel(shiftMonth(month, -1))}
-                  </th>
-                  <th className="py-1 text-right font-medium">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.categories.map((c) => (
-                  <tr key={c.label} className="border-t border-slate-100 dark:border-slate-800">
-                    <td className="py-1">
-                      <span
-                        aria-hidden="true"
-                        className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: c.color ?? "#94a3b8" }}
-                      />
-                      {c.label}
-                    </td>
-                    <td className="py-1 text-right tabular-nums">{money(c.spendingMinor)}</td>
-                    <td className="py-1 text-right text-slate-500 tabular-nums">
-                      {money(c.previousMinor)}
-                    </td>
-                    <td
-                      className={`py-1 text-right tabular-nums ${c.changeMinor > 0 ? "text-red-600" : c.changeMinor < 0 ? "text-green-700 dark:text-green-400" : ""}`}
-                    >
-                      {c.changeMinor > 0 ? "+" : c.changeMinor < 0 ? "−" : ""}
-                      {money(Math.abs(c.changeMinor))}
-                    </td>
+          {/* Categories and the largest purchases side by side when the page has room. */}
+          <div className="grid items-start gap-4 @min-[60rem]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+            <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+              <h2 className="mb-2 font-semibold">Spending by category</h2>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="py-1 font-medium">Category</th>
+                    <th className="py-1 text-right font-medium">{monthLabel(month)}</th>
+                    <th className="py-1 text-right font-medium">
+                      {monthLabel(shiftMonth(month, -1))}
+                    </th>
+                    <th className="py-1 text-right font-medium">Change</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.categories.map((c) => (
+                    <tr key={c.label} className="border-t border-slate-100 dark:border-slate-800">
+                      <td className="py-1">
+                        <span
+                          aria-hidden="true"
+                          className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: c.color ?? "#94a3b8" }}
+                        />
+                        {c.label}
+                      </td>
+                      <td className="py-1 text-right tabular-nums">{money(c.spendingMinor)}</td>
+                      <td className="py-1 text-right text-slate-500 tabular-nums">
+                        {money(c.previousMinor)}
+                      </td>
+                      <td
+                        className={`py-1 text-right tabular-nums ${c.changeMinor > 0 ? "text-red-600" : c.changeMinor < 0 ? "text-green-700 dark:text-green-400" : ""}`}
+                      >
+                        {c.changeMinor > 0 ? "+" : c.changeMinor < 0 ? "−" : ""}
+                        {money(Math.abs(c.changeMinor))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-            <h2 className="mb-2 font-semibold">Largest purchases</h2>
-            <ul className="space-y-1 text-sm">
-              {data.largest.map((t) => (
-                <li key={t.id} className="flex justify-between gap-2">
-                  <span>
-                    {t.merchant}{" "}
-                    <span className="text-xs text-slate-500">
-                      {formatDay(t.date)} · {t.accountName}
+            <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+              <h2 className="mb-2 font-semibold">Largest purchases</h2>
+              <ul className="space-y-1 text-sm">
+                {data.largest.map((t) => (
+                  <li key={t.id} className="flex justify-between gap-2">
+                    <span>
+                      {t.merchant}{" "}
+                      <span className="text-xs text-slate-500">
+                        {formatDay(t.date)} · {t.accountName}
+                      </span>
                     </span>
-                  </span>
-                  <span className="tabular-nums">{money(t.amountMinor)}</span>
-                </li>
-              ))}
-              {data.largest.length === 0 && <li className="text-slate-500">No purchases.</li>}
-            </ul>
+                    <span className="tabular-nums">{money(t.amountMinor)}</span>
+                  </li>
+                ))}
+                {data.largest.length === 0 && <li className="text-slate-500">No purchases.</li>}
+              </ul>
+            </div>
           </div>
         </>
       )}

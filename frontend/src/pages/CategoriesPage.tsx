@@ -17,6 +17,22 @@ import { Select } from "../components/common/Select";
 
 type Notice = { kind: "info" | "error"; text: string };
 
+/**
+ * What saving a rule would really do, in a sentence: "Saving changes 12 of the 30 it matches; 1
+ * chosen by hand stays." Pure.
+ */
+export function ruleEffectText(p: RulePreview): string {
+  const changes = p.changeCount ?? 0;
+  const manual = p.manualCount ?? 0;
+  const head =
+    changes === 0
+      ? `Saving changes nothing: the ${p.matchCount} it matches already have their category`
+      : `Saving changes ${changes} transaction${changes === 1 ? "" : "s"}` +
+        (p.matchCount !== changes ? ` (it matches ${p.matchCount})` : "");
+  const tail = manual > 0 ? `; ${manual} chosen by hand stay${manual === 1 ? "s" : ""}` : "";
+  return `${head}${tail}.`;
+}
+
 const FIELD_LABEL: Record<RuleField, string> = {
   merchant: "Merchant",
   name: "Bank description",
@@ -423,7 +439,15 @@ function RuleForm({
     const timer = window.setTimeout(() => {
       api<RulePreview>("/rules/preview", {
         method: "POST",
-        body: JSON.stringify({ field, operator, matchValue, direction: direction || null }),
+        body: JSON.stringify({
+          field,
+          operator,
+          matchValue,
+          direction: direction || null,
+          // With a category (and the rule being edited), it also says what would really change.
+          ...(categoryId ? { categoryId: Number(categoryId) } : {}),
+          ...(rule ? { ruleId: rule.id } : {}),
+        }),
       })
         .then((result) => !cancelled && setPreview(result))
         .catch(() => !cancelled && setPreview(null));
@@ -432,7 +456,7 @@ function RuleForm({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [field, operator, matchValue, direction]);
+  }, [field, operator, matchValue, direction, categoryId, rule]);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -556,6 +580,28 @@ function RuleForm({
               </option>
             ))}
           </Select>
+          {preview?.changeCount !== undefined && (
+            // What saving really changes, after the order of the rules and hand-picked categories.
+            <div className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
+              <p className="font-medium text-slate-700 dark:text-slate-200">
+                {ruleEffectText(preview)}
+              </p>
+              {preview.changes && preview.changes.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-slate-600 dark:text-slate-300">
+                  {preview.changes.slice(0, 5).map((c) => (
+                    <li key={c.id} className="flex justify-between gap-2">
+                      <span className="truncate">
+                        {c.date} · {c.merchant}
+                      </span>
+                      <span className="shrink-0">
+                        {c.from ?? "Uncategorized"} → {c.to ?? "Uncategorized"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label htmlFor={`${id}-name`} className="block text-sm font-medium">

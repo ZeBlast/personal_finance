@@ -64,6 +64,9 @@ const rulePreviewBody = z
     operator: ruleFields.operator,
     matchValue: ruleFields.matchValue,
     direction: ruleFields.direction,
+    // With these, the preview also says what saving the rule would really change.
+    categoryId: ruleFields.categoryId.optional(),
+    ruleId: z.number().int().positive().optional(),
   })
   .strict();
 
