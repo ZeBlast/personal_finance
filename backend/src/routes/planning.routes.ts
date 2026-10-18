@@ -13,6 +13,7 @@ import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js
 import { monthReport } from "../services/report.service.js";
 import { detectPaychecks } from "../services/paycheck.service.js";
 import { dailyBrief } from "../services/brief.service.js";
+import { clearDebtTerms, debtOverview, setDebtTerms } from "../services/debt.service.js";
 import { createGoal, deleteGoal, listGoals, updateGoal } from "../services/goal.service.js";
 import {
   dismissDuplicate,
@@ -98,6 +99,32 @@ export function planningRoutes(db: AppDb): Router {
       })
       .parse(req.query);
     res.json(dailyBrief(db, q));
+  });
+
+  /** Cards and loans, and a plan to pay them off with something extra each month. */
+  router.get("/debt", (req, res) => {
+    const q = z
+      .object({
+        extraMinor: z.coerce.number().int().min(0).max(100_000_000_000).optional(),
+        strategy: z.enum(["avalanche", "snowball"]).optional(),
+      })
+      .parse(req.query);
+    res.json(debtOverview(db, q));
+  });
+  router.put("/debt/:accountId", (req, res) => {
+    const body = z
+      .object({
+        aprBps: z.number().int().min(0).max(10_000),
+        minimumMinor: z.number().int().min(0).max(100_000_000_000).nullable().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    setDebtTerms(db, idParam.parse(req.params["accountId"]), body);
+    res.json(debtOverview(db));
+  });
+  router.delete("/debt/:accountId", (req, res) => {
+    clearDebtTerms(db, idParam.parse(req.params["accountId"]));
+    res.status(204).end();
   });
 
   router.get("/forecast", (req, res) => {

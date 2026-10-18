@@ -979,6 +979,17 @@ export const transactionTags = sqliteTable(
     index("transaction_tags_tag_idx").on(table.tagId),
   ],
 );
+/** A card's or loan's interest rate and minimum payment, entered by the user for payoff plans. */
+export const debtTerms = sqliteTable("debt_terms", {
+  accountId: integer("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  /** Yearly interest rate in hundredths of a percent: 2499 is 24.99%. */
+  aprBps: integer("apr_bps").notNull(),
+  /** The monthly minimum payment, or null to estimate one. */
+  minimumMinor: integer("minimum_minor"),
+  updatedAt: text("updated_at").notNull(),
+});
 
 export const goals = sqliteTable("goals", {
   id: integer("id").primaryKey({ autoIncrement: true }),

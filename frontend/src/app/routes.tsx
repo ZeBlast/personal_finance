@@ -10,6 +10,7 @@ import { InsightsPage } from "../pages/InsightsPage";
 import { InvestmentsPage } from "../pages/InvestmentsPage";
 import { NetworkPage } from "../pages/NetworkPage";
 import { PlanningPage } from "../pages/PlanningPage";
+import { DebtPage } from "../pages/DebtPage";
 import { GoalsPage } from "../pages/GoalsPage";
 import { ReportsPage } from "../pages/ReportsPage";
 import { ReviewPage } from "../pages/ReviewPage";
@@ -64,6 +65,7 @@ export const areas: AppArea[] = [
       { path: "/planning/subscriptions", label: "Subscriptions", Page: SubscriptionsPage },
       { path: "/planning/budgets", label: "Budgets", Page: BudgetsPage },
       { path: "/planning/goals", label: "Goals", Page: GoalsPage },
+      { path: "/planning/debt", label: "Debt payoff", Page: DebtPage },
     ],
   },
   {
