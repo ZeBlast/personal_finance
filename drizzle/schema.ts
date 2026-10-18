@@ -341,6 +341,15 @@ export const budgets = sqliteTable(
     /** First day of the month, `YYYY-MM-01`. */
     periodStart: text("period_start").notNull(),
     amountMinor: integer("amount_minor").notNull(),
+    /**
+     * What is left at the month's end carries into the next month's budget for the category:
+     * `off`, `all` (leftovers and overspending), or `leftover` (only what is left; overspending
+     * starts fresh).
+     */
+    rollover: text("rollover").notNull().default("off"),
+    /** A fund saved up month by month for an irregular expense: how much, and by when. */
+    fundTargetMinor: integer("fund_target_minor"),
+    fundTargetDate: text("fund_target_date"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
