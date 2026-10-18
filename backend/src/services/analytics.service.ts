@@ -140,6 +140,10 @@ export interface SummaryQuery {
   institution?: string | undefined;
   /** A category ID (including its subcategories) or "none" for uncategorized. */
   category?: number | "none" | undefined;
+  /** Only merchants whose shown name contains this (any case). */
+  merchant?: string | undefined;
+  /** Only transactions with this tag. */
+  tagId?: number | undefined;
   /** For `groupBy=category`: show subcategories under their parent. */
   rollupToParent?: boolean | undefined;
   includeTransfers: boolean;
@@ -248,6 +252,8 @@ function whereClauses(
     | "accountId"
     | "institution"
     | "category"
+    | "merchant"
+    | "tagId"
     | "includeTransfers"
     | "includePending"
     | "environment"
@@ -267,6 +273,20 @@ function whereClauses(
   if (q.category === "none") parts.push(sql`t.category_id is null`);
   else if (q.category !== undefined) {
     parts.push(sql`(t.category_id = ${q.category} or c.parent_id = ${q.category})`);
+  }
+  if (q.merchant !== undefined && q.merchant.trim() !== "") {
+    const like = `%${q.merchant
+      .trim()
+      .toLowerCase()
+      .replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    parts.push(
+      sql`lower(coalesce(t.merchant_name_user, t.merchant_name, t.name)) like ${like} escape '\\'`,
+    );
+  }
+  if (q.tagId !== undefined) {
+    parts.push(
+      sql`exists (select 1 from transaction_tags tt where tt.transaction_id = t.id and tt.tag_id = ${q.tagId})`,
+    );
   }
   if (!q.includeTransfers) parts.push(NOT_TRANSFER);
   if (!q.includePending) parts.push(sql`t.pending = 0`);
