@@ -17,10 +17,26 @@ import { Select } from "../components/common/Select";
 
 const PAGE_SIZE = 50;
 
+/** Several categories (`3,7,none`) as one short label: "Food, Fun and 1 more". Pure. */
+export function categoryListLabel(
+  value: string,
+  options: Array<{ id: number; name: string }>,
+): string {
+  const names = value
+    .split(",")
+    .filter(Boolean)
+    .map((v) =>
+      v === "none" ? "Uncategorized" : (options.find((o) => String(o.id) === v)?.name ?? "?"),
+    );
+  if (names.length <= 2) return names.join(" and ");
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+}
+
 interface Filters {
   q: string;
   accountId: string;
-  category: string; // "" = all, "none" = uncategorized, or a category ID
+  category: string; // "" = all, "none" = uncategorized, a category ID, or several ("3,7,none")
+  direction: string; // "" = both, "in" = money in only, "out" = money out only
   pending: string; // "" = all, "true", "false"
   online: string; // "" = all, "true" (bought online), "false" (not online)
   transfer: string; // "" = all, "unmatched" = transfers with no other side
@@ -34,6 +50,7 @@ const NO_FILTERS: Filters = {
   q: "",
   accountId: "",
   category: "",
+  direction: "",
   pending: "",
   online: "",
   transfer: "",
@@ -117,6 +134,7 @@ export function TransactionsPage() {
     const focusId = Number(searchParams.get("focus"));
     const account = searchParams.get("account");
     const category = searchParams.get("category");
+    const direction = searchParams.get("direction");
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     if (Number.isInteger(focusId) && focusId > 0) {
@@ -125,11 +143,12 @@ export function TransactionsPage() {
       setFocus((f) => (f?.id === focusId ? f : { id: focusId, accountId: account }));
       return;
     }
-    if (account || category || from || to) {
+    if (account || category || direction || from || to) {
       setFilters({
         ...NO_FILTERS,
         accountId: account ?? "",
         category: category ?? "",
+        direction: direction === "in" || direction === "out" ? direction : "",
         from: from ?? "",
         to: to ?? "",
         dateBasis: searchParams.get("dateBasis") === "posted" ? "posted" : "",
@@ -171,6 +190,7 @@ export function TransactionsPage() {
     if (filters.q) params.set("q", filters.q);
     if (filters.accountId) params.set("accountId", filters.accountId);
     if (filters.category) params.set("category", filters.category);
+    if (filters.direction) params.set("direction", filters.direction);
     if (filters.pending) params.set("pending", filters.pending);
     if (filters.online) params.set("online", filters.online);
     if (filters.transfer) params.set("transfer", filters.transfer);
@@ -360,11 +380,25 @@ export function TransactionsPage() {
         >
           <option value="">All categories</option>
           <option value="none">Uncategorized</option>
+          {filters.category.includes(",") && (
+            // Several categories, from a chart (Insights): kept until another is chosen.
+            <option value={filters.category}>{categoryListLabel(filters.category, options)}</option>
+          )}
           {options.map((o) => (
             <option key={o.id} value={o.id} data-depth={o.depth}>
               {o.label}
             </option>
           ))}
+        </Select>
+        <Select
+          aria-label="Money in or out"
+          value={filters.direction}
+          onChange={(e) => setFilter("direction", e.target.value)}
+          className={controlClass}
+        >
+          <option value="">Money in and out</option>
+          <option value="in">Money in only</option>
+          <option value="out">Money out only</option>
         </Select>
         <Select
           aria-label="Status"

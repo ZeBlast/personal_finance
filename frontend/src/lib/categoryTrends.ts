@@ -44,6 +44,15 @@ export const MEASURES: Array<{ id: Measure; label: string }> = [
   { id: "share", label: "Share of all spending" },
 ];
 
+/** A measure's name for money going out (spending) or coming in. Pure. */
+export function measureLabel(id: Measure, flow: "out" | "in"): string {
+  if (flow === "in") {
+    if (id === "spending") return "Amount in";
+    if (id === "share") return "Share of all money in";
+  }
+  return MEASURES.find((m) => m.id === id)!.label;
+}
+
 export const RANGES: Array<{ id: RangePreset; label: string }> = [
   { id: "3m", label: "3 months" },
   { id: "6m", label: "6 months" },

@@ -4,6 +4,7 @@ import { useApi } from "../../hooks/useApi";
 import { useCategories } from "../../hooks/useCategories";
 import { colorAt } from "../charts/palette";
 import {
+  measureLabel,
   MEASURES,
   RANGES,
   measureValues,
@@ -36,6 +37,8 @@ interface Options {
   pending: boolean;
   accounts: number[];
   hidden: string[];
+  /** `out`: spending. `in`: all money coming in (income, incoming transfers, refunds). */
+  flow: "out" | "in";
 }
 
 const DEFAULTS: Options = {
@@ -52,8 +55,36 @@ const DEFAULTS: Options = {
   pending: true,
   accounts: [],
   hidden: [],
+  flow: "out",
 };
 const STORE = "pf.categoryExplorer.v1";
+
+/**
+ * The Transactions page filters for one period of the chart: the categories of the lines on show
+ * (none when every category is), money in only when the chart shows money in, and the account when
+ * exactly one is chosen. Pure, for testing.
+ */
+export function periodLink(input: {
+  from: string;
+  to: string;
+  /** The lines on show: their categories (null is "Uncategorized"). */
+  shown: Array<{ categoryId: number | null }>;
+  /** Every category is on show (no category chosen, none hidden, not split). */
+  everything: boolean;
+  flow: "out" | "in";
+  accounts: number[];
+}): string {
+  const params = new URLSearchParams({ from: input.from, to: input.to });
+  if (!input.everything && input.shown.length > 0) {
+    const ids = [
+      ...new Set(input.shown.map((s) => (s.categoryId === null ? "none" : String(s.categoryId)))),
+    ];
+    params.set("category", ids.join(","));
+  }
+  if (input.flow === "in") params.set("direction", "in");
+  if (input.accounts.length === 1) params.set("account", String(input.accounts[0]));
+  return `/transactions?${params}`;
+}
 
 function load(): Options {
   try {
@@ -228,6 +259,7 @@ export function CategoryExplorer() {
     accounts: o.accounts.join(","),
     split: o.split ? "1" : "0",
     pending: o.pending ? "1" : "0",
+    flow: o.flow,
   });
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(o.from) && /^\d{4}-\d{2}-\d{2}$/.test(o.to) && o.from <= o.to;
@@ -296,13 +328,20 @@ export function CategoryExplorer() {
   const labelEvery = Math.max(1, Math.ceil(n / 12));
   const centerOf = (i: number) => (bars ? xBar(i) + slot / 2 : x(i));
 
+  // A period's transactions: in the categories of the lines on show (all of them, not only one).
   function openPeriod(i: number): void {
     const b = buckets[i];
     if (!b) return;
-    const only = visible.length === 1 ? visible[0] : undefined;
-    const params = new URLSearchParams({ from: b.from, to: b.to });
-    if (only) params.set("category", only.categoryId === null ? "none" : String(only.categoryId));
-    navigate(`/transactions?${params}`);
+    navigate(
+      periodLink({
+        from: b.from,
+        to: b.to,
+        shown: visible,
+        everything: o.categories.length === 0 && o.hidden.length === 0 && !o.split,
+        flow: o.flow,
+        accounts: o.accounts,
+      }),
+    );
   }
 
   const chosenLabel =
@@ -315,14 +354,46 @@ export function CategoryExplorer() {
   return (
     <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
       <div>
-        <h2 className="text-lg font-semibold">Spending by category over time</h2>
+        <h2 className="text-lg font-semibold">
+          {o.flow === "in" ? "Money in by category over time" : "Spending by category over time"}
+        </h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Choose categories and how to look at them. Hover a period for its figures, click it to see
           its transactions, and click a row below to hide or show its line.
+          {o.flow === "in"
+            ? " Money in counts everything that came in: income, transfers from your other accounts, refunds and other credits."
+            : ""}
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label="Money out or in"
+          className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600"
+        >
+          {(
+            [
+              ["out", "Money out"],
+              ["in", "Money in"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={o.flow === value}
+              onClick={() => set({ flow: value, hidden: [] })}
+              className={`px-3 py-1 ${
+                o.flow === value
+                  ? "bg-blue-600 text-white"
+                  : "hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <Picker label="Categories" summary={chosenLabel} search={catSearch} onSearch={setCatSearch}>
           <div className="mb-1 flex gap-2 text-xs">
             <button
@@ -470,7 +541,7 @@ export function CategoryExplorer() {
         >
           {MEASURES.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.label}
+              {measureLabel(m.id, o.flow)}
             </option>
           ))}
         </Select>
@@ -514,7 +585,7 @@ export function CategoryExplorer() {
             viewBox={`0 0 ${W} ${H}`}
             className="h-auto w-full select-none"
             role="img"
-            aria-label={`${MEASURES.find((m) => m.id === o.measure)!.label} by ${o.interval}, ${data.from} to ${data.to}`}
+            aria-label={`${measureLabel(o.measure, o.flow)} by ${o.interval}, ${data.from} to ${data.to}`}
             onPointerLeave={() => setHover(null)}
           >
             {ticks.map((t) => (

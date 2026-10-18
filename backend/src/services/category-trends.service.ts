@@ -31,7 +31,16 @@ export interface TrendQuery {
   includePending: boolean;
   dateBasis?: DateBasis | undefined;
   environment: string;
+  /**
+   * `out` (the default): spending, as everywhere else. `in`: all money coming in, by category:
+   * income, incoming transfers, refunds and other credits (a copy of a purchase shown on a second
+   * account, such as PayPal and its card, is counted once). Values are then positive amounts in.
+   */
+  flow?: TrendFlow | undefined;
 }
+
+export type TrendFlow = "out" | "in";
+export const TREND_FLOWS = ["out", "in"] as const;
 
 export interface TrendBucket {
   key: string;
@@ -184,15 +193,25 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
   const inChosen = sql`(coalesce(c.id, 0) in (${list(chosen)}) or coalesce(c.parent_id, -1) in (${list(chosen)}))`;
 
   const day = dateOf(q.dateBasis);
+  const moneyIn = q.flow === "in";
   const base = (from: string, to: string): SQL[] => {
     const parts: SQL[] = [
       sql`${day} >= ${from}`,
       sql`${day} <= ${to}`,
       sql`(p.environment = ${q.environment} or a.plaid_item_id is null)`,
       accountScope(undefined),
-      NOT_TRANSFER,
-      // Not income. (A case, not "not": the test can be unknown, which "not" would drop.)
-      sql`(case when ${IS_INCOME} then 0 else 1 end) = 1`,
+      ...(moneyIn
+        ? [
+            // Every amount that came in, transfers and income included; a copy of one shown on a
+            // second account counts once.
+            sql`t.amount_minor < 0`,
+            sql`coalesce(t.transfer_source, '') <> 'mirror'`,
+          ]
+        : [
+            NOT_TRANSFER,
+            // Not income. (A case, not "not": the test can be unknown, which "not" would drop.)
+            sql`(case when ${IS_INCOME} then 0 else 1 end) = 1`,
+          ]),
     ];
     if (q.accounts.length > 0) parts.push(sql`t.account_id in (${list(q.accounts)})`);
     if (!q.includePending) parts.push(sql`t.pending = 0`);
@@ -204,14 +223,16 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     left join categories c on c.id = t.category_id`;
 
   const bucket = bucketSql(q.interval, day);
+  // Spending is the amounts as they are (refunds take away); money in is shown as positive.
+  const amount = moneyIn ? sql`-sum(t.amount_minor)` : sql`sum(t.amount_minor)`;
   const rows = db.all<Row>(sql`
-    select ${bucket} as bucket, ${seriesKey} as key, sum(t.amount_minor) as spending,
+    select ${bucket} as bucket, ${seriesKey} as key, ${amount} as spending,
       count(distinct t.id) as n
     ${from}
     where ${sql.join([...base(q.from, q.to), inChosen], sql` and `)}
     group by 1, 2`);
   const all = db.all<{ bucket: string; spending: number | null }>(sql`
-    select ${bucket} as bucket, sum(t.amount_minor) as spending
+    select ${bucket} as bucket, ${amount} as spending
     ${from}
     where ${sql.join(base(q.from, q.to), sql` and `)}
     group by 1`);
@@ -219,7 +240,7 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
   // The period just before, of the same length (in whole months when the period is whole months).
   const { prevFrom, prevTo } = previousPeriod(q.from, q.to, days);
   const prev = db.all<{ key: number; spending: number | null; n: number }>(sql`
-    select ${seriesKey} as key, sum(t.amount_minor) as spending, count(distinct t.id) as n
+    select ${seriesKey} as key, ${amount} as spending, count(distinct t.id) as n
     ${from}
     where ${sql.join([...base(prevFrom, prevTo), inChosen], sql` and `)}
     group by 1`);

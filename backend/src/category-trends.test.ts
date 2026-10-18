@@ -73,7 +73,7 @@ async function setup() {
   await add(wallet, "2026-06-15", 900, groceries);
   const trends = async (query: string) =>
     (await t.call("get", `/api/analytics/category-trends?${query}`).expect(200)).body;
-  return { food, groceries, fun, wallet, jar, trends };
+  return { t, cat, add, food, groceries, fun, wallet, jar, trends };
 }
 
 describe("category trends", () => {
@@ -126,6 +126,54 @@ describe("category trends", () => {
       all.series.map((s: { label: string; values: number[] }) => [s.label, s.values[0]]),
     );
     expect(totals).toMatchObject({ "Food & Drink": 7_200, Fun: 700 });
+  });
+
+  it("show money coming in by category: income, incoming transfers and refunds", async () => {
+    const { t, cat, add, food, wallet, jar, trends } = await setup();
+    const pay = cat("Pay");
+    await add(wallet, "2026-09-15", 300_000, pay, "in");
+    // Money moved in from another account counts as money in here (it is left out of spending).
+    await t
+      .call("post", "/api/transactions")
+      .send({
+        accountId: jar,
+        date: "2026-09-20",
+        merchant: "From savings",
+        amountMinor: 50_000,
+        direction: "in",
+        isTransfer: true,
+      })
+      .expect(201);
+    const inflow = await trends(`from=2026-09-01&to=2026-09-30&interval=month&flow=in`);
+    const byLabel = Object.fromEntries(
+      inflow.series.map((s: { label: string; values: number[] }) => [s.label, s.values[0]]),
+    );
+    // Positive amounts in: the pay, the transfer (uncategorized), the $3 grocery refund.
+    expect(byLabel).toMatchObject({ Pay: 300_000, Uncategorized: 50_000, "Food & Drink": 300 });
+    expect(inflow.allSpending).toEqual([350_300]);
+    // Spending is unchanged by any of it.
+    const out = await trends(`from=2026-09-01&to=2026-09-30&categories=${food}`);
+    expect(out.series[0].values).toEqual([4_000 - 300]);
+  });
+
+  it("open a period's transactions in several categories at once, or only money in", async () => {
+    const { t, food, fun } = await setup();
+    const list = async (query: string) =>
+      (
+        (await t.call("get", `/api/transactions?pageSize=200&${query}`).expect(200)).body
+          .items as Array<{ amountMinor: number; category: { name: string } | null }>
+      ).map((x) => `${x.category?.name ?? "none"} ${x.amountMinor}`);
+    // Food & Drink (with Groceries inside it) and Fun, in September.
+    expect((await list(`from=2026-09-01&to=2026-09-30&category=${food},${fun}`)).sort()).toEqual(
+      ["Fun 700", "Groceries -300", "Groceries 4000"].sort(),
+    );
+    // Only Fun: as before.
+    expect(await list(`from=2026-09-01&to=2026-09-30&category=${fun}`)).toEqual(["Fun 700"]);
+    // Only money in.
+    expect(
+      await list(`from=2026-09-01&to=2026-09-30&category=${food},${fun}&direction=in`),
+    ).toEqual(["Groceries -300"]);
+    await t.call("get", "/api/transactions?category=abc").expect(400);
   });
 
   it("refuse a backwards period, and weeks over too long a one", async () => {

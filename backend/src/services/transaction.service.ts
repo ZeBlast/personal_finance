@@ -179,8 +179,13 @@ export interface TransactionQuery {
   /** Which date `from` and `to` apply to (default: the transaction date). */
   dateBasis?: "transaction" | "posted" | undefined;
   q?: string | undefined;
-  /** A category ID (including its subcategories) or "none" for uncategorized. */
-  category?: number | "none" | undefined;
+  /**
+   * A category ID (including its subcategories) or "none" for uncategorized; or several, which
+   * match a transaction in any of them.
+   */
+  category?: number | "none" | Array<number | "none"> | undefined;
+  /** Only money coming in (`in`) or going out (`out`). */
+  direction?: "in" | "out" | undefined;
   /** `unmatched`: only transfers with no other side, so where the money went or came from is unknown. */
   transfer?: "unmatched" | undefined;
   /**
@@ -633,30 +638,44 @@ export function listTransactions(
       sql`coalesce(${transactions.transferSource}, '') <> 'mirror'`,
     );
   }
-  if (query.category === "none") conditions.push(isNull(transactions.categoryId));
-  else if (query.category !== undefined) {
+  const chosen =
+    query.category === undefined
+      ? []
+      : Array.isArray(query.category)
+        ? query.category
+        : [query.category];
+  if (chosen.length > 0) {
+    const ids = chosen.filter((c): c is number => c !== "none");
     // Choosing a parent category includes its subcategories.
-    const ids = [
-      query.category,
-      ...db
-        .select({ id: categories.id })
-        .from(categories)
-        .where(eq(categories.parentId, query.category))
-        .all()
-        .map((row) => row.id),
-    ];
-    // A split transaction matches when any of its parts is in the category.
-    conditions.push(
-      or(
-        inArray(transactions.categoryId, ids),
+    const withSubs =
+      ids.length === 0
+        ? []
+        : [
+            ...ids,
+            ...db
+              .select({ id: categories.id })
+              .from(categories)
+              .where(inArray(categories.parentId, ids))
+              .all()
+              .map((row) => row.id),
+          ];
+    const any: SQL[] = [];
+    if (chosen.includes("none")) any.push(isNull(transactions.categoryId));
+    if (withSubs.length > 0) {
+      // A split transaction matches when any of its parts is in one of the categories.
+      any.push(
+        inArray(transactions.categoryId, withSubs),
         sql`exists (select 1 from transaction_splits s where s.transaction_id = ${transactions.id}
           and s.category_id in (${sql.join(
-            ids.map((id) => sql`${id}`),
+            withSubs.map((id) => sql`${id}`),
             sql`, `,
           )}))`,
-      )!,
-    );
+      );
+    }
+    conditions.push(or(...any)!);
   }
+  if (query.direction === "in") conditions.push(sql`${transactions.amountMinor} < 0`);
+  if (query.direction === "out") conditions.push(sql`${transactions.amountMinor} > 0`);
   if (query.q?.trim()) {
     const pattern = `%${escapeLike(query.q.trim())}%`;
     const matches = (column: AnyColumn) => sql`${column} LIKE ${pattern} ESCAPE '\\'`;

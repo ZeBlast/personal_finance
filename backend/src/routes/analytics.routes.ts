@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { categoryTrends, TREND_INTERVALS } from "../services/category-trends.service.js";
+import {
+  categoryTrends,
+  TREND_FLOWS,
+  TREND_INTERVALS,
+} from "../services/category-trends.service.js";
 import { z } from "zod";
 import type { AppDb } from "../db/client.js";
 import {
@@ -77,6 +81,7 @@ export function analyticsRoutes(db: AppDb): Router {
         split: z.enum(["0", "1"]).default("0"),
         pending: z.enum(["0", "1"]).default("1"),
         dateBasis: z.enum(DATE_BASES).optional(),
+        flow: z.enum(TREND_FLOWS).default("out"),
       })
       .parse(req.query);
     res.json(

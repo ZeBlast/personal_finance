@@ -37,7 +37,27 @@ const listQuery = z.object({
   institution: z.string().min(1).max(200).optional(),
   dateBasis: z.enum(["transaction", "posted"]).optional(),
   q: z.string().max(200).optional(),
-  category: z.union([z.literal("none"), z.coerce.number().int().positive()]).optional(),
+  // One category, or several separated by commas ("3,7,none"): a transaction in any of them.
+  category: z
+    .string()
+    .max(2000)
+    .optional()
+    .transform((v, ctx): Array<number | "none"> | undefined => {
+      const parts = (v ?? "").split(",").filter(Boolean);
+      if (parts.length === 0) return undefined;
+      const out: Array<number | "none"> = [];
+      for (const p of parts) {
+        const n = Number(p);
+        if (p === "none") out.push("none");
+        else if (Number.isInteger(n) && n > 0) out.push(n);
+        else {
+          ctx.addIssue({ code: "custom", message: `Not a category: ${p}` });
+          return z.NEVER;
+        }
+      }
+      return out;
+    }),
+  direction: z.enum(["in", "out"]).optional(),
   transfer: z.literal("unmatched").optional(),
   sort: z.enum(SORTS).optional(),
 });
