@@ -10,6 +10,12 @@ import {
   SUB_FREQUENCIES,
   updateTrackedSubscription,
 } from "../services/tracked-subscriptions.service.js";
+import {
+  dismissRenewal,
+  paymentHistory,
+  renewalInbox,
+  setPaymentExcluded,
+} from "../services/renewal.service.js";
 
 const idParam = z.coerce.number().int().positive();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -31,6 +37,8 @@ const body = z
     website: text(300),
     notes: text(2000),
     recurringKey: text(500),
+    trialEndsOn: day.nullable().optional(),
+    paymentMatch: text(120),
   })
   .strict();
 
@@ -68,6 +76,33 @@ export function trackedSubscriptionsRoutes(db: AppDb): Router {
   router.delete("/tracked-subscriptions/:id", (req, res) => {
     deleteTrackedSubscription(db, idParam.parse(req.params["id"]));
     res.status(204).end();
+  });
+
+  /** What was paid to it over time. */
+  router.get("/tracked-subscriptions/:id/payments", (req, res) => {
+    res.json(paymentHistory(db, idParam.parse(req.params["id"])));
+  });
+
+  /** Leaves a matching transaction out of its payments, or puts it back. */
+  router.put("/tracked-subscriptions/:id/payments/:transactionId", (req, res) => {
+    const input = z.object({ excluded: z.boolean() }).strict().parse(req.body);
+    const id = idParam.parse(req.params["id"]);
+    setPaymentExcluded(db, id, idParam.parse(req.params["transactionId"]), input.excluded);
+    res.json(paymentHistory(db, id));
+  });
+
+  /** Trials ending, yearly renewals, terms ending and price rises coming up. */
+  router.get("/renewals", (_req, res) => {
+    res.json(renewalInbox(db));
+  });
+
+  router.post("/renewals/dismiss", (req, res) => {
+    const input = z
+      .object({ key: z.string().min(1).max(600) })
+      .strict()
+      .parse(req.body);
+    dismissRenewal(db, input.key);
+    res.json(renewalInbox(db));
   });
 
   return router;

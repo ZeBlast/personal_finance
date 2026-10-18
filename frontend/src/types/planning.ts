@@ -180,6 +180,10 @@ export interface TrackedSubscription {
   status: "active" | "cancelled";
   cancelledOn: string | null;
   recurringKey: string | null;
+  /** When a free trial ends. */
+  trialEndsOn: string | null;
+  /** What its payments' merchant contains; null uses the found series or the name. */
+  paymentMatch: string | null;
   onCalendar: boolean;
   nextCharge: string | null;
   endDate: string | null;
@@ -191,4 +195,36 @@ export interface TrackedSubscription {
 export interface TrackedSubscriptionList {
   subscriptions: TrackedSubscription[];
   totals: { monthlyMinor: number; yearlyMinor: number; active: number };
+}
+
+/** A tracked subscription's payments over time, newest first. */
+export interface PaymentHistory {
+  subscriptionId: number;
+  /** What the merchant was matched against, and where that came from. */
+  match: string;
+  matchSource: "set" | "found" | "name";
+  payments: Array<{
+    id: number;
+    date: string;
+    merchant: string;
+    accountName: string;
+    amountMinor: number;
+    /** The user said this one is not a payment of the subscription. */
+    excluded: boolean;
+    /** The amount differs from the payment before. */
+    changeMinor: number | null;
+  }>;
+  totalMinor: number;
+}
+
+/** Something coming up: a trial ending, a yearly renewal, a plan ending, or a price rise. */
+export interface RenewalItem {
+  key: string;
+  kind: "trial" | "renewal" | "ending" | "price" | "yearly_charge";
+  title: string;
+  detail: string;
+  date: string;
+  amountMinor: number | null;
+  changeMinor?: number;
+  subscriptionId: number | null;
 }

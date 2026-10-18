@@ -13,7 +13,9 @@ import { formatDay } from "../lib/time";
 import type { Account } from "../types/api";
 import type { Cadence } from "../types/insights";
 import type {
+  PaymentHistory,
   RecurringChange,
+  RenewalItem,
   Subscription,
   SubscriptionBilling,
   SubscriptionFrequency,
@@ -59,6 +61,12 @@ export function SubscriptionsPage() {
         </button>
       </div>
 
+      <RenewalInbox
+        onOpen={(id) => {
+          const s = tracked.data?.subscriptions.find((x) => x.id === id);
+          if (s) setEditing(draftOf(s));
+        }}
+      />
       <TrackedSection state={tracked} onEdit={(s) => setEditing(draftOf(s))} onChanged={reload} />
       <FoundSection
         state={review}
@@ -112,6 +120,7 @@ function TrackedSection({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<TrackedSubscription | null>(null);
+  const [payments, setPayments] = useState<TrackedSubscription | null>(null);
   const [showEnded, setShowEnded] = useState(false);
   if (state.error) {
     return (
@@ -211,6 +220,9 @@ function TrackedSection({
                 <button type="button" className={buttonClass} onClick={() => onEdit(s)}>
                   Edit
                 </button>
+                <button type="button" className={buttonClass} onClick={() => setPayments(s)}>
+                  Payments
+                </button>
                 {s.status === "active" ? (
                   <button
                     type="button"
@@ -250,6 +262,7 @@ function TrackedSection({
           ))}
         </ul>
       )}
+      {payments && <PaymentsDialog subscription={payments} onClose={() => setPayments(null)} />}
       {removing && (
         <ConfirmDialog
           title={`Stop tracking ${removing.name}?`}
@@ -265,6 +278,167 @@ function TrackedSection({
         />
       )}
     </section>
+  );
+}
+
+// ---- Coming up -----------------------------------------------------------------------------------
+
+/** What an inbox item says next to its title: when, and how much. Pure. */
+export function renewalWhen(item: RenewalItem, today: string): string {
+  const days = Math.round((Date.parse(item.date) - Date.parse(today)) / 86_400_000);
+  const when =
+    item.kind === "price"
+      ? `charged ${formatDay(item.date)}`
+      : days === 0
+        ? "today"
+        : days === 1
+          ? "tomorrow"
+          : `in ${days} days, ${formatDay(item.date)}`;
+  if (item.kind === "price" && item.changeMinor) {
+    return `${when} · now ${money(item.amountMinor ?? 0)}, up ${money(item.changeMinor)}`;
+  }
+  return item.amountMinor ? `${when} · ${money(item.amountMinor)}` : when;
+}
+
+/** Trials ending, yearly renewals, plans ending and price rises: deal with each, then dismiss it. */
+function RenewalInbox({ onOpen }: { onOpen: (subscriptionId: number) => void }) {
+  const inbox = useApi<RenewalItem[]>("/renewals");
+  const [error, setError] = useState<string | null>(null);
+  if (!inbox.data || inbox.data.length === 0) return null;
+
+  async function dismiss(key: string): Promise<void> {
+    try {
+      await api("/renewals/dismiss", { method: "POST", body: JSON.stringify({ key }) });
+      inbox.reload();
+    } catch (e) {
+      setError(errorMessage(e, "Could not dismiss that."));
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="renewals-heading"
+      className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30"
+    >
+      <h2 id="renewals-heading" className="font-medium">
+        Coming up
+      </h2>
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+      <ul className="space-y-2 text-sm">
+        {inbox.data.map((item) => (
+          <li key={item.key} className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-medium">
+                {item.title}{" "}
+                <span className="font-normal text-slate-600 dark:text-slate-300">
+                  {renewalWhen(item, todayDay())}
+                </span>
+              </div>
+              <div className="text-xs text-slate-500">{item.detail}</div>
+            </div>
+            <div className="flex gap-2">
+              {item.subscriptionId !== null && (
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => onOpen(item.subscriptionId!)}
+                >
+                  Open
+                </button>
+              )}
+              <button type="button" className={buttonClass} onClick={() => void dismiss(item.key)}>
+                Done
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** What was paid to a subscription over time; a payment that is not its own can be left out. */
+function PaymentsDialog({
+  subscription,
+  onClose,
+}: {
+  subscription: TrackedSubscription;
+  onClose: () => void;
+}) {
+  const path = `/tracked-subscriptions/${subscription.id}/payments`;
+  const history = useApi<PaymentHistory>(path);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle(transactionId: number, excluded: boolean): Promise<void> {
+    try {
+      await api(`${path}/${transactionId}`, {
+        method: "PUT",
+        body: JSON.stringify({ excluded }),
+      });
+      history.reload();
+    } catch (e) {
+      setError(errorMessage(e, "Could not save that."));
+    }
+  }
+
+  const h = history.data;
+  return (
+    <Modal title={`${subscription.name} payments`} onClose={onClose} dismissible>
+      <div className="space-y-3 text-sm">
+        {h && (
+          <p className="text-slate-600 dark:text-slate-300">
+            Transactions whose merchant has “{h.match}”
+            {h.matchSource === "found" ? " (found in your history)" : ""}. Change what it looks for
+            with Edit. {money(h.totalMinor)} paid over the last three years.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-red-600">
+            {error}
+          </p>
+        )}
+        {h?.payments.length === 0 && <p className="text-slate-500">No payments found.</p>}
+        <ol className="max-h-96 space-y-1 overflow-y-auto">
+          {h?.payments.map((p) => (
+            <li
+              key={p.id}
+              className={`flex items-center justify-between gap-2 border-l-2 pl-2 ${p.excluded ? "border-slate-200 opacity-60 dark:border-slate-700" : "border-blue-500"}`}
+            >
+              <div className="min-w-0">
+                <div className={p.excluded ? "line-through" : ""}>
+                  {formatDay(p.date)} · {p.merchant}
+                </div>
+                <div className="text-xs text-slate-500">{p.accountName}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-right tabular-nums">
+                  {money(p.amountMinor)}
+                  {p.changeMinor !== null && (
+                    <span
+                      className={`block text-xs ${p.changeMinor > 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}
+                    >
+                      {p.changeMinor > 0 ? "+" : "−"}
+                      {money(Math.abs(p.changeMinor))}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => void toggle(p.id, !p.excluded)}
+                >
+                  {p.excluded ? "Count it" : "Not this"}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </Modal>
   );
 }
 
@@ -295,6 +469,8 @@ interface Draft {
   website: string;
   notes: string;
   recurringKey: string | null;
+  trialEndsOn: string;
+  paymentMatch: string;
 }
 
 function emptyDraft(): Draft {
@@ -314,6 +490,8 @@ function emptyDraft(): Draft {
     website: "",
     notes: "",
     recurringKey: null,
+    trialEndsOn: "",
+    paymentMatch: "",
   };
 }
 
@@ -334,6 +512,8 @@ function draftOf(s: TrackedSubscription): Draft {
     website: s.website ?? "",
     notes: s.notes ?? "",
     recurringKey: s.recurringKey,
+    trialEndsOn: s.trialEndsOn ?? "",
+    paymentMatch: s.paymentMatch ?? "",
   };
 }
 
@@ -401,6 +581,8 @@ export function buildSubscription(
       website: opt(d.website),
       notes: opt(d.notes),
       recurringKey: d.recurringKey,
+      trialEndsOn: opt(d.trialEndsOn),
+      paymentMatch: opt(d.paymentMatch),
     },
   };
 }
@@ -626,6 +808,30 @@ function SubscriptionDialog({
               className={inputClass}
             />
           </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={label}>
+              Free trial ends (optional)
+              <input
+                type="date"
+                value={d.trialEndsOn}
+                onChange={(e) => set({ trialEndsOn: e.target.value })}
+                className={inputClass}
+              />
+            </label>
+            <label className={label}>
+              Its payments say (optional)
+              <input
+                value={d.paymentMatch}
+                maxLength={120}
+                placeholder={d.name || "NETFLIX.COM"}
+                onChange={(e) => set({ paymentMatch: e.target.value })}
+                className={inputClass}
+              />
+            </label>
+          </div>
+          <p className="-mt-2 text-xs text-slate-500">
+            Payments are found by this text in the merchant name; empty uses the name above.
+          </p>
           <label className={label}>
             Notes
             <textarea

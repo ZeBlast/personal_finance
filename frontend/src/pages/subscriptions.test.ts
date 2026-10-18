@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
-import type { Subscription } from "../types/planning";
-import { billingText, buildSubscription, draftFromSeries } from "./SubscriptionsPage";
+import type { RenewalItem, Subscription } from "../types/planning";
+import { billingText, buildSubscription, draftFromSeries, renewalWhen } from "./SubscriptionsPage";
+
+describe("the renewal inbox", () => {
+  const item: RenewalItem = {
+    key: "renewal:1:2026-10-20",
+    kind: "renewal",
+    title: "Domain renews",
+    detail: "",
+    date: "2026-10-20",
+    amountMinor: 2000,
+    subscriptionId: 1,
+  };
+  it("says when and how much", () => {
+    expect(renewalWhen(item, "2026-10-10")).toMatch(/^in 10 days, .+ · \$20\.00$/);
+    expect(renewalWhen({ ...item, amountMinor: null }, "2026-10-19")).toBe("tomorrow");
+    expect(
+      renewalWhen(
+        { ...item, kind: "price", date: "2026-10-01", amountMinor: 1799, changeMinor: 250 },
+        "2026-10-10",
+      ),
+    ).toMatch(/^charged .+ · now \$17\.99, up \$2\.50$/);
+  });
+});
 
 describe("subscriptions page", () => {
   it("says how each is billed", () => {

@@ -12,6 +12,8 @@ import {
   sandboxSaves,
   subscriptionReviews,
   trackedSubscriptions,
+  subscriptionPaymentExclusions,
+  renewalDismissals,
   fundPrices,
   tspAllocations,
   tspContributionApplications,
@@ -258,6 +260,8 @@ function everythingJson(db: AppDb, now: Date): { text: string; rows: number } {
     cardBills: db.select().from(cardBills).all(),
     subscriptionReviews: db.select().from(subscriptionReviews).all(),
     trackedSubscriptions: db.select().from(trackedSubscriptions).all(),
+    subscriptionPaymentExclusions: db.select().from(subscriptionPaymentExclusions).all(),
+    renewalDismissals: db.select().from(renewalDismissals).all(),
     duplicateDismissals: db.select().from(duplicateDismissals).all(),
     sandboxSaves: db.select().from(sandboxSaves).all(),
     // The files themselves stay in the database (and its backups); the export lists them.
