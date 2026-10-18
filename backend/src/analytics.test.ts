@@ -821,6 +821,62 @@ describe("budgets", () => {
     });
   });
 
+  it("carries last month's leftover or overspending in, as the rollover setting says", async () => {
+    const { groceries, shopping } = await scenario(ctx);
+    const aug = (await create(shopping.id, "2026-08", 50000)).body.id as number;
+    await ctx.call("patch", `/api/budgets/${aug}`).send({ rollover: "all" }).expect(200);
+    await create(shopping.id, "2026-09", 50000);
+    const shop = async () =>
+      (await month("2026-09")).budgets.find(
+        (x: { categoryName: string }) => x.categoryName === "Shopping",
+      );
+    // August: 50,000 budgeted, 90,000 spent, so 40,000 over carries into September.
+    expect(await shop()).toMatchObject({
+      carryInMinor: -40000,
+      availableMinor: 10000,
+      spentMinor: 70000,
+      remainingMinor: -60000,
+      overspent: true,
+    });
+    // Carrying only leftovers lets September start fresh after an overspent August.
+    await ctx.call("patch", `/api/budgets/${aug}`).send({ rollover: "leftover" }).expect(200);
+    expect(await shop()).toMatchObject({ carryInMinor: 0, availableMinor: 50000 });
+
+    // A fund for an irregular expense: what to set aside each month until its date.
+    const fund = await ctx
+      .call("post", "/api/budgets")
+      .send({
+        categoryId: groceries.id,
+        month: "2026-09",
+        amountMinor: 30000,
+        rollover: "all",
+        fundTargetMinor: 120000,
+        fundTargetDate: "2026-12-15",
+      })
+      .expect(201);
+    expect(fund.body.fund).toEqual({
+      targetMinor: 120000,
+      targetDate: "2026-12-15",
+      monthsLeft: 4,
+      suggestedMinor: 30000,
+      reached: false,
+    });
+    await ctx
+      .call("post", "/api/budgets")
+      .send({ categoryId: shopping.id, month: "2026-10", amountMinor: 1, fundTargetMinor: 5 })
+      .expect(400);
+    // Copying keeps the rollover setting.
+    await ctx
+      .call("post", "/api/budgets/copy")
+      .send({ fromMonth: "2026-09", toMonth: "2026-10" })
+      .expect(200);
+    const oct = (await month("2026-10")).budgets.find(
+      (x: { categoryName: string }) => x.categoryName === "Groceries",
+    );
+    // September: 30,000 budgeted, 70,000 spent.
+    expect(oct).toMatchObject({ rollover: "all", carryInMinor: -40000 });
+  });
+
   it("counts subcategory spending toward the parent's budget", async () => {
     const { shopping, ids } = await scenario(ctx);
     const gadgets = await makeCategory(ctx, "Gadgets", shopping.id);

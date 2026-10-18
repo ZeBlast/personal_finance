@@ -18,6 +18,7 @@ import {
   copyBudgets,
   createBudget,
   deleteBudget,
+  ROLLOVERS,
   updateBudget,
 } from "../services/budget.service.js";
 import { getSettings } from "../services/settings.service.js";
@@ -49,10 +50,15 @@ const calendarQuery = z.object({
   dateBasis: z.enum(DATE_BASES).optional(),
 });
 
+const budgetOptions = {
+  rollover: z.enum(ROLLOVERS).optional(),
+  fundTargetMinor: z.number().int().min(1).max(100_000_000_000).nullable().optional(),
+  fundTargetDate: z.iso.date().nullable().optional(),
+};
 const budgetCreate = z
-  .object({ categoryId: z.number().int().positive(), month, amountMinor })
+  .object({ categoryId: z.number().int().positive(), month, amountMinor, ...budgetOptions })
   .strict();
-const budgetUpdate = z.object({ amountMinor }).strict();
+const budgetUpdate = z.object({ amountMinor: amountMinor.optional(), ...budgetOptions }).strict();
 const budgetCopy = z.object({ fromMonth: month, toMonth: month }).strict();
 
 export function analyticsRoutes(db: AppDb): Router {
@@ -141,7 +147,7 @@ export function analyticsRoutes(db: AppDb): Router {
 
   router.patch("/budgets/:id", (req, res) => {
     const body = budgetUpdate.parse(req.body);
-    res.json(updateBudget(db, idParam.parse(req.params["id"]), body.amountMinor, environment()));
+    res.json(updateBudget(db, idParam.parse(req.params["id"]), body, environment()));
   });
 
   router.delete("/budgets/:id", (req, res) => {

@@ -98,10 +98,24 @@ export interface Budget {
   categoryColor: string | null;
   parentId: number | null;
   amountMinor: number;
+  /** Month-end carries into next month: off, leftovers and overspending, or only leftovers. */
+  rollover: "off" | "all" | "leftover";
+  /** Carried in from last month (negative after overspending). */
+  carryInMinor: number;
+  /** The amount plus what carried in. */
+  availableMinor: number;
   spentMinor: number;
   remainingMinor: number;
   percentUsed: number;
   overspent: boolean;
+  /** Saving toward an irregular expense by a date. */
+  fund: {
+    targetMinor: number;
+    targetDate: string;
+    monthsLeft: number;
+    suggestedMinor: number;
+    reached: boolean;
+  } | null;
 }
 
 export interface BudgetMonth {

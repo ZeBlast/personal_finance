@@ -7,6 +7,7 @@ import { useApi } from "../hooks/useApi";
 import { announceDataChanged } from "../lib/syncEvents";
 import { currencyDigits, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
+import { formatDay } from "../lib/time";
 import type { Budget, BudgetMonth } from "../types/analytics";
 import { Select } from "../components/common/Select";
 
@@ -38,6 +39,12 @@ function BudgetForm({
   const { categories } = useCategories();
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState(budget ? editableAmount(budget.amountMinor) : "");
+  const [rollover, setRollover] = useState<Budget["rollover"]>(budget?.rollover ?? "off");
+  const [fundOn, setFundOn] = useState(budget?.fund != null);
+  const [fundTarget, setFundTarget] = useState(
+    budget?.fund ? editableAmount(budget.fund.targetMinor) : "",
+  );
+  const [fundDate, setFundDate] = useState(budget?.fund?.targetDate ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const options = categoryOptions((categories ?? []).filter((c) => !existing.has(c.id)));
@@ -55,19 +62,34 @@ function BudgetForm({
       setError("Choose a category.");
       return;
     }
+    const fundTargetMinor = fundOn ? parseMoneyToMinor(fundTarget, "USD") : null;
+    if (fundOn && (fundTargetMinor === null || fundDate === "")) {
+      setError("Enter how much the fund needs and by when.");
+      return;
+    }
+    const options = {
+      rollover,
+      fundTargetMinor,
+      fundTargetDate: fundOn ? fundDate : null,
+    };
     setBusy(true);
     setError(null);
     try {
       if (budget) {
         await api(`/budgets/${budget.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ amountMinor: minor }),
+          body: JSON.stringify({ amountMinor: minor, ...options }),
         });
         onSaved(`Updated the ${budget.categoryName} budget.`);
       } else {
         await api("/budgets", {
           method: "POST",
-          body: JSON.stringify({ categoryId: Number(categoryId), month, amountMinor: minor }),
+          body: JSON.stringify({
+            categoryId: Number(categoryId),
+            month,
+            amountMinor: minor,
+            ...options,
+          }),
         });
         onSaved("Budget added.");
       }
@@ -124,6 +146,71 @@ function BudgetForm({
             className={inputClass}
           />
         </div>
+        <div>
+          <label htmlFor={`${id}-roll`} className="block font-medium">
+            At the end of the month
+          </label>
+          <Select
+            id={`${id}-roll`}
+            value={rollover}
+            onChange={(e) => {
+              const next = e.target.value as Budget["rollover"];
+              setRollover(next);
+              if (next === "off") setFundOn(false);
+            }}
+            className={inputClass}
+          >
+            <option value="off">Start fresh next month</option>
+            <option value="leftover">Carry what is left into next month</option>
+            <option value="all">Carry what is left, or take overspending off next month</option>
+          </Select>
+          <p className="mt-1 text-xs text-slate-500">
+            Applies from this month on; copy the budgets to next month to keep it going.
+          </p>
+        </div>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={fundOn}
+            onChange={(e) => {
+              setFundOn(e.target.checked);
+              if (e.target.checked && rollover === "off") setRollover("leftover");
+            }}
+          />
+          <span>
+            Save up for an irregular expense{" "}
+            <span className="text-xs text-slate-500">(insurance, gifts, car repairs)</span>
+          </span>
+        </label>
+        {fundOn && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor={`${id}-fund`} className="block font-medium">
+                Needed (USD)
+              </label>
+              <input
+                id={`${id}-fund`}
+                inputMode="decimal"
+                value={fundTarget}
+                onChange={(e) => setFundTarget(e.target.value)}
+                placeholder="1200.00"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor={`${id}-fund-date`} className="block font-medium">
+                By
+              </label>
+              <input
+                id={`${id}-fund-date`}
+                type="date"
+                value={fundDate}
+                onChange={(e) => setFundDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+        )}
         {error && (
           <p role="alert" className="text-red-600">
             {error}
@@ -140,6 +227,35 @@ function BudgetForm({
       </form>
     </Modal>
   );
+}
+
+/** What carried in, what carries on, and a fund's progress, in words. Pure. */
+export function budgetNotes(b: Budget): string[] {
+  const money = (n: number) => formatMinor(n, "USD");
+  const notes: string[] = [];
+  if (b.carryInMinor !== 0) {
+    notes.push(
+      b.carryInMinor > 0
+        ? `${money(b.amountMinor)} + ${money(b.carryInMinor)} carried from last month`
+        : `${money(b.amountMinor)} − ${money(-b.carryInMinor)} overspent last month`,
+    );
+  }
+  if (b.rollover !== "off") {
+    const carries = b.rollover === "leftover" ? Math.max(0, b.remainingMinor) : b.remainingMinor;
+    notes.push(
+      carries < 0
+        ? `${money(-carries)} over comes off next month`
+        : `${money(carries)} carries into next month`,
+    );
+  }
+  if (b.fund) {
+    notes.push(
+      b.fund.reached
+        ? `Fund: ${money(b.fund.targetMinor)} saved for ${formatDay(b.fund.targetDate)}`
+        : `Fund: ${money(b.fund.targetMinor)} by ${formatDay(b.fund.targetDate)} · set aside ${money(b.fund.suggestedMinor)} a month (${b.fund.monthsLeft} month${b.fund.monthsLeft === 1 ? "" : "s"})`,
+    );
+  }
+  return notes;
 }
 
 export function BudgetsPage() {
@@ -193,7 +309,7 @@ export function BudgetsPage() {
   }
 
   return (
-    <section className="max-w-3xl space-y-4">
+    <section className="@container max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Budgets</h1>
         <div className="flex items-center gap-2">
@@ -270,9 +386,13 @@ export function BudgetsPage() {
             </div>
           </div>
 
-          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 px-3 dark:divide-slate-700 dark:border-slate-700">
+          {/* Two columns of budgets when the page has room. */}
+          <ul className="grid gap-3 @min-[56rem]:grid-cols-2">
             {data.budgets.map((b) => (
-              <li key={b.id} className="space-y-1 py-3 text-sm">
+              <li
+                key={b.id}
+                className="space-y-1 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700"
+              >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="flex items-center gap-2 font-medium">
                     <span
@@ -286,7 +406,7 @@ export function BudgetsPage() {
                     <span
                       className={`tabular-nums ${b.overspent ? "font-medium text-red-600 dark:text-red-400" : ""}`}
                     >
-                      {money(b.spentMinor)} / {money(b.amountMinor)}
+                      {money(b.spentMinor)} / {money(b.availableMinor)}
                     </span>
                     <button
                       type="button"
@@ -308,7 +428,7 @@ export function BudgetsPage() {
                 </div>
                 <ProgressBar
                   value={b.spentMinor}
-                  max={b.amountMinor}
+                  max={Math.max(0, b.availableMinor)}
                   label={`${b.categoryName} budget`}
                   color={b.categoryColor}
                 />
@@ -320,6 +440,11 @@ export function BudgetsPage() {
                     : `${money(b.remainingMinor)} left`}{" "}
                   · {b.percentUsed}% used
                 </div>
+                {budgetNotes(b).map((note) => (
+                  <div key={note} className="text-xs text-slate-500">
+                    {note}
+                  </div>
+                ))}
               </li>
             ))}
             {data.budgets.length === 0 && (
