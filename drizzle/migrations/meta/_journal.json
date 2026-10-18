@@ -281,6 +281,13 @@
       "when": 1791938520108,
       "tag": "0039_tracked_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1792300985461,
+      "tag": "0040_kept_splits",
+      "breakpoints": true
     }
   ]
 }

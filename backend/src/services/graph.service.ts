@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
 import { AppError } from "../utils/errors.js";
 import { isRealDate } from "../utils/dates.js";
@@ -89,6 +89,17 @@ export interface Graph {
 export const MAX_GRAPH_TRANSACTIONS = 5000;
 const MANUAL_INSTITUTION = "manual";
 
+/** What the reimbursements linked to transaction `t` gave back (positive), or 0. */
+const REIMBURSED = (t: SQL) =>
+  sql`coalesce((select -sum(r.amount_minor) from transactions r where r.refund_of_id = ${t}.id), 0)`;
+/** A purchase split by what was kept: its parts add up to it less what its reimbursements gave. */
+const KEPT_SPLIT = (t: SQL) => sql`(${t}.amount_minor > 0 and ${REIMBURSED(t)} > 0
+  and (select sum(x.amount_minor) from transaction_splits x where x.transaction_id = ${t}.id)
+    = ${t}.amount_minor - ${REIMBURSED(t)})`;
+/** Split parts that count: they add up to the transaction, or it is split by what was kept. */
+const KEPT_OR_FULL_SPLIT = sql`((select sum(x.amount_minor) from transaction_splits x
+    where x.transaction_id = s.transaction_id) = t.amount_minor or ${KEPT_SPLIT(sql`t`)})`;
+
 interface Row {
   id: number;
   account_id: number;
@@ -157,6 +168,9 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
         [...ids].map((id) => sql`${id}`),
         sql`, `,
       )})
+      -- A reimbursement of a purchase split by what was kept is already taken off that purchase.
+      and not exists (select 1 from transactions o
+        where o.id = t.refund_of_id and ${KEPT_SPLIT(sql`o`)})
     order by date desc, t.id desc
     limit ${MAX_GRAPH_TRANSACTIONS + 1}`);
 
@@ -193,8 +207,7 @@ export function transactionGraph(db: AppDb, from: string, to: string): Graph {
       shownIds.map((id) => sql`${id}`),
       sql`, `,
     )})
-      and (select sum(x.amount_minor) from transaction_splits x
-        where x.transaction_id = s.transaction_id) = t.amount_minor
+      and ${KEPT_OR_FULL_SPLIT}
     order by s.transaction_id, s.position, s.id`);
   const splits = new Map<number, GraphSplit[]>();
   for (const s of splitRows) {

@@ -260,23 +260,6 @@ export function clearRefundAllocation(db: Db, refundId: number): void {
 }
 
 /**
- * Every refund of a purchase gives back all of itself to one of the purchase's categories: the
- * reimbursed part made when the purchase is split by what was kept.
- */
-export function allocateRefundsToCategory(
-  db: Db,
-  originalId: number,
-  categoryId: number | null,
-  now: string,
-): void {
-  const refunds = db.all<{ id: number; amount_minor: number }>(sql`
-    select id, amount_minor from transactions where refund_of_id = ${originalId}`);
-  for (const r of refunds) {
-    writeSplits(db, r.id, [{ categoryId, amountMinor: r.amount_minor }], now);
-  }
-}
-
-/**
  * After a purchase's split changes: each of its refunds keeps its own split if it still fits,
  * and is otherwise divided again in proportion; when the purchase is no longer split, the
  * refunds' splits (which divided them by its categories) are removed. Returns how many changed.

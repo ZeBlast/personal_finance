@@ -904,9 +904,15 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
       : null;
     dto.refundedMinor = refunded.get(r.id) ?? 0;
     dto.splits = splits.get(r.id) ?? [];
+    // Valid when the parts add up to the transaction, or, for a purchase with reimbursements, to
+    // what was kept (the purchase less what came back).
+    const splitTotal = dto.splits.reduce((n, s) => n + s.amountMinor, 0);
     dto.splitValid =
       dto.splits.length === 0 ||
-      dto.splits.reduce((n, s) => n + s.amountMinor, 0) === r.amountMinor;
+      splitTotal === r.amountMinor ||
+      (r.amountMinor > 0 &&
+        dto.refundedMinor > 0 &&
+        splitTotal === r.amountMinor - dto.refundedMinor);
     return dto;
   });
 }

@@ -16,9 +16,6 @@ interface Part {
   note: string;
 }
 
-/** The note the app puts on the reimbursed part of a purchase split by what was kept. */
-export const REIMBURSED_NOTE = "Reimbursed";
-
 /** The size of a transaction, as people read it (always positive), in cents. */
 const sizeOf = (t: Transaction): number => Math.abs(t.amountMinor);
 
@@ -143,7 +140,8 @@ function CategorySplitDialog({ transaction: t, categories, onSaved, onClose }: S
   // part aside on its own (and shows it here only as a note).
   const reimbursed = t.amountMinor > 0 ? Math.min(t.refundedMinor, t.amountMinor - 1) : 0;
   const target = t.amountMinor - reimbursed;
-  const ownSplits = t.splits.filter((s) => !(reimbursed > 0 && s.note === REIMBURSED_NOTE));
+  // The parts are the purchase's own categories (what was kept, when reimbursed).
+  const ownSplits = t.splits;
   const [initial] = useState<Part[]>(() =>
     ownSplits.length > 0
       ? ownSplits.map((s) => ({
@@ -251,8 +249,8 @@ function CategorySplitDialog({ transaction: t, categories, onSaved, onClose }: S
         {reimbursed > 0 && (
           <p className="rounded-md bg-blue-50 px-3 py-2 text-blue-900 dark:bg-blue-950 dark:text-blue-200">
             {formatMinor(reimbursed, t.currency)} of the {formatMinor(sizeOf(t), t.currency)} was
-            reimbursed, so only what you kept is split. The reimbursed part is set aside on its own
-            and doesn&apos;t count as your spending.
+            reimbursed, so only what you kept is split, into your own categories. The reimbursement
+            keeps its own category and isn&apos;t counted again anywhere.
           </p>
         )}
         {!t.splitValid && t.splits.length > 0 && (

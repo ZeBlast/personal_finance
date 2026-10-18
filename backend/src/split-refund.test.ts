@@ -1,6 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { allocateProportionally } from "./services/refund-allocation.service.js";
 import { makeTestApp } from "./test-helpers.js";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -166,8 +171,82 @@ describe("dividing a refund of a split purchase across its categories", () => {
 });
 
 describe("splitting a reimbursed purchase by what was kept", () => {
-  it("splits only what is left after the reimbursement, and sets the reimbursed part aside", async () => {
+  it("splits only what is left after the reimbursement; the reimbursement stays unsplit and counts nowhere else", async () => {
     const { t, add, fun, food, link, split, spending } = await setup();
+    const paybacks = (
+      await t
+        .call("post", "/api/categories")
+        .send({ name: "Paybacks", incomeTreatment: "refund" })
+        .expect(201)
+    ).body.id as number;
+    const dinner = await add({
+      date: "2026-10-20",
+      merchant: "Steakhouse",
+      amountMinor: 17000,
+      direction: "out",
+      categoryId: fun,
+    });
+    const back = await add({
+      date: "2026-10-21",
+      merchant: "Alex",
+      amountMinor: 8000,
+      direction: "in",
+      categoryId: paybacks,
+    });
+    await link(back, dinner);
+
+    // $90 kept: $60 Fun, $30 Meals. The full $170 is no longer asked for.
+    const saved = (
+      await split(dinner, [
+        { categoryId: fun, amountMinor: 6000 },
+        { categoryId: food, amountMinor: 3000 },
+      ])
+    ).body;
+    // Only the purchase's own categories: no part for what was reimbursed.
+    expect(saved.splits.map((s: { amountMinor: number }) => s.amountMinor)).toEqual([6000, 3000]);
+    expect(saved.splitValid).toBe(true);
+    // The reimbursement keeps its own category and is not split ("split 1 way").
+    const reimbursement = (await t.call("get", `/api/transactions/${back}`).expect(200)).body;
+    expect(reimbursement.splits).toEqual([]);
+    expect(reimbursement.category.name).toBe("Paybacks");
+
+    const before = await spending();
+    // The first purchase in setup ($120 Fun / $50 Meals, its refund not linked) is there too.
+    expect(before["Fun"]).toBe(12000 + 6000);
+    expect(before["Meals"]).toBe(5000 + 3000);
+    expect(before["Paybacks"] ?? 0).toBe(0);
+
+    // The transactions chart has no reimbursement line at all, either way.
+    const chart = (
+      await t
+        .call("get", "/api/analytics/category-trends?from=2026-10-01&to=2026-10-31&flow=all")
+        .expect(200)
+    ).body as { series: Array<{ label: string; values: number[] }> };
+    expect(chart.series.some((s) => s.label.startsWith("Paybacks"))).toBe(false);
+    expect(chart.series.find((s) => s.label === "Fun · out")?.values[0]).toBe(12000 + 6000);
+
+    // The network graph shows the kept parts and leaves the reimbursement out.
+    const graph = (
+      await t.call("get", "/api/graph/transactions?from=2026-10-01&to=2026-10-31").expect(200)
+    ).body as { transactions: Array<{ id: number; splits: Array<{ amountMinor: number }> }> };
+    expect(graph.transactions.some((x) => x.id === back)).toBe(false);
+    expect(
+      graph.transactions.find((x) => x.id === dinner)!.splits.map((s) => s.amountMinor),
+    ).toEqual([6000, 3000]);
+
+    // A total that is neither the purchase nor what was kept is refused.
+    await split(dinner, [{ categoryId: fun, amountMinor: 5000 }], 400);
+
+    // Unlinking the reimbursement leaves the purchase whole again.
+    await link(back, null);
+    const whole = (await t.call("get", `/api/transactions/${dinner}`).expect(200)).body;
+    expect(whole.splits).toEqual([]);
+  });
+});
+
+describe("purchases split by what was kept, saved the old way", () => {
+  it("lose the reimbursed part, and their reimbursements their one-part split", async () => {
+    const { t, add, fun, food, link, spending } = await setup();
     const dinner = await add({
       date: "2026-10-20",
       merchant: "Steakhouse",
@@ -182,28 +261,37 @@ describe("splitting a reimbursed purchase by what was kept", () => {
       direction: "in",
     });
     await link(back, dinner);
+    // The old layout: kept parts plus a "Reimbursed" part, and the reimbursement split one way.
+    const insert = t.sqlite.prepare(
+      "insert into transaction_splits (transaction_id, category_id, amount_minor, note, position, created_at) values (?, ?, ?, ?, ?, '2026-10-21')",
+    );
+    insert.run(dinner, fun, 6000, null, 0);
+    insert.run(dinner, food, 3000, null, 1);
+    insert.run(dinner, null, 8000, "Reimbursed", 2);
+    insert.run(back, null, -8000, null, 0);
 
-    // $90 kept: $60 Fun, $30 Meals. The full $170 is no longer asked for.
-    const saved = (
-      await split(dinner, [
-        { categoryId: fun, amountMinor: 6000 },
-        { categoryId: food, amountMinor: 3000 },
-      ])
-    ).body;
-    expect(saved.splits).toHaveLength(3);
-    expect(saved.splits.at(-1)).toMatchObject({ amountMinor: 8000, note: "Reimbursed" });
-    const before = await spending();
-    // The first purchase in setup ($120 Fun / $50 Meals, its refund not linked) is there too.
-    expect(before["Fun"]).toBe(12000 + 6000);
-    expect(before["Meals"]).toBe(5000 + 3000);
+    // The cleanup statements of migration 0040, before it recreates the view.
+    const migration = fs.readFileSync(
+      path.join(here, "../../drizzle/migrations/0040_kept_splits.sql"),
+      "utf8",
+    );
+    for (const statement of migration.split("--> statement-breakpoint").slice(0, 2)) {
+      t.sqlite.exec(statement);
+    }
 
-    // A total that is neither the purchase nor what was kept is refused.
-    await split(dinner, [{ categoryId: fun, amountMinor: 5000 }], 400);
-
-    // Unlinking the reimbursement leaves the purchase whole again.
-    await link(back, null);
-    const whole = (await t.call("get", `/api/transactions/${dinner}`).expect(200)).body;
-    expect(whole.splits).toEqual([]);
+    const amounts = (id: number) =>
+      (
+        t.sqlite
+          .prepare(
+            "select amount_minor from transaction_splits where transaction_id = ? order by position",
+          )
+          .all(id) as Array<{ amount_minor: number }>
+      ).map((r) => r.amount_minor);
+    expect(amounts(dinner)).toEqual([6000, 3000]);
+    expect(amounts(back)).toEqual([]);
+    const after = await spending();
+    expect(after["Fun"]).toBe(12000 + 6000);
+    expect(after["Meals"]).toBe(5000 + 3000);
   });
 });
 

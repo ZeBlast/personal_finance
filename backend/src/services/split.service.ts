@@ -2,11 +2,7 @@ import { eq } from "drizzle-orm";
 import { categories, transactions, transactionSplits } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
-import {
-  allocateRefundsToCategory,
-  checkRefundSplit,
-  reallocateRefundsOf,
-} from "./refund-allocation.service.js";
+import { checkRefundSplit, reallocateRefundsOf } from "./refund-allocation.service.js";
 import { getTransaction, type TransactionDto } from "./transaction.service.js";
 
 /**
@@ -59,8 +55,8 @@ export function setSplits(
   }
   const total = parts.reduce((n, p) => n + p.amountMinor, 0);
   // A purchase with reimbursements linked may be split by what was kept: the parts then add up to
-  // the purchase less what came back, and the reimbursed amount becomes a part of its own, which
-  // the reimbursements give back in full.
+  // the purchase less what came back. Those parts are all it counts as, and the reimbursements
+  // (already taken off) are left out of totals (see the transaction_lines view).
   const reimbursed = tx.amountMinor > 0 ? reimbursedOf(db, transactionId) : null;
   const keptOnly =
     reimbursed !== null &&
@@ -85,29 +81,12 @@ export function setSplits(
       "A split needs at least two parts. Remove it instead.",
     );
   }
-  if (keptOnly && parts.length + 1 > MAX_SPLITS) {
-    throw new AppError(
-      400,
-      "invalid_split",
-      `With the reimbursed part, split into at most ${MAX_SPLITS - 1} parts.`,
-    );
-  }
   if (keptOnly && parts.some((p) => p.amountMinor < 0)) {
     throw new AppError(400, "invalid_split", "Each part of what you kept is money spent.");
   }
-  const saved: SplitInput[] = keptOnly
-    ? [
-        ...parts,
-        {
-          categoryId: reimbursed!.categoryId,
-          amountMinor: reimbursed!.amountMinor,
-          note: REIMBURSED_NOTE,
-        },
-      ]
-    : parts;
   db.transaction((t) => {
     t.delete(transactionSplits).where(eq(transactionSplits.transactionId, transactionId)).run();
-    saved.forEach((p, position) => {
+    parts.forEach((p, position) => {
       t.insert(transactionSplits)
         .values({
           transactionId,
@@ -119,36 +98,48 @@ export function setSplits(
         })
         .run();
     });
-    if (keptOnly) {
-      // Each reimbursement gives back the reimbursed part, so what was kept is what counts.
-      allocateRefundsToCategory(t, transactionId, reimbursed!.categoryId, now);
-    } else {
-      // The refunds of this purchase follow its categories.
-      reallocateRefundsOf(t, transactionId, now);
-    }
+    // The refunds of this purchase follow its categories; split by what was kept, the purchase is
+    // not split in full, so its reimbursements keep no split of their own (just their category).
+    reallocateRefundsOf(t, transactionId, now);
   });
   return getTransaction(db, transactionId);
 }
 
-/** The note on the part of a purchase that was reimbursed, made when it is split by what was kept. */
-export const REIMBURSED_NOTE = "Reimbursed";
-
-/**
- * What the reimbursements (refunds) linked to a purchase give back in all, and the category to
- * file that part under: theirs when they all share one, else none. Null when nothing is linked.
- */
+/** What the reimbursements (refunds) linked to a purchase give back in all, or null. */
 function reimbursedOf(
-  db: AppDb,
+  db: Pick<AppDb, "select">,
   originalId: number,
-): { amountMinor: number; categoryId: number | null } | null {
+): { amountMinor: number } | null {
   const rows = db
-    .select({ amountMinor: transactions.amountMinor, categoryId: transactions.categoryId })
+    .select({ amountMinor: transactions.amountMinor })
     .from(transactions)
     .where(eq(transactions.refundOfId, originalId))
     .all();
   if (rows.length === 0) return null;
   const amountMinor = -rows.reduce((n, r) => n + r.amountMinor, 0);
-  if (amountMinor <= 0) return null;
-  const first = rows[0]!.categoryId;
-  return { amountMinor, categoryId: rows.every((r) => r.categoryId === first) ? first : null };
+  return amountMinor > 0 ? { amountMinor } : null;
+}
+
+/**
+ * Whether a purchase is split by what was kept: its parts add up to the purchase less what its
+ * reimbursements gave back. Its reimbursements then count nowhere else.
+ */
+export function isKeptSplit(db: Pick<AppDb, "select">, id: number): boolean {
+  const tx = db
+    .select({ amountMinor: transactions.amountMinor })
+    .from(transactions)
+    .where(eq(transactions.id, id))
+    .get();
+  if (!tx || tx.amountMinor <= 0) return false;
+  const reimbursed = reimbursedOf(db, id);
+  if (!reimbursed) return false;
+  const parts = db
+    .select({ amountMinor: transactionSplits.amountMinor })
+    .from(transactionSplits)
+    .where(eq(transactionSplits.transactionId, id))
+    .all();
+  return (
+    parts.length > 0 &&
+    parts.reduce((n, p) => n + p.amountMinor, 0) === tx.amountMinor - reimbursed.amountMinor
+  );
 }
