@@ -1,0 +1,1 @@
+ALTER TABLE `goals` ADD `account_amounts` text DEFAULT '{}' NOT NULL;
