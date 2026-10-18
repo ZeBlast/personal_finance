@@ -37,9 +37,10 @@ interface Options {
   pending: boolean;
   accounts: number[];
   hidden: string[];
-  /** `out`: spending. `in`: all money coming in (income, incoming transfers, refunds). */
-  flow: "out" | "in";
 }
+
+/** The chart shows every transaction: each category's money out and money in as its own line. */
+const FLOW = "all";
 
 const DEFAULTS: Options = {
   categories: [],
@@ -55,23 +56,21 @@ const DEFAULTS: Options = {
   pending: true,
   accounts: [],
   hidden: [],
-  flow: "out",
 };
 const STORE = "pf.categoryExplorer.v1";
 
 /**
  * The Transactions page filters for one period of the chart: the categories of the lines on show
- * (none when every category is), money in only when the chart shows money in, and the account when
- * exactly one is chosen. Pure, for testing.
+ * (none when every line is), money in or out only when every line on show is that way, and the
+ * account when exactly one is chosen. Pure, for testing.
  */
 export function periodLink(input: {
   from: string;
   to: string;
-  /** The lines on show: their categories (null is "Uncategorized"). */
-  shown: Array<{ categoryId: number | null }>;
-  /** Every category is on show (no category chosen, none hidden, not split). */
+  /** The lines on show: their categories (null is "Uncategorized") and which way the money went. */
+  shown: Array<{ categoryId: number | null; direction?: "in" | "out" | undefined }>;
+  /** Every line is on show (no category chosen, none hidden, not split). */
   everything: boolean;
-  flow: "out" | "in";
   accounts: number[];
 }): string {
   const params = new URLSearchParams({ from: input.from, to: input.to });
@@ -80,8 +79,10 @@ export function periodLink(input: {
       ...new Set(input.shown.map((s) => (s.categoryId === null ? "none" : String(s.categoryId)))),
     ];
     params.set("category", ids.join(","));
+    const ways = new Set(input.shown.map((s) => s.direction));
+    const [way] = [...ways];
+    if (ways.size === 1 && (way === "in" || way === "out")) params.set("direction", way);
   }
-  if (input.flow === "in") params.set("direction", "in");
   if (input.accounts.length === 1) params.set("account", String(input.accounts[0]));
   return `/transactions?${params}`;
 }
@@ -259,7 +260,7 @@ export function CategoryExplorer() {
     accounts: o.accounts.join(","),
     split: o.split ? "1" : "0",
     pending: o.pending ? "1" : "0",
-    flow: o.flow,
+    flow: FLOW,
   });
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(o.from) && /^\d{4}-\d{2}-\d{2}$/.test(o.to) && o.from <= o.to;
@@ -338,7 +339,6 @@ export function CategoryExplorer() {
         to: b.to,
         shown: visible,
         everything: o.categories.length === 0 && o.hidden.length === 0 && !o.split,
-        flow: o.flow,
         accounts: o.accounts,
       }),
     );
@@ -354,46 +354,16 @@ export function CategoryExplorer() {
   return (
     <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
       <div>
-        <h2 className="text-lg font-semibold">
-          {o.flow === "in" ? "Money in by category over time" : "Spending by category over time"}
-        </h2>
+        <h2 className="text-lg font-semibold">Transactions by category over time</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Choose categories and how to look at them. Hover a period for its figures, click it to see
-          its transactions, and click a row below to hide or show its line.
-          {o.flow === "in"
-            ? " Money in counts everything that came in: income, transfers from your other accounts, refunds and other credits."
-            : ""}
+          Every transaction, by category: each category&apos;s money out and money in are lines of
+          their own (“· out” and “· in”), income and transfers between your accounts included. Hover
+          a period for its figures, click it to see its transactions, and click a row below to hide
+          or show its line.
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="radiogroup"
-          aria-label="Money out or in"
-          className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600"
-        >
-          {(
-            [
-              ["out", "Money out"],
-              ["in", "Money in"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={o.flow === value}
-              onClick={() => set({ flow: value, hidden: [] })}
-              className={`px-3 py-1 ${
-                o.flow === value
-                  ? "bg-blue-600 text-white"
-                  : "hover:bg-slate-50 dark:hover:bg-slate-800"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         <Picker label="Categories" summary={chosenLabel} search={catSearch} onSearch={setCatSearch}>
           <div className="mb-1 flex gap-2 text-xs">
             <button
@@ -541,7 +511,7 @@ export function CategoryExplorer() {
         >
           {MEASURES.map((m) => (
             <option key={m.id} value={m.id}>
-              {measureLabel(m.id, o.flow)}
+              {measureLabel(m.id, FLOW)}
             </option>
           ))}
         </Select>
@@ -585,7 +555,7 @@ export function CategoryExplorer() {
             viewBox={`0 0 ${W} ${H}`}
             className="h-auto w-full select-none"
             role="img"
-            aria-label={`${measureLabel(o.measure, o.flow)} by ${o.interval}, ${data.from} to ${data.to}`}
+            aria-label={`${measureLabel(o.measure, FLOW)} by ${o.interval}, ${data.from} to ${data.to}`}
             onPointerLeave={() => setHover(null)}
           >
             {ticks.map((t) => (

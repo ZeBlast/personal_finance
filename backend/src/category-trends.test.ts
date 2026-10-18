@@ -156,6 +156,37 @@ describe("category trends", () => {
     expect(out.series[0].values).toEqual([4_000 - 300]);
   });
 
+  it("show every transaction by category: each category's money out and in as their own lines", async () => {
+    const { t, cat, add, wallet, jar, trends } = await setup();
+    const pay = cat("Pay");
+    await add(wallet, "2026-09-15", 300_000, pay, "in");
+    await t
+      .call("post", "/api/transactions")
+      .send({
+        accountId: jar,
+        date: "2026-09-20",
+        merchant: "To savings",
+        amountMinor: 50_000,
+        direction: "out",
+        isTransfer: true,
+      })
+      .expect(201);
+    const r = await trends(`from=2026-09-01&to=2026-09-30&interval=month&flow=all`);
+    const byLabel = Object.fromEntries(
+      r.series.map((s: { label: string; values: number[] }) => [s.label, s.values[0]]),
+    );
+    // Groceries' $40 out and its $3 refund in are each their own line, under Food & Drink.
+    expect(byLabel).toEqual({
+      "Pay · in": 300_000,
+      "Uncategorized · out": 50_000,
+      "Food & Drink · out": 4_000,
+      "Fun · out": 700,
+      "Food & Drink · in": 300,
+    });
+    expect(r.series.find((s: { label: string }) => s.label === "Pay · in").direction).toBe("in");
+    expect(r.allSpending).toEqual([300_000 + 50_000 + 4_000 + 700 + 300]);
+  });
+
   it("open a period's transactions in several categories at once, or only money in", async () => {
     const { t, food, fun } = await setup();
     const list = async (query: string) =>

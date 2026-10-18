@@ -39,8 +39,12 @@ export interface TrendQuery {
   flow?: TrendFlow | undefined;
 }
 
-export type TrendFlow = "out" | "in";
-export const TREND_FLOWS = ["out", "in"] as const;
+/**
+ * `out`: spending. `in`: money in. `all`: every transaction, each category's money out and money
+ * in as lines of their own (positive amounts), transfers and income included.
+ */
+export type TrendFlow = "out" | "in" | "all";
+export const TREND_FLOWS = ["out", "in", "all"] as const;
 
 export interface TrendBucket {
   key: string;
@@ -57,6 +61,8 @@ export interface TrendSeries {
   parentId: number | null;
   label: string;
   color: string | null;
+  /** With every transaction (`flow: all`): whether the line is the category's money in or out. */
+  direction?: "in" | "out";
   /** Per bucket: spending (refunds take away) and how many transactions. */
   values: number[];
   counts: number[];
@@ -194,24 +200,29 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
 
   const day = dateOf(q.dateBasis);
   const moneyIn = q.flow === "in";
+  const everything = q.flow === "all";
   const base = (from: string, to: string): SQL[] => {
     const parts: SQL[] = [
       sql`${day} >= ${from}`,
       sql`${day} <= ${to}`,
       sql`(p.environment = ${q.environment} or a.plaid_item_id is null)`,
       accountScope(undefined),
-      ...(moneyIn
-        ? [
-            // Every amount that came in, transfers and income included; a copy of one shown on a
-            // second account counts once.
-            sql`t.amount_minor < 0`,
-            sql`coalesce(t.transfer_source, '') <> 'mirror'`,
-          ]
-        : [
-            NOT_TRANSFER,
-            // Not income. (A case, not "not": the test can be unknown, which "not" would drop.)
-            sql`(case when ${IS_INCOME} then 0 else 1 end) = 1`,
-          ]),
+      ...(everything
+        ? // Every transaction, transfers and income included; a copy of one shown on a second
+          // account (PayPal and the card that paid) counts once.
+          [sql`coalesce(t.transfer_source, '') <> 'mirror'`]
+        : moneyIn
+          ? [
+              // Every amount that came in, transfers and income included; a copy of one shown on a
+              // second account counts once.
+              sql`t.amount_minor < 0`,
+              sql`coalesce(t.transfer_source, '') <> 'mirror'`,
+            ]
+          : [
+              NOT_TRANSFER,
+              // Not income. (A case, not "not": the test can be unknown, which "not" would drop.)
+              sql`(case when ${IS_INCOME} then 0 else 1 end) = 1`,
+            ]),
     ];
     if (q.accounts.length > 0) parts.push(sql`t.account_id in (${list(q.accounts)})`);
     if (!q.includePending) parts.push(sql`t.pending = 0`);
@@ -223,14 +234,21 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     left join categories c on c.id = t.category_id`;
 
   const bucket = bucketSql(q.interval, day);
-  // Spending is the amounts as they are (refunds take away); money in is shown as positive.
-  const amount = moneyIn ? sql`-sum(t.amount_minor)` : sql`sum(t.amount_minor)`;
-  const rows = db.all<Row>(sql`
-    select ${bucket} as bucket, ${seriesKey} as key, ${amount} as spending,
+  // Spending is the amounts as they are (refunds take away); money in is shown as positive; with
+  // every transaction, each line is money out or in, as positive amounts.
+  const amount = everything
+    ? sql`sum(abs(t.amount_minor))`
+    : moneyIn
+      ? sql`-sum(t.amount_minor)`
+      : sql`sum(t.amount_minor)`;
+  // Which way the money went: 1 in, 0 out (only told apart with every transaction).
+  const dir = everything ? sql`(t.amount_minor < 0)` : sql`0`;
+  const rows = db.all<Row & { dir: number }>(sql`
+    select ${bucket} as bucket, ${seriesKey} as key, ${dir} as dir, ${amount} as spending,
       count(distinct t.id) as n
     ${from}
     where ${sql.join([...base(q.from, q.to), inChosen], sql` and `)}
-    group by 1, 2`);
+    group by 1, 2, 3`);
   const all = db.all<{ bucket: string; spending: number | null }>(sql`
     select ${bucket} as bucket, ${amount} as spending
     ${from}
@@ -239,55 +257,62 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
 
   // The period just before, of the same length (in whole months when the period is whole months).
   const { prevFrom, prevTo } = previousPeriod(q.from, q.to, days);
-  const prev = db.all<{ key: number; spending: number | null; n: number }>(sql`
-    select ${seriesKey} as key, ${amount} as spending, count(distinct t.id) as n
+  const prev = db.all<{ key: number; dir: number; spending: number | null; n: number }>(sql`
+    select ${seriesKey} as key, ${dir} as dir, ${amount} as spending, count(distinct t.id) as n
     ${from}
     where ${sql.join([...base(prevFrom, prevTo), inChosen], sql` and `)}
-    group by 1`);
+    group by 1, 2`);
 
   const buckets = bucketsFor(q.interval, q.from, q.to);
   const index = new Map(buckets.map((b, i) => [b.key, i]));
-  const series = new Map<number, TrendSeries>();
-  const seriesFor = (key: number): TrendSeries => {
-    let s = series.get(key);
+  const series = new Map<string, TrendSeries>();
+  const seriesFor = (key: number, inflow = false): TrendSeries => {
+    const id = everything ? `${key}:${inflow ? "in" : "out"}` : String(key);
+    let s = series.get(id);
     if (!s) {
       const c = key === 0 ? undefined : byId.get(key);
       const parent = c?.parent_id ? byId.get(c.parent_id) : undefined;
+      // A parent's own spending, when split from its subcategories, says so.
+      const name =
+        key === 0
+          ? "Uncategorized"
+          : q.splitSubcategories &&
+              c &&
+              c.parent_id === null &&
+              categories.some((x) => x.parent_id === c.id)
+            ? `${c.name} (general)`
+            : (c?.name ?? "Unknown");
       s = {
-        key: String(key),
+        key: id,
         categoryId: key === 0 ? null : key,
         parentId: c?.parent_id ?? null,
-        // A parent's own spending, when split from its subcategories, says so.
-        label:
-          key === 0
-            ? "Uncategorized"
-            : q.splitSubcategories &&
-                c &&
-                c.parent_id === null &&
-                categories.some((x) => x.parent_id === c.id)
-              ? `${c.name} (general)`
-              : (c?.name ?? "Unknown"),
+        label: everything ? `${name} · ${inflow ? "in" : "out"}` : name,
         color: c?.color ?? parent?.color ?? null,
+        ...(everything ? { direction: inflow ? ("in" as const) : ("out" as const) } : {}),
         values: buckets.map(() => 0),
         counts: buckets.map(() => 0),
         previousTotal: 0,
         previousCount: 0,
       };
-      series.set(key, s);
+      series.set(id, s);
     }
     return s;
   };
-  // Every chosen category shows, even with nothing spent (so a line at zero says "nothing").
-  if (!q.splitSubcategories) for (const id of chosen) seriesFor(id);
+  // Every chosen category shows, even with nothing spent (so a line at zero says "nothing"). With
+  // every transaction only the directions that happened show, so a category is not doubled.
+  if (!q.splitSubcategories && !everything) for (const id of chosen) seriesFor(id);
   for (const r of rows) {
     const i = index.get(r.bucket);
     if (i === undefined) continue;
-    const s = seriesFor(r.key);
+    const s = seriesFor(r.key, r.dir === 1);
     s.values[i]! += r.spending ?? 0;
     s.counts[i]! += r.n;
   }
   for (const r of prev) {
-    const s = seriesFor(r.key);
+    // A line only from the period before is not added (it has nothing in this period).
+    const id = everything ? `${r.key}:${r.dir === 1 ? "in" : "out"}` : String(r.key);
+    if (everything && !series.has(id)) continue;
+    const s = seriesFor(r.key, r.dir === 1);
     s.previousTotal += r.spending ?? 0;
     s.previousCount += r.n;
   }

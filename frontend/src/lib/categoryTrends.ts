@@ -21,6 +21,8 @@ export interface TrendSeries {
   parentId: number | null;
   label: string;
   color: string | null;
+  /** With every transaction: whether the line is the category's money in or out. */
+  direction?: "in" | "out";
   values: number[];
   counts: number[];
   previousTotal: number;
@@ -44,11 +46,18 @@ export const MEASURES: Array<{ id: Measure; label: string }> = [
   { id: "share", label: "Share of all spending" },
 ];
 
-/** A measure's name for money going out (spending) or coming in. Pure. */
-export function measureLabel(id: Measure, flow: "out" | "in"): string {
+/**
+ * A measure's name for spending (`out`), money coming in (`in`), or every transaction (`all`,
+ * money out and in each as their own line). Pure.
+ */
+export function measureLabel(id: Measure, flow: "out" | "in" | "all"): string {
   if (flow === "in") {
     if (id === "spending") return "Amount in";
     if (id === "share") return "Share of all money in";
+  }
+  if (flow === "all") {
+    if (id === "spending") return "Amount";
+    if (id === "share") return "Share of all money moved";
   }
   return MEASURES.find((m) => m.id === id)!.label;
 }
