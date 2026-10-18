@@ -15,8 +15,20 @@ export interface Goal {
   targetDate: string | null;
   savedMinor: number;
   accountIds: number[];
+  /** A set amount this goal owns in a linked account, by account ID; others share the rest. */
+  accountAmounts: Record<string, number>;
   color: string | null;
-  accounts: Array<{ id: number; name: string; balanceMinor: number }>;
+  accounts: Array<{
+    id: number;
+    name: string;
+    balanceMinor: number;
+    /** What this goal owns of it. */
+    countedMinor: number;
+    setMinor: number | null;
+    /** The set amount is more than the account had left for it. */
+    short: boolean;
+    sharedWith: string[];
+  }>;
   currentMinor: number;
   percent: number;
   remainingMinor: number;
@@ -141,12 +153,12 @@ export function GoalsPage() {
               )}
             </p>
             {(g.accounts.length > 0 || g.savedMinor > 0) && (
-              <p className="text-xs text-slate-500">
-                {[
-                  ...g.accounts.map((a) => `${a.name} ${money(a.balanceMinor)}`),
-                  ...(g.savedMinor > 0 ? [`kept elsewhere ${money(g.savedMinor)}`] : []),
-                ].join(" · ")}
-              </p>
+              <ul className="space-y-0.5 text-xs text-slate-500">
+                {g.accounts.map((a) => (
+                  <li key={a.id}>{goalAccountText(a)}</li>
+                ))}
+                {g.savedMinor > 0 && <li>Kept elsewhere {money(g.savedMinor)}</li>}
+              </ul>
             )}
           </li>
         ))}
@@ -177,6 +189,21 @@ export function GoalsPage() {
   );
 }
 
+/** How much of an account a goal owns, and why: "Savings: $1,500 of $5,000 (set; shared with Car)". */
+export function goalAccountText(a: Goal["accounts"][number]): string {
+  const whole = a.countedMinor === a.balanceMinor && a.sharedWith.length === 0;
+  const parts = [
+    whole
+      ? `${a.name}: ${money(a.balanceMinor)}`
+      : `${a.name}: ${money(a.countedMinor)} of ${money(a.balanceMinor)}`,
+  ];
+  const notes: string[] = [];
+  if (a.short && a.setMinor !== null) notes.push(`${money(a.setMinor)} set, not enough left`);
+  else if (a.setMinor !== null) notes.push("set amount");
+  if (a.sharedWith.length > 0) notes.push(`shared with ${a.sharedWith.join(", ")}`);
+  return notes.length > 0 ? `${parts[0]} (${notes.join("; ")})` : parts[0]!;
+}
+
 function GoalDialog({
   goal,
   accounts,
@@ -195,6 +222,10 @@ function GoalDialog({
     date: goal?.targetDate ?? "",
     saved: goal && goal.savedMinor > 0 ? (goal.savedMinor / 100).toFixed(2) : "",
     accountIds: goal?.accountIds ?? [],
+    // A set amount per linked account, as typed; empty shares the rest with other goals.
+    amounts: Object.fromEntries(
+      Object.entries(goal?.accountAmounts ?? {}).map(([k, v]) => [k, (v / 100).toFixed(2)]),
+    ) as Record<string, string>,
   }));
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +243,14 @@ function GoalDialog({
     const savedMinor =
       form.saved.trim() === "" ? 0 : parseMoneyToMinor(form.saved, "USD", { allowZero: true });
     if (savedMinor === null) return setError("Enter the amount kept elsewhere, or leave it empty.");
+    const accountAmounts: Record<string, number> = {};
+    for (const accountId of form.accountIds) {
+      const typed = (form.amounts[String(accountId)] ?? "").trim();
+      if (typed === "") continue;
+      const minor = parseMoneyToMinor(typed, "USD", { allowZero: true });
+      if (minor === null) return setError("Enter each account's amount, or leave it empty.");
+      accountAmounts[String(accountId)] = minor;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -221,6 +260,7 @@ function GoalDialog({
         targetDate: form.date || null,
         savedMinor,
         accountIds: form.accountIds,
+        accountAmounts,
       });
       if (goal) await api(`/goals/${goal.id}`, { method: "PUT", body });
       else await api("/goals", { method: "POST", body });
@@ -278,27 +318,47 @@ function GoalDialog({
         </div>
         <fieldset>
           <legend className="font-medium">Accounts the money is in</legend>
-          <p className="text-xs text-slate-500">Their whole current balance counts toward it.</p>
-          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto">
-            {accounts.map((a) => (
-              <label key={a.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.accountIds.includes(a.id)}
-                  onChange={(e) =>
-                    set({
-                      accountIds: e.target.checked
-                        ? [...form.accountIds, a.id]
-                        : form.accountIds.filter((x) => x !== a.id),
-                    })
-                  }
-                />
-                {a.name}
-                <span className="text-xs text-slate-500">
-                  {formatMinor(a.currentBalanceMinor, a.currency)}
-                </span>
-              </label>
-            ))}
+          <p className="text-xs text-slate-500">
+            Set how much of an account is for this goal, or leave it empty to count what is left
+            after other goals' set amounts (shared evenly with other goals that do the same).
+          </p>
+          <div className="mt-1 max-h-48 space-y-1 overflow-y-auto">
+            {accounts.map((a) => {
+              const linked = form.accountIds.includes(a.id);
+              return (
+                <div key={a.id} className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={linked}
+                      onChange={(e) =>
+                        set({
+                          accountIds: e.target.checked
+                            ? [...form.accountIds, a.id]
+                            : form.accountIds.filter((x) => x !== a.id),
+                        })
+                      }
+                    />
+                    {a.name}
+                    <span className="text-xs text-slate-500">
+                      {formatMinor(a.currentBalanceMinor, a.currency)}
+                    </span>
+                  </label>
+                  {linked && (
+                    <input
+                      aria-label={`Amount of ${a.name} for this goal`}
+                      inputMode="decimal"
+                      placeholder="The rest"
+                      value={form.amounts[String(a.id)] ?? ""}
+                      onChange={(e) =>
+                        set({ amounts: { ...form.amounts, [String(a.id)]: e.target.value } })
+                      }
+                      className={`${inputClass} w-28`}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </fieldset>
         <div>

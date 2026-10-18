@@ -58,6 +58,9 @@ export function planningRoutes(db: AppDb): Router {
       targetDate: day.nullable().optional(),
       savedMinor: z.number().int().min(0).max(100_000_000_000).optional(),
       accountIds: z.array(z.number().int().positive()).max(20).optional(),
+      accountAmounts: z
+        .record(z.string().regex(/^\d+$/), z.number().int().min(0).max(100_000_000_000))
+        .optional(),
       color: z.string().max(20).nullable().optional(),
     })
     .strict();

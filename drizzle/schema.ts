@@ -923,6 +923,11 @@ export const goals = sqliteTable("goals", {
   savedMinor: integer("saved_minor").notNull().default(0),
   /** The linked accounts' IDs, as a JSON array. */
   accountIds: text("account_ids").notNull().default("[]"),
+  /**
+   * A set amount this goal owns in a linked account, as a JSON map of account ID to cents. A linked
+   * account missing from it shares what the set amounts leave with the other goals using it.
+   */
+  accountAmounts: text("account_amounts").notNull().default("{}"),
   color: text("color"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),

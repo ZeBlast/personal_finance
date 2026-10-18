@@ -288,6 +288,13 @@
       "when": 1792300985461,
       "tag": "0040_kept_splits",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1792303970321,
+      "tag": "0041_goal_account_amounts",
+      "breakpoints": true
     }
   ]
 }
