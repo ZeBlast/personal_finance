@@ -176,14 +176,18 @@ describe("category trends", () => {
       r.series.map((s: { label: string; values: number[] }) => [s.label, s.values[0]]),
     );
     // Groceries' $40 out and its $3 refund in are each their own line, under Food & Drink.
+    // Spending counts up (positive) and money coming in counts down (negative).
     expect(byLabel).toEqual({
-      "Pay · in": 300_000,
+      "Pay · in": -300_000,
       "Uncategorized · out": 50_000,
       "Food & Drink · out": 4_000,
       "Fun · out": 700,
-      "Food & Drink · in": 300,
+      "Food & Drink · in": -300,
     });
     expect(r.series.find((s: { label: string }) => s.label === "Pay · in").direction).toBe("in");
+    // Biggest first by size, whichever way the money went.
+    expect(r.series[0].label).toBe("Pay · in");
+    // The total that moved (for shares) is both ways, as a positive amount.
     expect(r.allSpending).toEqual([300_000 + 50_000 + 4_000 + 700 + 300]);
   });
 

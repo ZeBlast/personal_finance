@@ -156,6 +156,36 @@ export function summarizeSeries(
 }
 
 /** Rounded "nice" axis steps covering 0..max. */
+/**
+ * Where each series sits in a stacked chart: values above zero (money out) pile up from zero,
+ * values below zero (money in) pile down from it, each in its own pile. `up` and `down` are the
+ * piles' totals per period. A missing value (null) adds nothing. Pure.
+ */
+export function stackLayers(
+  series: Array<Array<number | null>>,
+  periods: number,
+): {
+  series: Array<{ lower: number[]; upper: number[] }>;
+  up: number[];
+  down: number[];
+} {
+  const up = Array.from({ length: periods }, () => 0);
+  const down = Array.from({ length: periods }, () => 0);
+  const layers = series.map((values) => {
+    const lower: number[] = [];
+    const upper: number[] = [];
+    for (let i = 0; i < periods; i++) {
+      const v = values[i] ?? 0;
+      const pile = v < 0 ? down : up;
+      lower.push(pile[i]!);
+      pile[i]! += v;
+      upper.push(pile[i]!);
+    }
+    return { lower, upper };
+  });
+  return { series: layers, up, down };
+}
+
 export function niceTicks(min: number, max: number, count = 5): number[] {
   const lo = Math.min(0, min);
   const hi = Math.max(0, max);

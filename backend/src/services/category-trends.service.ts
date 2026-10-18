@@ -234,13 +234,16 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     left join categories c on c.id = t.category_id`;
 
   const bucket = bucketSql(q.interval, day);
-  // Spending is the amounts as they are (refunds take away); money in is shown as positive; with
-  // every transaction, each line is money out or in, as positive amounts.
+  // Spending is the amounts as they are (refunds take away); money in alone is shown as positive.
+  // With every transaction each line is money out (positive) or money in (negative), as on the
+  // ledger the other way round: spending counts up, money coming in counts down.
   const amount = everything
-    ? sql`sum(abs(t.amount_minor))`
+    ? sql`sum(t.amount_minor)`
     : moneyIn
       ? sql`-sum(t.amount_minor)`
       : sql`sum(t.amount_minor)`;
+  // All the money that moved in a period, both ways, for shares (always positive).
+  const allAmount = everything ? sql`sum(abs(t.amount_minor))` : amount;
   // Which way the money went: 1 in, 0 out (only told apart with every transaction).
   const dir = everything ? sql`(t.amount_minor < 0)` : sql`0`;
   const rows = db.all<Row & { dir: number }>(sql`
@@ -250,7 +253,7 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     where ${sql.join([...base(q.from, q.to), inChosen], sql` and `)}
     group by 1, 2, 3`);
   const all = db.all<{ bucket: string; spending: number | null }>(sql`
-    select ${bucket} as bucket, ${amount} as spending
+    select ${bucket} as bucket, ${allAmount} as spending
     ${from}
     where ${sql.join(base(q.from, q.to), sql` and `)}
     group by 1`);
@@ -321,7 +324,8 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     const i = index.get(r.bucket);
     if (i !== undefined) allSpending[i] = r.spending ?? 0;
   }
-  const total = (s: TrendSeries) => s.values.reduce((n, v) => n + v, 0);
+  // Biggest first, money in (negative with every transaction) by its size too.
+  const total = (s: TrendSeries) => Math.abs(s.values.reduce((n, v) => n + v, 0));
   return {
     from: q.from,
     to: q.to,

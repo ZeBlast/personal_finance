@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { measureValues, niceTicks, rangeFor, summarizeSeries } from "./categoryTrends";
+import { measureValues, niceTicks, rangeFor, stackLayers, summarizeSeries } from "./categoryTrends";
+
+describe("stacking money out and money in", () => {
+  it("piles money out up from zero and money in down from it", () => {
+    // Two periods: groceries out, fun out, pay in (negative).
+    const s = stackLayers(
+      [
+        [100, 50],
+        [30, null],
+        [-400, -400],
+      ],
+      2,
+    );
+    expect(s.series[0]).toEqual({ lower: [0, 0], upper: [100, 50] });
+    expect(s.series[1]).toEqual({ lower: [100, 50], upper: [130, 50] });
+    expect(s.series[2]).toEqual({ lower: [0, 0], upper: [-400, -400] });
+    expect(s.up).toEqual([130, 50]);
+    expect(s.down).toEqual([-400, -400]);
+  });
+});
 
 const s = {
   key: "1",

@@ -5,6 +5,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { colorAt } from "../charts/palette";
 import {
   measureLabel,
+  stackLayers,
   MEASURES,
   RANGES,
   measureValues,
@@ -304,11 +305,14 @@ export function CategoryExplorer() {
   const buckets = data?.buckets ?? [];
   const n = buckets.length;
   const stacked = o.chart === "stacked" || o.chart === "area";
-  const stackTotals = buckets.map((_, i) =>
-    visible.reduce((sum, s) => sum + Math.max(0, s.shown[i] ?? 0), 0),
+  // Stacks grow up from zero for money out and down for money in (negative), each its own pile.
+  const layers = stackLayers(
+    visible.map((s) => s.shown),
+    n,
   );
+  const stackTotals = buckets.map((_, i) => visible.reduce((sum, s) => sum + (s.shown[i] ?? 0), 0));
   const values = stacked
-    ? stackTotals
+    ? [...layers.up, ...layers.down]
     : visible.flatMap((s) => s.shown.filter((v): v is number => v !== null));
   const previousLines =
     o.compare && !o.cumulative && o.measure === "spending" && n > 0
@@ -357,9 +361,10 @@ export function CategoryExplorer() {
         <h2 className="text-lg font-semibold">Transactions by category over time</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Every transaction, by category: each category&apos;s money out and money in are lines of
-          their own (“· out” and “· in”), income and transfers between your accounts included. Hover
-          a period for its figures, click it to see its transactions, and click a row below to hide
-          or show its line.
+          their own (“· out” and “· in”), income and transfers between your accounts included.
+          Spending counts up from zero and money coming in counts down below it. Hover a period for
+          its figures, click it to see its transactions, and click a row below to hide or show its
+          line.
         </p>
       </div>
 
@@ -610,36 +615,32 @@ export function CategoryExplorer() {
                 ),
               )}
             {stacked &&
-              (() => {
-                const base = buckets.map(() => 0);
-                return visible.map((s) => {
-                  const lower = [...base];
-                  s.shown.forEach((v, i) => (base[i]! += Math.max(0, v ?? 0)));
-                  if (o.chart === "stacked") {
-                    return s.shown.map((v, i) =>
-                      v === null || v <= 0 ? null : (
-                        <rect
-                          key={`${s.key}-${i}`}
-                          x={xBar(i) + slot * 0.15}
-                          width={slot * 0.7}
-                          y={y(base[i]!)}
-                          height={y(lower[i]!) - y(base[i]!)}
-                          fill={s.color}
-                          opacity={hover === null || hover === i ? 0.9 : 0.55}
-                        />
-                      ),
-                    );
-                  }
-                  const top = base.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-                  const bottom = lower
-                    .map((v, i) => `${x(i)},${y(v)}`)
-                    .reverse()
-                    .join(" ");
-                  return (
-                    <polygon key={s.key} points={`${top} ${bottom}`} fill={s.color} opacity={0.6} />
+              visible.map((s, si) => {
+                const { lower, upper } = layers.series[si]!;
+                if (o.chart === "stacked") {
+                  return s.shown.map((v, i) =>
+                    v === null || v === 0 ? null : (
+                      <rect
+                        key={`${s.key}-${i}`}
+                        x={xBar(i) + slot * 0.15}
+                        width={slot * 0.7}
+                        y={Math.min(y(upper[i]!), y(lower[i]!))}
+                        height={Math.abs(y(lower[i]!) - y(upper[i]!))}
+                        fill={s.color}
+                        opacity={hover === null || hover === i ? 0.9 : 0.55}
+                      />
+                    ),
                   );
-                });
-              })()}
+                }
+                const top = upper.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+                const bottom = lower
+                  .map((v, i) => `${x(i)},${y(v)}`)
+                  .reverse()
+                  .join(" ");
+                return (
+                  <polygon key={s.key} points={`${top} ${bottom}`} fill={s.color} opacity={0.6} />
+                );
+              })}
             {o.chart === "line" &&
               visible.map((s) => {
                 // A gap (no value) breaks the line; it starts again after.
@@ -754,7 +755,7 @@ export function CategoryExplorer() {
               ))}
               {stacked && visible.length > 1 && (
                 <div className="mt-1 flex justify-between border-t border-slate-200 pt-1 font-medium dark:border-slate-700">
-                  <span>Together</span>
+                  <span title="Money out less money in">Net</span>
                   <span className="tabular-nums">{fmt(stackTotals[hover]!)}</span>
                 </div>
               )}
