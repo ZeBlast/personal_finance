@@ -191,6 +191,26 @@ describe("category trends", () => {
     expect(r.allSpending).toEqual([300_000 + 50_000 + 4_000 + 700 + 300]);
   });
 
+  it("net a refund linked to its charge against that charge, not as money in", async () => {
+    const { t, add, fun, wallet, trends } = await setup();
+    const charge = (await add(wallet, "2026-09-10", 2_500, fun)).body.id as number;
+    const refund = (await add(wallet, "2026-09-25", 2_500, fun, "in")).body.id as number;
+    await t
+      .call("put", `/api/transactions/${refund}/refund-of`)
+      .send({ originalId: charge })
+      .expect(200);
+    const r = await trends(`from=2026-09-01&to=2026-09-30&interval=month&flow=all`);
+    const byLabel = Object.fromEntries(
+      r.series.map((s: { label: string; values: number[] }) => [s.label, s.values[0]]),
+    );
+    // Fun's $7 out stays; the $25 charge and its $25 refund come to nothing, and no "in" line.
+    expect(byLabel["Fun · out"]).toBe(700);
+    expect(byLabel["Fun · in"]).toBeUndefined();
+    // The unlinked $3 grocery refund is still money in.
+    expect(byLabel["Food & Drink · in"]).toBe(-300);
+    expect(r.allSpending).toEqual([4_000 + 700 + 300]);
+  });
+
   it("open a period's transactions in several categories at once, or only money in", async () => {
     const { t, food, fun } = await setup();
     const list = async (query: string) =>

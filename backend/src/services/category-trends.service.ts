@@ -242,10 +242,15 @@ export function categoryTrends(db: AppDb, q: TrendQuery): Trends {
     : moneyIn
       ? sql`-sum(t.amount_minor)`
       : sql`sum(t.amount_minor)`;
+  // A refund linked to the charge it gives back is not money in: it nets against that charge (the
+  // lines already place it on the charge's day and in its category), so the two come to zero.
+  const linkedRefund = sql`t.refund_of_id is not null`;
   // All the money that moved in a period, both ways, for shares (always positive).
-  const allAmount = everything ? sql`sum(abs(t.amount_minor))` : amount;
+  const allAmount = everything
+    ? sql`sum(case when ${linkedRefund} then t.amount_minor else abs(t.amount_minor) end)`
+    : amount;
   // Which way the money went: 1 in, 0 out (only told apart with every transaction).
-  const dir = everything ? sql`(t.amount_minor < 0)` : sql`0`;
+  const dir = everything ? sql`(t.amount_minor < 0 and not ${linkedRefund})` : sql`0`;
   const rows = db.all<Row & { dir: number }>(sql`
     select ${bucket} as bucket, ${seriesKey} as key, ${dir} as dir, ${amount} as spending,
       count(distinct t.id) as n
