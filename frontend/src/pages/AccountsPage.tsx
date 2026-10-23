@@ -6,6 +6,7 @@ import { LimitHistory } from "../components/accounts/LimitHistory";
 import { CashbackSection } from "../components/accounts/CashbackSection";
 import { StatementsButton } from "../components/accounts/StatementsDialog";
 import { ReconcileButton } from "../components/accounts/ReconcileDialog";
+import { UtilizationSection } from "../components/insights/UtilizationSection";
 import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
 import {
   ManualAccountsSection,
@@ -452,6 +453,9 @@ export function AccountsPage() {
           </section>
         )}
         <AccountCardsView items={items ?? []} />
+        <div className="max-w-4xl">
+          <UtilizationSection />
+        </div>
         {disconnectDialog}
       </section>
     );
@@ -616,6 +620,8 @@ export function AccountsPage() {
       {disconnectDialog}
 
       <ManualAccountsSection />
+
+      <UtilizationSection />
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api/client";
 import { CategorySelect } from "../components/common/CategorySelect";
+import { RecurringSection } from "../components/insights/RecurringSection";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { Select } from "../components/common/Select";
 import { buttonClass, inputClass, primaryClass } from "../components/investments/styles";
@@ -73,6 +74,8 @@ export function SubscriptionsPage() {
         trackedKeys={trackedKeys}
         onTrack={(s) => setEditing(draftFromSeries(s))}
       />
+      {/* Every regular charge and deposit found, bills and pay included (moved from Insights). */}
+      <RecurringSection />
 
       {editing && (
         <SubscriptionDialog

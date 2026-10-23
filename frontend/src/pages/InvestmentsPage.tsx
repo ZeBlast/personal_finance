@@ -20,6 +20,7 @@ import { TSP_SUBTYPE } from "../lib/tsp";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { useApi } from "../hooks/useApi";
 import { formatAxisMoney, formatMinor, formatQuantity } from "../lib/money";
+import { ReturnsCard } from "../components/investments/ReturnsCard";
 import { announceDataChanged, announceSyncFinished } from "../lib/syncEvents";
 import { formatDay, timeAgo } from "../lib/time";
 import type {
@@ -432,6 +433,8 @@ export function InvestmentsPage() {
               )}
             </div>
           )}
+
+          {!accountId && <ReturnsCard />}
 
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">

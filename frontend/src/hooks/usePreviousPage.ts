@@ -18,7 +18,7 @@ let current: string | null = null;
 let previous: string | null = null;
 const listeners = new Set<() => void>();
 
-/** The name of the section at a path ("/reports/insights" → "Insights"), or null. Pure. */
+/** The name of the section at a path ("/reports/spending" → "Spending"), or null. Pure. */
 export function sectionLabel(path: string): string | null {
   for (const area of areas) {
     for (const s of area.sections) if (s.path === path) return s.label;

@@ -81,7 +81,7 @@ export const areas: AppArea[] = [
     label: "Reports",
     sections: [
       { path: "/reports", label: "Monthly summary", Page: ReportsPage },
-      { path: "/reports/insights", label: "Insights", Page: InsightsPage },
+      { path: "/reports/spending", label: "Spending", Page: InsightsPage },
       { path: "/reports/net-worth", label: "Net worth", Page: AnalyticsPage },
       { path: "/reports/network", label: "Network", Page: NetworkPage },
     ],
@@ -120,7 +120,8 @@ export const LEGACY_PATHS: Record<string, string> = {
   "/budgets": "/planning/budgets",
   "/goals": "/planning/goals",
   "/investments": "/accounts/investments",
-  "/insights": "/reports/insights",
+  "/insights": "/reports/spending",
+  "/reports/insights": "/reports/spending",
   "/analytics": "/reports/net-worth",
   "/network": "/reports/network",
   "/data": "/settings/data",

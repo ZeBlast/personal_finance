@@ -803,3 +803,55 @@ export function takeHomeTemplate(): Graph {
     ],
   };
 }
+
+/** How many spending categories get a node of their own; the rest are one "everything else". */
+export const MY_NUMBERS_CATEGORIES = 6;
+
+/**
+ * A map of your real numbers to try ideas on: your income (live, from your data), your biggest
+ * spending categories as monthly amounts you can change, everything else together, and what is
+ * left over. Pure: the page fetches the figures and passes them in.
+ */
+export function myNumbersTemplate(input: {
+  /** Average spending per month, biggest first, in dollars. */
+  categories: Array<{ name: string; monthly: number }>;
+  /** All spending per month, in dollars. */
+  totalMonthly: number;
+  months: 3 | 6 | 12;
+}): Graph {
+  const top = input.categories.filter((c) => c.monthly > 0).slice(0, MY_NUMBERS_CATEGORIES);
+  const rest = Math.max(0, input.totalMonthly - top.reduce((n, c) => n + c.monthly, 0));
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  const income = newNode("data", "income", 20, 200);
+  income.params = { ...income.params, source: "income", months: String(input.months) };
+  income.title = "My income (average)";
+  const expenses = [...top, ...(rest > 0 ? [{ name: "Everything else", monthly: rest }] : [])].map(
+    (c, i) => {
+      const node = newNode("expense", `cat${i}`, 20, 380 + i * 170);
+      node.params = { ...node.params, amount: round(c.monthly), period: "monthly" };
+      node.title = c.name;
+      return node;
+    },
+  );
+  const left = newNode("subtract", "left", 420, 300);
+  left.title = "Left over";
+  const split = newNode("per_period", "split", 720, 160);
+  const out = newNode("result", "out", 720, 440);
+
+  let n = 0;
+  const wire = (fn: string, fp: string, tn: string, tp: string): Wire => ({
+    id: `w${++n}`,
+    from: { node: fn, port: fp },
+    to: { node: tn, port: tp },
+  });
+  return {
+    nodes: [income, ...expenses, left, split, out],
+    wires: [
+      wire("income", "yearly", "left", "from"),
+      ...expenses.map((e) => wire(e.id, "yearly", "left", "minus")),
+      wire("left", "result", "split", "yearly"),
+      wire("left", "result", "out", "value"),
+    ],
+  };
+}

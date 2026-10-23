@@ -242,7 +242,11 @@ export function TspPanel({
       </Section>
 
       <Section title="Retirement projection">
-        <RetirementProjection balanceMinor={balanceMinor} contributions={data.contributions} />
+        <RetirementProjection
+          balanceMinor={balanceMinor}
+          contributions={data.contributions}
+          accountId={accountId}
+        />
       </Section>
 
       {data.recent.length > 0 && (

@@ -1,10 +1,47 @@
 import { describe, expect, it } from "vitest";
 import {
+  chanceOfReaching,
   inTodaysDollars,
   projectBalances,
+  simulateRange,
   withdrawalPerYear,
   yearlyContributions,
 } from "./retirement";
+
+describe("a range from real years", () => {
+  it("is the steady projection when every year was the same", () => {
+    const range = simulateRange({
+      balanceMinor: 1_000_000,
+      yearlyContributionMinor: 100_000,
+      years: 10,
+      history: [0.06],
+      runs: 50,
+    });
+    const steady = projectBalances({
+      balanceMinor: 1_000_000,
+      yearlyContributionMinor: 100_000,
+      years: 10,
+      rate: 0.06,
+    });
+    expect(range.middle).toEqual(steady);
+    expect(range.low).toEqual(steady);
+  });
+
+  it("spreads out with good and bad years, the same every time", () => {
+    const input = {
+      balanceMinor: 1_000_000,
+      yearlyContributionMinor: 0,
+      years: 20,
+      history: [-0.3, 0.05, 0.25],
+    };
+    const a = simulateRange(input);
+    expect(a.low.at(-1)!).toBeLessThan(a.middle.at(-1)!);
+    expect(a.middle.at(-1)!).toBeLessThan(a.high.at(-1)!);
+    expect(simulateRange(input)).toEqual(a);
+    expect(chanceOfReaching(a.finals, 0)).toBe(1);
+    expect(chanceOfReaching(a.finals, a.finals.at(-1)! + 1)).toBe(0);
+  });
+});
 
 describe("retirement projection", () => {
   it("grows the balance and adds each year's contributions", () => {

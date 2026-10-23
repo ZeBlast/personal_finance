@@ -18,6 +18,7 @@ import {
   evaluate,
   newId,
   isSpendingNode,
+  myNumbersTemplate,
   newNode,
   NODE_DEFS,
   nodeAccent,
@@ -146,6 +147,35 @@ function MathSandbox() {
     setSelected({ kind: "node", id });
   };
 
+  /** Replaces the map with your real numbers (the last 6 whole months), after asking. */
+  async function startFromMyNumbers(): Promise<void> {
+    if (!window.confirm("Replace everything with a map of your own income and spending?")) return;
+    const months = 6;
+    const thisMonth = monthOf(today());
+    const from = `${shiftMonth(thisMonth, -months)}-01`;
+    const to = lastOfMonth(shiftMonth(thisMonth, -1));
+    try {
+      const s = await api<{
+        rows: Array<{ label: string; spendingMinor: number }>;
+        totals: { spendingMinor: number };
+      }>(`/analytics/summary?from=${from}&to=${to}&groupBy=category&rollupToParent=1`);
+      const monthly = (minor: number) => minor / 100 / months;
+      setGraph(
+        myNumbersTemplate({
+          categories: s.rows
+            .filter((r) => r.spendingMinor > 0)
+            .map((r) => ({ name: r.label, monthly: monthly(r.spendingMinor) })),
+          totalMonthly: monthly(s.totals.spendingMinor),
+          months,
+        }),
+      );
+      setView({ x: 30, y: 20, zoom: 0.6 });
+      setSelected(null);
+    } catch {
+      window.alert("Could not load your numbers. Try again after the app has synced.");
+    }
+  }
+
   const removeSelected = useCallback((): void => {
     if (!selected) return;
     update((g) =>
@@ -217,6 +247,14 @@ function MathSandbox() {
             className="rounded border border-slate-300 px-3 py-1 dark:border-slate-600"
           >
             Take-home pay example
+          </button>
+          <button
+            type="button"
+            onClick={() => void startFromMyNumbers()}
+            title="Your income, your biggest spending categories and what is left over, from the last 6 months"
+            className="rounded border border-slate-300 px-3 py-1 dark:border-slate-600"
+          >
+            Start from my numbers
           </button>
           <button
             type="button"

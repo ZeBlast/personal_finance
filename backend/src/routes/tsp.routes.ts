@@ -18,6 +18,7 @@ import {
   rebuildTspBalanceHistory,
 } from "../services/tsp-history.service.js";
 import { TSP_FUNDS } from "../services/investment-funds.js";
+import { tspOutlook } from "../services/tsp-outlook.service.js";
 import {
   applyDueContributions,
   createContribution,
@@ -121,6 +122,11 @@ export function tspRoutes(db: AppDb): Router {
 
   router.get("/accounts/:id/tsp", (req, res) => {
     res.json(getTspSettings(db, idParam.parse(req.params["id"])));
+  });
+
+  /** What the account's mix of funds returned in each past year, for the retirement range. */
+  router.get("/accounts/:id/tsp/outlook", (req, res) => {
+    res.json(tspOutlook(db, idParam.parse(req.params["id"])));
   });
 
   router.put("/accounts/:id/tsp/allocations", (req, res) => {

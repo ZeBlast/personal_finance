@@ -31,7 +31,7 @@ describe("addresses for views", () => {
     expect(planningView("nonsense")).toBe("forecast");
   });
   it("name the section a page came from", () => {
-    expect(sectionLabel("/reports/insights")).toBe("Insights");
+    expect(sectionLabel("/reports/spending")).toBe("Spending");
     expect(sectionLabel("/nowhere")).toBeNull();
   });
 });

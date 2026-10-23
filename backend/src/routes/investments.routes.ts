@@ -21,6 +21,7 @@ import {
   portfolioTransactions,
   securityDetail,
 } from "../services/portfolio.service.js";
+import { portfolioReturns } from "../services/returns.service.js";
 
 const idParam = z.coerce.number().int().positive();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -126,6 +127,11 @@ export function investmentsRoutes(db: AppDb): Router {
   router.get("/investments/holdings", (req, res) => {
     const query = optionalAccount.extend({ combine: flag.optional() }).parse(req.query);
     res.json(portfolioHoldings(db, { accountId: query.accountId, combine: query.combine }));
+  });
+
+  /** How the investments did, contributions taken out: this year, 12 months, all along. */
+  router.get("/investments/returns", (_req, res) => {
+    res.json(portfolioReturns(db));
   });
 
   router.get("/investments/history", (req, res) => {
