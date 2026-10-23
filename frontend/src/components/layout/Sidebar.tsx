@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { areas, migrateNavOrder } from "../../app/routes";
 import { useApi } from "../../hooks/useApi";
 import type { Settings } from "../../types/api";
+import { areaBadge, NavBadge, useBadges } from "./NavBadge";
 import { SearchPalette } from "./SearchPalette";
 import { SyncControl } from "./SyncControl";
 
@@ -30,6 +31,7 @@ export function moveItem<T>(list: T[], from: number, to: number): T[] {
 export function Sidebar() {
   const [searching, setSearching] = useState(false);
   const settings = useApi<Settings>("/settings");
+  const badges = useBadges();
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
@@ -128,7 +130,7 @@ export function Sidebar() {
           }}
           onKeyDown={(e) => onKey(e, index)}
           className={({ isActive }) =>
-            `rounded-md px-3 py-2 text-sm font-medium ${
+            `flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
               isActive
                 ? "bg-blue-600 text-white"
                 : "text-slate-700 hover:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -141,7 +143,12 @@ export function Sidebar() {
             }`
           }
         >
-          {label}
+          {({ isActive }) => (
+            <>
+              {label}
+              <NavBadge badge={path === "/" ? null : areaBadge(badges, path)} active={isActive} />
+            </>
+          )}
         </NavLink>
       ))}
       <SyncControl />

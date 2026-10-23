@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { estimateMinimum, simulatePayoff } from "./services/debt.service.js";
+import { cashForecast } from "./services/forecast.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -44,6 +45,35 @@ describe("paying off debt", () => {
     expect(estimateMinimum(300_000, 2400)).toBe(6_000 + 3_000);
     expect(estimateMinimum(50_000, 0)).toBe(2_500);
     expect(estimateMinimum(1_000, 2400)).toBe(1_000);
+  });
+
+  it("counts the plan's extra in the cash forecast when asked, until the debts are paid", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    await t
+      .call("post", "/api/accounts/manual")
+      .send({ name: "Checking", kind: "checking", openingBalanceMinor: 500_000 })
+      .expect(201);
+    const card = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Visa", kind: "credit_card", openingBalanceMinor: 30_000 })
+        .expect(201)
+    ).body.id as number;
+    await t.call("put", `/api/debt/${card}`).send({ aprBps: 0, minimumMinor: 0 }).expect(200);
+    const today = "2026-10-15";
+    const planned = () =>
+      cashForecast(t.db, { today, days: 180 }).days.flatMap((d) =>
+        d.events.filter((e) => e.source === "debt_plan").map((e) => [d.date, e.amountMinor]),
+      );
+    expect(planned()).toEqual([]);
+    await t.call("patch", "/api/settings").send({ debtExtraInForecastMinor: 10_000 }).expect(200);
+    // $300 owed at no interest, $100 a month: three payments, then the plan is done.
+    expect(planned()).toEqual([
+      ["2026-11-01", -10_000],
+      ["2026-12-01", -10_000],
+      ["2027-01-01", -10_000],
+    ]);
   });
 
   it("plans only the debts whose rate is entered", async () => {

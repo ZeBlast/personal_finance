@@ -139,6 +139,7 @@ describe("settings", () => {
       activeDashboardId: 1,
       navOrder: [],
       ownNames: [],
+      debtExtraInForecastMinor: 0,
     });
   });
 

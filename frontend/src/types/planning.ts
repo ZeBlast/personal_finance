@@ -5,7 +5,7 @@ import type { Transaction } from "./api";
 export interface ForecastEvent {
   label: string;
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
 }
 
 export interface Forecast {

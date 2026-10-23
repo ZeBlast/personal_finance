@@ -7,6 +7,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { FlowMap } from "../components/sandbox/FlowMap";
 import { SavedMaps } from "../components/sandbox/SavedMaps";
@@ -774,15 +775,22 @@ const MODE_KEY = "pf.sandbox.mode";
 
 /** The sandbox: the maths nodes, or the experimental cash-flow map. */
 export function SandboxPage() {
-  const [mode, setMode] = useState<"math" | "flow">(() => {
+  // The mode is in the address (?mode=flow) when chosen; otherwise the last one used.
+  const [params, setParams] = useSearchParams();
+  const [stored] = useState<"math" | "flow">(() => {
     try {
       return localStorage.getItem(MODE_KEY) === "flow" ? "flow" : "math";
     } catch {
       return "math";
     }
   });
+  const asked = params.get("mode");
+  const mode: "math" | "flow" = asked === "flow" || asked === "math" ? asked : stored;
   const choose = (m: "math" | "flow") => {
-    setMode(m);
+    setParams((p) => {
+      p.set("mode", m);
+      return p;
+    });
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {

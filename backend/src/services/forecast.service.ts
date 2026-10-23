@@ -1,5 +1,6 @@
 import type { AppDb } from "../db/client.js";
-import { addDays, isRealDate } from "../utils/dates.js";
+import { addDays, addMonths, isRealDate } from "../utils/dates.js";
+import { debtOverview } from "./debt.service.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
 import { closingDates, dueAfter, listBills } from "./bills.service.js";
@@ -21,6 +22,7 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  *   merchant as an expected transaction is counted once.
  * - Credit card bills, for cards whose statement dates are set: what is left of the latest statement
  *   on its due day, and the next statement (as charged so far) on the following due day.
+ * - The debt payoff plan's extra monthly payment, when the user chose to count it.
  *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
  */
@@ -31,7 +33,7 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
@@ -165,6 +167,18 @@ export function cashForecast(
           source: "pending",
         });
       }
+    }
+  }
+
+  // 4. The debt plan's extra payment, when the user counts it: on the 1st of each month, until the
+  // plan has the debts paid off.
+  const extra = settings.debtExtraInForecastMinor;
+  if (extra > 0) {
+    const months = debtOverview(db, { extraMinor: extra }).plan.months ?? Infinity;
+    for (let k = 1; k <= months; k += 1) {
+      const day = `${addMonths(today.slice(0, 7), k)}-01`;
+      if (day > end) break;
+      add(day, { label: "Extra debt payment (plan)", amountMinor: -extra, source: "debt_plan" });
     }
   }
 

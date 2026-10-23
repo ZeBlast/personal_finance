@@ -55,7 +55,15 @@ export interface DailyBrief {
   /** Spent yesterday and so far this month (purchases; transfers left out). */
   spentYesterdayMinor: number;
   spentThisMonthMinor: number;
+  /**
+   * Connected bank accounts whose balance may be out of date (older than a day, or the connection
+   * needs signing in again): the starting cash is only as good as these balances.
+   */
+  staleAccounts: Array<{ name: string; updatedAt: string | null; needsSignIn: boolean }>;
 }
+
+/** A bank balance older than this may be out of date. */
+const STALE_MS = 24 * 60 * 60 * 1000;
 
 export function dailyBrief(
   db: AppDb,
@@ -103,6 +111,21 @@ export function dailyBrief(
       a.currentBalanceMinor !== null &&
       (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
   );
+  // Balances are as old as the last sync, whatever day the brief is for.
+  const dayAgo = new Date(Date.now() - STALE_MS).toISOString();
+  const staleAccounts = cashAccounts
+    .filter(
+      (a) =>
+        a.itemId !== null &&
+        (a.connectionStatus !== "active" ||
+          a.lastBalanceUpdateAt === null ||
+          a.lastBalanceUpdateAt < dayAgo),
+    )
+    .map((a) => ({
+      name: a.name,
+      updatedAt: a.lastBalanceUpdateAt,
+      needsSignIn: a.connectionStatus === "login_required",
+    }));
   const reservedFor = cashAccounts
     .map((a) => ({ accountName: a.name, amountMinor: reserved.get(a.id) ?? 0 }))
     .filter((r) => r.amountMinor > 0);
@@ -143,5 +166,6 @@ export function dailyBrief(
     perDayMinor: daysLeft > 1 ? Math.floor(safe / daysLeft) : null,
     spentYesterdayMinor: spent(yesterday, yesterday),
     spentThisMonthMinor: spent(`${today.slice(0, 7)}-01`, today),
+    staleAccounts,
   };
 }

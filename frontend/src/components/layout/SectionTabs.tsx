@@ -1,11 +1,13 @@
 import { NavLink } from "react-router-dom";
 import type { AppArea } from "../../app/routes";
+import { NavBadge, useBadges } from "./NavBadge";
 
 /**
  * The sections of an area (Transactions: Activity, Review, Categories & rules), as one row of tabs
  * above the page. Each section has its own address, so Back, Forward and links work.
  */
 export function SectionTabs({ area }: { area: AppArea }) {
+  const badges = useBadges();
   if (area.sections.length < 2) return null;
   return (
     <nav
@@ -19,7 +21,7 @@ export function SectionTabs({ area }: { area: AppArea }) {
           // The first section shares the area's address: only an exact match marks it.
           end
           className={({ isActive }) =>
-            `-mb-px border-b-2 px-3 py-2 text-sm ${
+            `-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm ${
               isActive
                 ? "border-blue-600 font-medium text-blue-700 dark:text-blue-300"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
@@ -27,6 +29,7 @@ export function SectionTabs({ area }: { area: AppArea }) {
           }
         >
           {s.label}
+          <NavBadge badge={badges[s.path] ?? null} />
         </NavLink>
       ))}
     </nav>

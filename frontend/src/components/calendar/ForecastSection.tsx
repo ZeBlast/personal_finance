@@ -12,6 +12,7 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   pending: "Pending",
   card_bill: "Card bill (estimated)",
   recurring: "Found recurring",
+  debt_plan: "Debt payoff plan",
 };
 
 const smallButton =

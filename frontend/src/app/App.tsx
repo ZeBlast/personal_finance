@@ -3,6 +3,7 @@ import { SectionTabs } from "../components/layout/SectionTabs";
 import { Sidebar } from "../components/layout/Sidebar";
 import { StatusBanner } from "../components/layout/StatusBanner";
 import { useBackendStatus } from "../hooks/useBackendStatus";
+import { useTrackPages } from "../hooks/usePreviousPage";
 import { areas, LEGACY_PATHS } from "./routes";
 
 /** An old address: opens the page's new one, keeping its filters (`?account=...`) and anchor. */
@@ -13,6 +14,7 @@ function MovedTo({ to }: { to: string }) {
 
 export function App() {
   const status = useBackendStatus();
+  useTrackPages();
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">

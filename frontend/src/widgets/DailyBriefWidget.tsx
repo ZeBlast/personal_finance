@@ -22,6 +22,19 @@ export interface DailyBrief {
   perDayMinor: number | null;
   spentYesterdayMinor: number;
   spentThisMonthMinor: number;
+  /** Bank accounts whose balance may be out of date. */
+  staleAccounts?: Array<{ name: string; updatedAt: string | null; needsSignIn: boolean }>;
+}
+
+/** A warning when the starting cash rests on old balances, or null when they are fresh. Pure. */
+export function freshnessWarning(b: DailyBrief): string | null {
+  const stale = b.staleAccounts ?? [];
+  if (stale.length === 0) return null;
+  const signIn = stale.filter((a) => a.needsSignIn).map((a) => a.name);
+  if (signIn.length > 0) {
+    return `${signIn.join(", ")} ${signIn.length === 1 ? "needs" : "need"} signing in again, so this uses an old balance.`;
+  }
+  return `${stale.map((a) => a.name).join(", ")} ${stale.length === 1 ? "has" : "have"} not synced in over a day: sync for an up-to-date figure.`;
 }
 
 export interface BriefStep {
@@ -119,6 +132,14 @@ export default defineWidget({
                 </p>
               )}
             </div>
+            {freshnessWarning(data) && (
+              <p
+                role="status"
+                className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                {freshnessWarning(data)}
+              </p>
+            )}
             <details>
               <summary className="cursor-pointer text-xs text-blue-600">
                 How this is worked out

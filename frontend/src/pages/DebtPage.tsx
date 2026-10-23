@@ -4,6 +4,8 @@ import { buttonClass, inputClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
+import { announceDataChanged } from "../lib/syncEvents";
+import type { Settings } from "../types/api";
 
 export interface PayoffPlan {
   months: number | null;
@@ -57,6 +59,17 @@ export function DebtPage() {
   );
   const plan = data?.plan;
   const base = data?.minimumsOnly;
+  // The extra the forecast counts (a setting), which can differ from the one being tried here.
+  const settings = useApi<Settings>("/settings");
+  const counted = settings.data?.debtExtraInForecastMinor ?? 0;
+  async function countInForecast(minor: number): Promise<void> {
+    await api("/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ debtExtraInForecastMinor: minor }),
+    });
+    settings.reload();
+    announceDataChanged();
+  }
 
   return (
     <section className="@container max-w-6xl space-y-4">
@@ -143,6 +156,34 @@ export function DebtPage() {
                       : "this plan pays it off."}
                   </p>
                 )}
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={counted > 0}
+                    disabled={extraMinor === 0}
+                    onChange={(e) => void countInForecast(e.target.checked ? extraMinor : 0)}
+                  />
+                  <span>
+                    Count {money(counted > 0 ? counted : extraMinor)} a month in the cash forecast
+                    <span className="block text-xs text-slate-500">
+                      Taken off on the 1st of each month until the plan is done, so the forecast and
+                      safe-to-spend do not treat it as free cash.
+                      {counted > 0 && counted !== extraMinor && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            className="text-blue-600 underline"
+                            onClick={() => void countInForecast(extraMinor)}
+                          >
+                            Use {money(extraMinor)} instead
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </label>
                 <BalanceChart plan={plan.balances} minimums={base.balances} />
                 <ol className="space-y-1 text-sm">
                   {plan.debts.map((d) => (

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { LineChart } from "../components/charts/LineChart";
 import { AccountName } from "../components/common/AccountName";
@@ -9,12 +10,7 @@ import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { CADENCE_LABEL } from "../lib/insights";
-import type {
-  BillStatus,
-  CardBill,
-  Forecast,
-  Paycheck,
-} from "../types/planning";
+import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning";
 import { Select } from "../components/common/Select";
 
 type Tab = "forecast" | "bills" | "paychecks";
@@ -25,9 +21,25 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "paychecks", label: "Paychecks" },
 ];
 
+/** The Planning view named in the address, or the forecast for anything else. Pure. */
+export function planningView(value: string | null): Tab {
+  return TABS.some((t) => t.id === value) ? (value as Tab) : "forecast";
+}
+
 /** Looking ahead: the cash forecast, card bills, and paychecks (subscriptions have their own page). */
 export function PlanningPage() {
-  const [tab, setTab] = useState<Tab>("forecast");
+  // The view is in the address (?view=bills), so Back, a refresh and links keep it.
+  const [params, setParams] = useSearchParams();
+  const tab = planningView(params.get("view"));
+  const setTab = (next: Tab) =>
+    setParams(
+      (p) => {
+        if (next === "forecast") p.delete("view");
+        else p.set("view", next);
+        return p;
+      },
+      { replace: false },
+    );
   return (
     <section className="max-w-5xl space-y-4">
       <div>
@@ -69,6 +81,7 @@ const SOURCE_LABEL = {
   recurring: "Recurring",
   card_bill: "Card bill",
   pending: "Pending",
+  debt_plan: "Debt plan",
 };
 
 function ForecastTab() {

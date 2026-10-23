@@ -12,6 +12,7 @@ import { clearBillSettings, listBills, setBillSettings } from "../services/bills
 import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthReport } from "../services/report.service.js";
 import { detectPaychecks } from "../services/paycheck.service.js";
+import { navBadges } from "../services/badges.service.js";
 import { dailyBrief } from "../services/brief.service.js";
 import { clearDebtTerms, debtOverview, setDebtTerms } from "../services/debt.service.js";
 import { createGoal, deleteGoal, listGoals, updateGoal } from "../services/goal.service.js";
@@ -88,6 +89,11 @@ export function planningRoutes(db: AppDb): Router {
       .object({ year: z.coerce.number().int().min(2000).max(2100).optional() })
       .parse(req.query);
     res.json(detectPaychecks(db, { year: q.year }));
+  });
+
+  /** What is waiting in each section, for the navigation's badges. */
+  router.get("/nav/badges", (_req, res) => {
+    res.json(navBadges(db));
   });
 
   /** The daily brief: safe to spend until the next income, and where it comes from. */

@@ -39,6 +39,11 @@ export const settingsSchema = z.object({
    * them is moving your own money (Transfers > Own Accounts), never income or spending.
    */
   ownNames: z.array(z.string().trim().min(3).max(60)).max(10),
+  /**
+   * The extra paid toward debt each month under the debt payoff plan, counted in the cash forecast
+   * (and so in safe-to-spend) until the plan pays the debts off. 0: not counted.
+   */
+  debtExtraInForecastMinor: z.number().int().min(0).max(100_000_000_000),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -58,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeDashboardId: 1,
   navOrder: [],
   ownNames: [],
+  debtExtraInForecastMinor: 0,
 };
 
 export function getSettings(db: AppDb): Settings {

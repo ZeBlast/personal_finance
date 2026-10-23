@@ -30,6 +30,7 @@ import {
   deleteManualBankAccount,
   MANUAL_ACCOUNT_KINDS,
 } from "../services/manual-transaction.service.js";
+import { reconcileAccount } from "../services/reconcile.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { importBankCsv } from "../services/bank-csv-import.service.js";
 import { setStatementSettings, statements } from "../services/statement.service.js";
@@ -205,6 +206,24 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
     );
   });
   /** A credit card's statement periods, newest first, with what happened in each. */
+  /** The app's balance on a statement's closing day, against the statement's. */
+  router.get("/accounts/:id/reconcile", (req, res) => {
+    const q = z
+      .object({
+        date: day,
+        statementMinor: z.coerce
+          .number()
+          .int()
+          .min(-100_000_000_000)
+          .max(100_000_000_000)
+          .optional(),
+      })
+      .parse(req.query);
+    res.json(
+      reconcileAccount(db, idParam.parse(req.params["id"]), q.date, q.statementMinor ?? null),
+    );
+  });
+
   router.get("/accounts/:id/statements", (req, res) => {
     const count = z.coerce.number().int().min(1).max(36).default(12).parse(req.query["count"]);
     res.json(statements(db, idParam.parse(req.params["id"]), count));
