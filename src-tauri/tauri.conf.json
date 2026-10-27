@@ -15,19 +15,9 @@
       "csp": "default-src 'self'; script-src 'self' https://cdn.plaid.com; frame-src https://cdn.plaid.com https://secure.plaid.com; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* https://*.plaid.com; img-src 'self' data: https://*.plaid.com https://tcgplayer-cdn.tcgplayer.com; style-src 'self' 'unsafe-inline'"
     }
   },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGNEYwNzBDNDExQzRBRDkKUldUWlNoeEJEQWRQbjN0QndOZEtuWGlNemtGYjFPSy84MTNubEVqaEpNODNObTBrQXJlWnpXUDEK",
-      "endpoints": [
-        "https://github.com/ZeBlast/personal_finance/releases/latest/download/latest.json"
-      ],
-      "windows": { "installMode": "passive" }
-    }
-  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "createUpdaterArtifacts": false,
     "externalBin": ["binaries/backend"],
     "resources": {
       "../frontend/dist": "frontend",

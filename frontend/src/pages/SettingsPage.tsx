@@ -5,7 +5,6 @@ import { api, browserTabUrl, errorMessage, insideTauri } from "../api/client";
 import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/api";
 import { Select } from "../components/common/Select";
 import { StatusOverview } from "../components/data/StatusOverview";
-import { UpdateCheck } from "../components/data/UpdateCheck";
 
 const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
   fake: "Made-up banks, to see how the app works. Nothing leaves your computer and no Plaid account is needed.",
@@ -423,8 +422,6 @@ export function SettingsPage() {
           </button>
         </div>
       )}
-
-      <UpdateCheck version={health?.version ?? null} />
 
       {health && (
         <p className="text-xs text-slate-500">
