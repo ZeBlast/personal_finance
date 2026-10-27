@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useApi } from "../../hooks/useApi";
 import { timeAgo } from "../../lib/time";
+import type { Settings } from "../../types/api";
 import type { Diagnostics } from "../../types/data";
 
 export type StatusTone = "good" | "warn" | "bad";
@@ -21,7 +22,11 @@ const DAY = 86_400_000;
  * backup is, and whether the database checked out. Each says what to do when it needs attention.
  * Pure, for testing.
  */
-export function statusItems(d: Diagnostics, now: number = Date.now()): StatusItem[] {
+export function statusItems(
+  d: Diagnostics,
+  now: number = Date.now(),
+  recoveryKeySaved?: boolean,
+): StatusItem[] {
   const items: StatusItem[] = [];
 
   // Banks: the least recently synced connection, and any that need attention.
@@ -89,6 +94,21 @@ export function statusItems(d: Diagnostics, now: number = Date.now()): StatusIte
         ? { label: "Open diagnostics", to: "/settings/data" }
         : null,
   });
+
+  // The recovery key: the only way back into the data after a Windows reinstall.
+  if (recoveryKeySaved !== undefined) {
+    items.push({
+      label: "Recovery key",
+      value: recoveryKeySaved ? "Saved" : "Not saved yet",
+      detail: recoveryKeySaved
+        ? "You can show it again in Data & backups."
+        : "Without it, a Windows reinstall or new computer means losing your data.",
+      tone: recoveryKeySaved ? "good" : "warn",
+      action: recoveryKeySaved
+        ? null
+        : { label: "Save it now", to: "/settings/data?show=recovery-key" },
+    });
+  }
   return items;
 }
 
@@ -106,10 +126,11 @@ const DOT: Record<StatusTone, string> = {
 /** The status cards at the top of Settings. */
 export function StatusOverview() {
   const diagnostics = useApi<Diagnostics>("/diagnostics");
+  const settings = useApi<Settings>("/settings");
   if (!diagnostics.data) return null;
   return (
-    <section aria-label="Status" className="grid gap-3 sm:grid-cols-3">
-      {statusItems(diagnostics.data).map((item) => (
+    <section aria-label="Status" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {statusItems(diagnostics.data, Date.now(), settings.data?.recoveryKeySaved).map((item) => (
         <div key={item.label} className={`rounded-lg border p-3 text-sm ${TONE[item.tone]}`}>
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span aria-hidden="true" className={`h-2 w-2 rounded-full ${DOT[item.tone]}`} />

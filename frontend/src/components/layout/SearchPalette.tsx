@@ -37,6 +37,7 @@ const PAGE_WORDS: Record<string, string> = {
   "/settings/data": "backup export folder diagnostics",
   "/settings": "plaid preferences",
   "/taxes": "irs fica withholding",
+  "/sandbox": "sandbox nodes calculator scenario what if",
 };
 
 const matches = (text: string, q: string): boolean => text.toLowerCase().includes(q);

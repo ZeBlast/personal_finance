@@ -339,8 +339,7 @@ export function AccountsPage() {
         onChange={(e) => setCardView(e.target.checked)}
         className="h-4 w-4"
       />
-      Card view{" "}
-      <span className="rounded bg-violet-100 px-1.5 text-xs text-violet-800">experimental</span>
+      Show as cards
     </label>
   );
 

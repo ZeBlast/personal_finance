@@ -1,15 +1,17 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useId, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, browserTabUrl, errorMessage, insideTauri } from "../api/client";
 import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/api";
 import { Select } from "../components/common/Select";
 import { StatusOverview } from "../components/data/StatusOverview";
 
 const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
-  fake: "Built-in sample banks. Nothing leaves your computer and no Plaid account is needed.",
+  fake: "Made-up banks, to see how the app works. Nothing leaves your computer and no Plaid account is needed.",
   sandbox:
-    "Plaid's test environment with fake banks. Needs your Plaid Sandbox client ID and secret.",
-  production: "Your real banks. Needs your Plaid Production client ID and secret.",
+    "Plaid's test banks with fake data, for trying the Plaid connection. Needs your Plaid Sandbox keys.",
+  production:
+    "Your real banks. Needs your Plaid client ID and Production secret (see the steps above).",
 };
 
 const inputClass =
@@ -203,6 +205,56 @@ function CredentialsForm({
   );
 }
 
+/** How to get Plaid keys, step by step, for someone who has never heard of Plaid. */
+function PlaidGuide() {
+  return (
+    <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-4 text-sm dark:border-blue-900 dark:bg-blue-950/30">
+      <p className="font-medium">To connect your real banks</p>
+      <p className="text-slate-600 dark:text-slate-300">
+        This app connects to banks through Plaid, the service behind many finance apps. Plaid needs
+        a free account of your own; the app then talks to Plaid directly from this computer.
+      </p>
+      <ol className="list-decimal space-y-1 pl-5 text-slate-700 dark:text-slate-200">
+        <li>
+          Create a free account at{" "}
+          <a
+            href="https://dashboard.plaid.com/signup"
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => {
+              // The desktop window opens outside links in the default browser.
+              if (insideTauri) {
+                e.preventDefault();
+                void openUrl("https://dashboard.plaid.com/signup");
+              }
+            }}
+            className="text-blue-700 underline dark:text-blue-300"
+          >
+            dashboard.plaid.com
+          </a>
+          .
+        </li>
+        <li>
+          In Plaid&apos;s dashboard, ask for access to real banks (&quot;Production&quot;) for
+          personal use. Approval can take a few days.
+        </li>
+        <li>
+          Under Developers → Keys, copy your <em>client ID</em> and <em>Production secret</em>.
+        </li>
+        <li>
+          Below, choose &quot;My real banks&quot;, paste the two keys, and save. They are stored
+          encrypted on this computer.
+        </li>
+        <li>Go to Accounts and choose Connect an account.</li>
+      </ol>
+      <p className="text-xs text-slate-500">
+        No Plaid account? You can still import a CSV your bank&apos;s website exports, or keep
+        accounts by hand, on the Accounts page.
+      </p>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [plaid, setPlaid] = useState<PlaidStatus | null>(null);
@@ -239,6 +291,14 @@ export function SettingsPage() {
 
   const tabUrl = browserTabUrl();
 
+  // Opened with ?show=bank (from the welcome or the sample-data banner): go to bank setup.
+  const [params] = useSearchParams();
+  useEffect(() => {
+    if (params.get("show") === "bank" && settings && plaid) {
+      document.getElementById("bank")?.scrollIntoView({ block: "start" });
+    }
+  }, [params, settings, plaid]);
+
   return (
     <section className="max-w-xl space-y-8 xl:max-w-4xl">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -249,9 +309,72 @@ export function SettingsPage() {
         </p>
       )}
 
+      {settings && plaid && (
+        <div id="bank" className="space-y-4">
+          <h2 className="text-lg font-medium">Connecting your banks</h2>
+          {(settings.plaidEnvironment === "fake" ||
+            (settings.plaidEnvironment === "production" && !plaid.credentialsSaved.production)) && (
+            <PlaidGuide />
+          )}
+
+          <label className="block text-sm">
+            <span className="font-medium">Where your bank data comes from</span>
+            <Select
+              value={settings.plaidEnvironment}
+              disabled={saving}
+              onChange={(e) => void save({ plaidEnvironment: e.target.value as PlaidEnvironment })}
+              className={inputClass}
+            >
+              <option value="fake">Sample data (made-up banks, to try the app)</option>
+              <option value="production">My real banks (through Plaid)</option>
+              <option value="sandbox">Plaid's test banks (for developers)</option>
+            </Select>
+            <span className="text-xs text-slate-500">
+              {ENVIRONMENT_HELP[settings.plaidEnvironment]}
+            </span>
+            <span className="mt-1 block text-xs text-slate-500">
+              Each choice keeps its own connections. Switching hides the others but does not delete
+              them.
+            </span>
+          </label>
+
+          {settings.plaidEnvironment !== "fake" && (
+            <CredentialsForm
+              key={settings.plaidEnvironment}
+              environment={settings.plaidEnvironment}
+              saved={plaid.credentialsSaved[settings.plaidEnvironment]}
+              onChanged={(credentialsSaved) => setPlaid({ ...plaid, credentialsSaved })}
+              onError={setError}
+            />
+          )}
+        </div>
+      )}
+
       {settings && (
         <div className="space-y-4">
-          <h2 className="text-lg font-medium">Syncing</h2>
+          <h2 className="text-lg font-medium">Appearance</h2>
+          <label className="block text-sm">
+            <span className="font-medium">Theme</span>
+            <Select
+              value={settings.theme}
+              disabled={saving}
+              onChange={(e) => void save({ theme: e.target.value as Settings["theme"] })}
+              className={inputClass}
+            >
+              <option value="system">Match system</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </Select>
+          </label>
+        </div>
+      )}
+
+      {settings && (
+        <details className="space-y-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+          <summary className="cursor-pointer text-lg font-medium">
+            Advanced: when to sync, and how much history
+          </summary>
+          <p className="text-sm text-slate-500">The usual settings suit most people.</p>
           <NumberSetting
             label="Minutes between syncs at launch"
             help="When you open the app, it syncs a connection only if its last successful sync was longer ago than this. Reopening the app sooner skips the sync. Use 0 to sync every time. The Sync now button always syncs immediately."
@@ -270,58 +393,6 @@ export function SettingsPage() {
             disabled={saving}
             onSave={(minutes) => save({ autoSyncIntervalMinutes: minutes })}
           />
-
-          <label className="block text-sm">
-            <span className="font-medium">Theme</span>
-            <Select
-              value={settings.theme}
-              disabled={saving}
-              onChange={(e) => void save({ theme: e.target.value as Settings["theme"] })}
-              className={inputClass}
-            >
-              <option value="system">Match system</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </Select>
-          </label>
-        </div>
-      )}
-
-      {settings && plaid && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-medium">Bank connections (Plaid)</h2>
-
-          <label className="block text-sm">
-            <span className="font-medium">Data source</span>
-            <Select
-              value={settings.plaidEnvironment}
-              disabled={saving}
-              onChange={(e) => void save({ plaidEnvironment: e.target.value as PlaidEnvironment })}
-              className={inputClass}
-            >
-              <option value="fake">Demo (built-in sample data)</option>
-              <option value="sandbox">Plaid Sandbox (test banks)</option>
-              <option value="production">Plaid Production (real banks)</option>
-            </Select>
-            <span className="text-xs text-slate-500">
-              {ENVIRONMENT_HELP[settings.plaidEnvironment]}
-            </span>
-            <span className="mt-1 block text-xs text-slate-500">
-              Each data source keeps its own connections. Switching hides the others but does not
-              delete them.
-            </span>
-          </label>
-
-          {settings.plaidEnvironment !== "fake" && (
-            <CredentialsForm
-              key={settings.plaidEnvironment}
-              environment={settings.plaidEnvironment}
-              saved={plaid.credentialsSaved[settings.plaidEnvironment]}
-              onChanged={(credentialsSaved) => setPlaid({ ...plaid, credentialsSaved })}
-              onError={setError}
-            />
-          )}
-
           <NumberSetting
             label="Days of history to request for new connections"
             help="Between 30 and 730. Plaid fixes this when a connection is created, so it cannot be increased later for existing connections."
@@ -331,7 +402,7 @@ export function SettingsPage() {
             disabled={saving}
             onSave={(days) => save({ plaidDaysRequested: days })}
           />
-        </div>
+        </details>
       )}
 
       {insideTauri && tabUrl && (

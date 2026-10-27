@@ -140,6 +140,8 @@ describe("settings", () => {
       navOrder: [],
       ownNames: [],
       debtExtraInForecastMinor: 0,
+      recoveryKeySaved: false,
+      welcomeDismissed: false,
     });
   });
 

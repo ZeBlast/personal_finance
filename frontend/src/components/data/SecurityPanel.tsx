@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
+import { announceDataChanged } from "../../lib/syncEvents";
+import type { Settings } from "../../types/api";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { Modal } from "../common/Modal";
 
@@ -31,6 +33,21 @@ export function SecurityPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const settings = useApi<Settings>("/settings");
+  const saved = settings.data?.recoveryKeySaved ?? false;
+
+  async function markSaved(): Promise<void> {
+    try {
+      await api("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ recoveryKeySaved: true }),
+      });
+      settings.reload();
+      announceDataChanged(); // the welcome checklist and status cards update
+    } catch (e) {
+      setError(errorMessage(e, "Could not save that."));
+    }
+  }
 
   async function show(): Promise<void> {
     setBusy(true);
@@ -77,6 +94,18 @@ export function SecurityPanel() {
             recovery key somewhere safe, such as a password manager, and not in the same folder as
             your backups.
           </p>
+          <p
+            role="status"
+            className={
+              saved
+                ? "text-green-800 dark:text-green-300"
+                : "rounded bg-amber-50 px-2 py-1 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+            }
+          >
+            {saved
+              ? "You said you saved the recovery key. You can show it again here at any time."
+              : "Not saved yet: show the key, store it in a password manager or on paper, then confirm."}
+          </p>
           {key === null ? (
             <button
               type="button"
@@ -112,6 +141,15 @@ export function SecurityPanel() {
                 >
                   Hide
                 </button>
+                {!saved && (
+                  <button
+                    type="button"
+                    className="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800"
+                    onClick={() => void markSaved()}
+                  >
+                    I saved it somewhere safe
+                  </button>
+                )}
               </div>
             </div>
           )}

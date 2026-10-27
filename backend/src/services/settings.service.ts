@@ -44,6 +44,10 @@ export const settingsSchema = z.object({
    * (and so in safe-to-spend) until the plan pays the debts off. 0: not counted.
    */
   debtExtraInForecastMinor: z.number().int().min(0).max(100_000_000_000),
+  /** The user said they saved the recovery key somewhere safe (asked until they do). */
+  recoveryKeySaved: z.boolean(),
+  /** The user closed the first-run welcome. */
+  welcomeDismissed: z.boolean(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -64,6 +68,8 @@ export const DEFAULT_SETTINGS: Settings = {
   navOrder: [],
   ownNames: [],
   debtExtraInForecastMinor: 0,
+  recoveryKeySaved: false,
+  welcomeDismissed: false,
 };
 
 export function getSettings(db: AppDb): Settings {

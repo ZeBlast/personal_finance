@@ -205,7 +205,7 @@ function MathSandbox() {
     <section className="flex h-full min-h-[40rem] flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Sandbox</h1>
+          <h1 className="text-2xl font-semibold">What-if calculator</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Try out ideas: add nodes on the left, drag from an output (right side) to an input (left
             side) to wire them. Nodes snap to the grid as you drag them (hold Alt to place one

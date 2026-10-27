@@ -1,6 +1,6 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useCallback, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, errorMessage, insideTauri } from "../api/client";
 import { ConfirmDialog } from "../components/common/Modal";
 import { RecoveryKeyDialog, SecurityPanel } from "../components/data/SecurityPanel";
@@ -605,6 +605,13 @@ function DiagnosticsPanel({ onNotice }: { onNotice: (n: Notice) => void }) {
 
 export function DataPage() {
   const [notice, setNotice] = useState<Notice | null>(null);
+  // Opened with ?show=recovery-key (from the welcome checklist): go straight to the key.
+  const [params] = useSearchParams();
+  useEffect(() => {
+    if (params.get("show") === "recovery-key") {
+      document.getElementById("recovery-key")?.scrollIntoView({ block: "start" });
+    }
+  }, [params]);
   // Anything that changes data tells the rest of the app, so open pages refresh.
   const show = useCallback((n: Notice) => {
     setNotice(n);
@@ -632,7 +639,9 @@ export function DataPage() {
           {notice.text}
         </p>
       )}
-      <SecurityPanel />
+      <div id="recovery-key">
+        <SecurityPanel />
+      </div>
       <BackupsPanel onNotice={show} />
       <ExportPanel onNotice={show} />
       <DiagnosticsPanel onNotice={show} />

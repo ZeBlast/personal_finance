@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { DemoBanner } from "../components/layout/DemoBanner";
 import { SectionTabs } from "../components/layout/SectionTabs";
 import { Sidebar } from "../components/layout/Sidebar";
 import { StatusBanner } from "../components/layout/StatusBanner";
@@ -21,6 +22,7 @@ export function App() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <StatusBanner status={status} />
+        <DemoBanner />
         <main className="flex-1 overflow-auto p-6">
           <Routes>
             {areas.flatMap((area) =>

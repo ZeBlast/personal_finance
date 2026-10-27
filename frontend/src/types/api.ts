@@ -21,6 +21,10 @@ export interface Settings {
   ownNames: string[];
   /** The debt plan's extra monthly payment counted in the cash forecast (0: not counted). */
   debtExtraInForecastMinor: number;
+  /** The user said they saved the recovery key somewhere safe. */
+  recoveryKeySaved: boolean;
+  /** The user closed the first-run welcome. */
+  welcomeDismissed: boolean;
 }
 
 export interface PlaidStatus {

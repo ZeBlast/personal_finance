@@ -4,6 +4,8 @@ import "react-resizable/css/styles.css";
 import { useState, type ReactNode } from "react";
 import { ConfirmDialog } from "../components/common/Modal";
 import { DashboardSwitcher } from "../components/dashboard/DashboardSwitcher";
+import { Welcome } from "../components/onboarding/Welcome";
+import type { Account, Settings } from "../types/api";
 import { useApi } from "../hooks/useApi";
 import type { DashboardList } from "../types/analytics";
 import { useDashboard } from "../hooks/useDashboard";
@@ -296,6 +298,26 @@ function DashboardView({
 export function DashboardPage() {
   const boards = useApi<DashboardList>("/dashboards");
   const [problem, setProblem] = useState<string | null>(null);
+  const settings = useApi<Settings>("/settings");
+  const accounts = useApi<Account[]>("/accounts");
+  const [showEmpty, setShowEmpty] = useState(false);
+  const welcoming = settings.data !== null && !settings.data.welcomeDismissed;
+
+  // Before any account, a page of empty widgets says nothing: the welcome stands alone.
+  if (welcoming && accounts.data?.length === 0 && !showEmpty) {
+    return (
+      <section className="max-w-6xl">
+        <Welcome settings={settings.data!} accounts={[]} />
+        <button
+          type="button"
+          onClick={() => setShowEmpty(true)}
+          className="text-sm text-slate-500 underline"
+        >
+          Show the dashboard anyway
+        </button>
+      </section>
+    );
+  }
 
   if (boards.data === null) {
     return (
@@ -308,6 +330,7 @@ export function DashboardPage() {
   const list = boards.data;
   return (
     <>
+      {welcoming && accounts.data && <Welcome settings={settings.data!} accounts={accounts.data} />}
       {problem && (
         <p role="alert" className="mb-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-900">
           {problem}

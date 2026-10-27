@@ -93,8 +93,8 @@ export const areas: AppArea[] = [
   },
   {
     path: "/sandbox",
-    label: "Sandbox",
-    sections: [{ path: "/sandbox", label: "Sandbox", Page: SandboxPage }],
+    label: "What-if",
+    sections: [{ path: "/sandbox", label: "What-if calculator", Page: SandboxPage }],
   },
   {
     path: "/settings",
