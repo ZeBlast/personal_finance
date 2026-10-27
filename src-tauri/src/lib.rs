@@ -234,6 +234,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        // Updates: the page asks GitHub for a newer signed release, installs it, and restarts.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Backend(Mutex::new(None)))
         .setup(|app| {
             let boot = launch(app.handle());

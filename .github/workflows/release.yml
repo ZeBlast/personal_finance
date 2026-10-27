@@ -1,0 +1,54 @@
+# Builds the Windows installer and publishes it as a draft GitHub release.
+#
+# To release: run `node scripts/set-version.mjs 0.2.0`, commit, then push a tag `v0.2.0`
+# (or start this workflow by hand from the Actions tab). Check the draft release, then publish it.
+# Installed apps find a published release through "Check for updates" in Settings.
+#
+# Secrets (repository Settings > Secrets and variables > Actions):
+#   TAURI_SIGNING_PRIVATE_KEY  the updater signing key (the contents of
+#                              %USERPROFILE%\.tauri\personal-finance-updater.key). Required: without
+#                              it, updates cannot be signed and the build stops.
+# Optional, for a code-signed installer (no "Windows protected your PC" warning), see RELEASING.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # The same checks as CI, so a broken build is never published.
+      - run: npm run typecheck
+      - run: npm test
+      # Builds the frontend and the backend sidecar (tauri.conf.json's beforeBuildCommand), then
+      # the installer, signs the update, and makes the draft release with latest.json for updates.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: v__VERSION__
+          releaseName: Personal Finance v__VERSION__
+          releaseBody: |
+            Download **Personal_Finance_x.y.z_x64-setup.exe** below and run it. Already installed?
+            Open Settings > Updates > Check for updates instead; your data is backed up first.
+          releaseDraft: true
+          tauriScript: npx tauri
+          args: --config {"bundle":{"createUpdaterArtifacts":true}}
