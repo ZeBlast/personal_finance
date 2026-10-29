@@ -7,8 +7,7 @@ else's server.
 
 ## Install
 
-1. Open the [latest release](https://github.com/ZeBlast/personal_finance/releases/latest). If none
-   is published yet, build the installer yourself (see [DEVELOPING.md](DEVELOPING.md)).
+1. Open the [latest release](https://github.com/ZeBlast/personal_finance/releases/latest).
 2. Under **Assets**, download `Personal Finance_x.y.z_x64-setup.exe`.
 3. Run it. It installs for your Windows user only, so it does not ask for an administrator
    password.
@@ -22,7 +21,8 @@ You need Windows 10 or 11 (64-bit). Nothing else to install.
 
 When the app opens, a welcome page offers three ways to start:
 
-- **Connect my banks**: balances and transactions update on their own (see below).
+- **Connect my banks**: balances and transactions update on their own. This needs a free Plaid
+  account; if you don't have one yet, see [Connecting your banks](#connecting-your-banks) first.
 - **Import or type them in**: no bank connection needed. Download a CSV of transactions from your
   bank's website and import it, or keep an account by hand, such as cash.
 - **Look around first**: loads made-up sample banks so you can see how everything works. A violet
@@ -55,8 +55,10 @@ computer.
 
 ## Updating
 
-Download the newer installer and run it, as when installing; it replaces the app and keeps your
-data. Your data is backed up automatically before a new version first runs.
+Open **Settings > Updates > Check for updates**. The app downloads the new version from this
+project's GitHub releases, checks that it is signed by this project, and restarts. You can also
+download the newer installer and run it; it replaces the app and keeps your data. Your data is backed up automatically before a new version
+first runs.
 
 ## Where your data lives
 

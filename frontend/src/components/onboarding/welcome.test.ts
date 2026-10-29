@@ -16,6 +16,18 @@ describe("the first-run welcome", () => {
     expect(welcomeComplete(steps)).toBe(false);
   });
 
+  it("adds an optional Plaid step once the key status is known", () => {
+    expect(welcomeSteps(settings, 0, false)[0]).toMatchObject({
+      key: "plaid",
+      done: false,
+      optional: true,
+    });
+    expect(welcomeSteps(settings, 0, true)[0]).toMatchObject({ key: "plaid", done: true });
+    expect(welcomeComplete(welcomeSteps({ ...settings, recoveryKeySaved: true }, 1, false))).toBe(
+      true,
+    );
+  });
+
   it("is complete once there is an account and the key is saved", () => {
     const steps = welcomeSteps({ ...settings, recoveryKeySaved: true }, 2);
     expect(welcomeComplete(steps)).toBe(true);

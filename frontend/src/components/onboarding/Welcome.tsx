@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import { announceDataChanged } from "../../lib/syncEvents";
-import type { Account, Settings } from "../../types/api";
+import type { Account, PlaidStatus, Settings } from "../../types/api";
 
 export interface WelcomeStep {
   key: string;
@@ -14,9 +15,32 @@ export interface WelcomeStep {
   action: string;
 }
 
-/** The first-run checklist, from what is set up so far. Pure. */
-export function welcomeSteps(settings: Settings, accountCount: number): WelcomeStep[] {
+/**
+ * The first-run checklist, from what is set up so far. Pure. `plaidKeysSaved` is whether real-bank
+ * Plaid keys are saved; the Plaid step is left out while that is unknown.
+ */
+export function welcomeSteps(
+  settings: Settings,
+  accountCount: number,
+  plaidKeysSaved?: boolean,
+): WelcomeStep[] {
+  const plaid: WelcomeStep[] =
+    plaidKeysSaved === undefined
+      ? []
+      : [
+          {
+            key: "plaid",
+            title: "Get your Plaid keys (to connect banks)",
+            detail:
+              "Bank connections go through Plaid. If you don't have a Plaid account yet, create a free one at dashboard.plaid.com, request Production access for personal use (approval can take a few days), then paste your client ID and Production secret in Settings. Skip this if you'd rather import CSVs or type accounts in.",
+            done: plaidKeysSaved,
+            optional: true,
+            to: "/settings?show=bank",
+            action: "Set up bank connections",
+          },
+        ];
   return [
+    ...plaid,
     {
       key: "account",
       title: "Add your first account",
@@ -63,7 +87,13 @@ const card =
  */
 export function Welcome({ settings, accounts }: { settings: Settings; accounts: Account[] }) {
   const navigate = useNavigate();
-  const steps = welcomeSteps(settings, accounts.length);
+  const [plaidKeysSaved, setPlaidKeysSaved] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    api<PlaidStatus>("/plaid/status")
+      .then((status) => setPlaidKeysSaved(status.credentialsSaved.production))
+      .catch(() => setPlaidKeysSaved(undefined));
+  }, []);
+  const steps = welcomeSteps(settings, accounts.length, plaidKeysSaved);
   const complete = welcomeComplete(steps);
   const demo = settings.plaidEnvironment === "fake";
 
@@ -115,8 +145,8 @@ export function Welcome({ settings, accounts }: { settings: Settings; accounts: 
             <h3 className="font-semibold">Connect my banks</h3>
             <p className="flex-1 text-sm text-slate-600 dark:text-slate-300">
               Transactions and balances update on their own. This uses Plaid, the service many
-              finance apps use; you need a free Plaid account and its keys first. Settings walks you
-              through it.
+              finance apps use; you need a free Plaid account and its keys first. No Plaid account
+              yet? Settings walks you through creating one.
             </p>
             <Link
               to="/settings?show=bank"

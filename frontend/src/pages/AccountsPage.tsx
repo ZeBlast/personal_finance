@@ -1,5 +1,6 @@
 import { AccountName } from "../components/common/AccountName";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError, errorMessage } from "../api/client";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { LimitHistory } from "../components/accounts/LimitHistory";
@@ -472,6 +473,17 @@ export function AccountsPage() {
                 : `Connected through Plaid (${status.environment}).`}
             </p>
           )}
+          {status &&
+            status.environment !== "fake" &&
+            !status.credentialsSaved[status.environment] && (
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                Connecting a bank needs your Plaid keys, and none are saved yet.{" "}
+                <Link to="/settings?show=bank" className="underline">
+                  Get them and add them in Settings
+                </Link>
+                .
+              </p>
+            )}
           <div className="mt-2">{viewSwitch}</div>
         </div>
         <ConnectButton

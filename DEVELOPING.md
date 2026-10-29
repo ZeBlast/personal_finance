@@ -1,7 +1,7 @@
 # Developing Personal Finance
 
 For using the app, see [README.md](README.md). This guide is for building it from source and
-changing it.
+changing it; [RELEASING.md](RELEASING.md) covers publishing a new version.
 
 Personal Finance is a single-user app that runs on your own computer. It is packaged with Tauri as
 a Windows desktop app, keeps all data in a local, encrypted SQLite database, and syncs accounts
