@@ -138,6 +138,7 @@ describe("settings", () => {
       backupsToKeep: 10,
       activeDashboardId: 1,
       navOrder: [],
+      navHidden: [],
       ownNames: [],
       debtExtraInForecastMinor: 0,
       recoveryKeySaved: false,

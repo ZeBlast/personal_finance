@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveItem, orderRoutes } from "./Sidebar";
+import { moveItem, orderRoutes, visibleRoutes } from "./Sidebar";
 
 const routes = [{ path: "/" }, { path: "/a" }, { path: "/b" }, { path: "/c" }];
 
@@ -19,5 +19,17 @@ describe("sidebar order", () => {
     expect(moveItem(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
     expect(moveItem(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
     expect(moveItem(["a", "b"], 1, 1)).toEqual(["a", "b"]);
+  });
+});
+
+describe("hidden sidebar pages", () => {
+  it("hides what the user unticked but never Dashboard or Settings", () => {
+    const all = [...routes, { path: "/settings" }];
+    expect(visibleRoutes(all, ["/a", "/", "/settings"]).map((r) => r.path)).toEqual([
+      "/",
+      "/b",
+      "/c",
+      "/settings",
+    ]);
   });
 });

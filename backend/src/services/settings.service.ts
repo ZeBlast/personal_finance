@@ -34,6 +34,8 @@ export const settingsSchema = z.object({
   activeDashboardId: z.number().int().min(1),
   /** The sidebar's pages in the order the user dragged them into (paths); empty is the usual order. */
   navOrder: z.array(z.string().max(60)).max(60),
+  /** Sidebar pages the user hid (paths). Dashboard and Settings can never be hidden. */
+  navHidden: z.array(z.string().max(60)).max(60),
   /**
    * The names you go by on bank descriptions ("Jane Doe", a Cash App name). Money sent to or from
    * them is moving your own money (Transfers > Own Accounts), never income or spending.
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   backupsToKeep: 10,
   activeDashboardId: 1,
   navOrder: [],
+  navHidden: [],
   ownNames: [],
   debtExtraInForecastMinor: 0,
   recoveryKeySaved: false,

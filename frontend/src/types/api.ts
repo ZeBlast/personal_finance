@@ -17,6 +17,7 @@ export interface Settings {
   backupsToKeep: number;
   /** The sidebar's pages in the user's order (paths); empty is the usual order. */
   navOrder: string[];
+  navHidden: string[];
   /** Names you go by on bank descriptions: money to or from them is moving your own money. */
   ownNames: string[];
   /** The debt plan's extra monthly payment counted in the cash forecast (0: not counted). */
