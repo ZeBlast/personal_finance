@@ -38,20 +38,68 @@ export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
+interface PlannedWidget extends Rect {
+  widgetType: string;
+  config?: Record<string, string | number | boolean>;
+}
+
+/** Four headline figures, without title bars: each shows its own label. */
+const tile = (widgetType: string, x: number, config: PlannedWidget["config"] = {}) => ({
+  widgetType,
+  x,
+  y: 0,
+  w: 3,
+  h: 2,
+  config: { ...config, _hideHeader: true },
+});
+
 /**
- * The dashboard a first-time user gets: every widget that asks for it (`defaultEnabled`), in
- * `order`, packed left to right into rows of 12 columns with no overlaps. Because this is computed
- * from the registry, adding a widget with `defaultEnabled: true` puts it on new dashboards with no
- * other change.
+ * The dashboard a first-time user gets, laid out by hand (12 columns, 60px rows) so every row is
+ * full and evenly tall: headline figures first, then net worth, then this month's spending, then
+ * what happened and what is coming. Everything else is in "Add widget".
+ */
+export const DEFAULT_PLAN: readonly PlannedWidget[] = [
+  tile("net-worth", 0),
+  tile("summary-number", 3, { metric: "spending" }),
+  tile("summary-number", 6, { metric: "income" }),
+  tile("summary-number", 9, { metric: "net" }),
+  { widgetType: "net-worth-history", x: 0, y: 2, w: 8, h: 6 },
+  { widgetType: "account-balances", x: 8, y: 2, w: 4, h: 6 },
+  { widgetType: "spending-by-category", x: 0, y: 8, w: 6, h: 5 },
+  { widgetType: "budget-progress", x: 6, y: 8, w: 6, h: 5 },
+  { widgetType: "recent-transactions", x: 0, y: 13, w: 6, h: 6, config: { count: 6 } },
+  { widgetType: "recurring-charges", x: 6, y: 13, w: 6, h: 6 },
+];
+
+/**
+ * The dashboard a first-time user gets: DEFAULT_PLAN (skipping any widget that is not installed),
+ * then any other widget that asks for it (`defaultEnabled`), in `order`, packed left to right into
+ * rows of 12 columns below it with no overlaps.
  */
 export function buildDefaultLayout(widgets: AnyWidget[]): PlacedWidget[] {
+  const byId = new Map(widgets.map((w) => [w.id, w]));
+  const placed: PlacedWidget[] = [];
+  for (const plan of DEFAULT_PLAN) {
+    const widget = byId.get(plan.widgetType);
+    if (!widget) continue;
+    placed.push({
+      key: newKey(),
+      widgetType: widget.id,
+      enabled: true,
+      ...toGrid(plan),
+      x: plan.x * GRID_SCALE,
+      y: plan.y * GRID_SCALE,
+      config: { ...(widget.defaultConfig ?? {}), ...(plan.config ?? {}) },
+    });
+  }
+
+  const planned = new Set(DEFAULT_PLAN.map((p) => p.widgetType));
   const chosen = widgets
-    .filter((w) => w.defaultEnabled)
+    .filter((w) => w.defaultEnabled && !planned.has(w.id))
     .sort((a, b) => (a.order ?? 1000) - (b.order ?? 1000) || a.id.localeCompare(b.id));
 
-  const placed: PlacedWidget[] = [];
   let x = 0;
-  let y = 0;
+  let y = nextFreeY(placed);
   let rowHeight = 0;
   for (const widget of chosen) {
     const { w, h } = toGrid(widget.defaultSize);

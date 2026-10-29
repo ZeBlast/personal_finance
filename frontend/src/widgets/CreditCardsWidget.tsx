@@ -13,7 +13,6 @@ export default defineWidget({
   group: "Accounts",
   defaultSize: { w: 4, h: 5 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 30,
   Component: function CreditCards() {
     const { data, error, loading } = useApi<Overview>("/analytics/overview");

@@ -10,7 +10,6 @@ export default defineWidget({
   group: "Activity",
   defaultSize: { w: 6, h: 9 },
   minSize: { w: 4, h: 6 },
-  defaultEnabled: true,
   order: 90,
   defaultConfig: { accountId: "" },
   configFields: [accountField],

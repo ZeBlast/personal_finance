@@ -111,7 +111,11 @@ export default defineWidget({
       value !== null && previous !== null && previous !== 0
         ? (value - previous) / Math.abs(previous)
         : null;
-    const label = METRICS.find((m) => m.value === config.metric)?.label ?? "Spending";
+    // "Left over" reads better on a tile than the picker's longer "Net (income minus spending)".
+    const label =
+      config.metric === "net"
+        ? "Left over"
+        : (METRICS.find((m) => m.value === config.metric)?.label ?? "Spending");
 
     return (
       <WidgetState loading={now.loading} error={now.error}>
@@ -119,7 +123,7 @@ export default defineWidget({
           <div className="text-xs text-slate-500 dark:text-slate-400">
             {label}, {period.label}
           </div>
-          <div className="text-3xl font-semibold tabular-nums">
+          <div className="text-2xl font-semibold tabular-nums">
             {formatMetric(config.metric, value)}
           </div>
           {config.compare && change !== null && (

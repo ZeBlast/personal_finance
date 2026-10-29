@@ -11,11 +11,12 @@ export default defineWidget({
   description: "What you own minus what you owe, from your current account balances.",
   group: "Accounts",
   defaultSize: { w: 4, h: 4 },
-  minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
+  minSize: { w: 2, h: 2 },
   order: 10,
   singleton: true,
-  Component: function NetWorth() {
+  Component: function NetWorth({ size }) {
+    // A headline tile (two rows tall) shows the figure and the split, without the notes.
+    const compact = size.h <= 2;
     const { data, error, loading } = useApi<Overview>("/analytics/overview");
     const o = data;
     const total = o ? o.assetsMinor + o.liabilitiesMinor : 0;
@@ -29,7 +30,7 @@ export default defineWidget({
         emptyText="No account balances yet. Connect an account on the Accounts page."
       >
         {o && coverage && (
-          <div className="space-y-3">
+          <div className={compact ? "flex h-full flex-col justify-center gap-1" : "space-y-3"}>
             <Stat
               label="Net worth"
               value={formatMinor(o.netWorthMinor, o.currency)}
@@ -49,7 +50,7 @@ export default defineWidget({
                   style={{ width: `${total > 0 ? (o.liabilitiesMinor / total) * 100 : 0}%` }}
                 />
               </div>
-              <div className="mt-2 flex justify-between text-sm">
+              <div className={`flex justify-between ${compact ? "mt-1 text-xs" : "mt-2 text-sm"}`}>
                 <span>
                   <span className="text-slate-500">Assets </span>
                   <span className="tabular-nums">{formatMinor(o.assetsMinor, o.currency)}</span>
@@ -62,7 +63,7 @@ export default defineWidget({
                 </span>
               </div>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className={compact ? "sr-only" : "text-xs text-slate-500 dark:text-slate-400"}>
               Based on {coverage.accountsCounted} account{coverage.accountsCounted === 1 ? "" : "s"}
               {coverage.newestBalanceAt ? `, updated ${timeAgo(coverage.newestBalanceAt)}` : ""}.
               {coverage.accountsWithoutBalance > 0

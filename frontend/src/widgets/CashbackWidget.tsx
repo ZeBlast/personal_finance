@@ -15,7 +15,6 @@ export default defineWidget({
   group: "Accounts",
   defaultSize: { w: 4, h: 6 },
   minSize: { w: 3, h: 4 },
-  defaultEnabled: true,
   order: 36,
   defaultConfig: { period: "this-month" },
   configFields: [periodField],

@@ -19,7 +19,6 @@ export default defineWidget({
   group: "Accounts",
   defaultSize: { w: 4, h: 6 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 20,
   defaultConfig: { grouping: "type" },
   configFields: [

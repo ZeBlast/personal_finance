@@ -22,7 +22,6 @@ export default defineWidget({
   group: "Tools",
   defaultSize: { w: 4, h: 4 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 110,
   singleton: true,
   Component: function SyncStatusCard() {

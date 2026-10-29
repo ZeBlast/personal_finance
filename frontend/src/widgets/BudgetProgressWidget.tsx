@@ -14,7 +14,6 @@ export default defineWidget({
   group: "Budgets",
   defaultSize: { w: 6, h: 6 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 45,
   defaultConfig: { month: "current" },
   configFields: [
@@ -39,7 +38,8 @@ export default defineWidget({
         loading={loading}
         error={error}
         empty={data !== null && data.budgets.length === 0}
-        emptyText={`No budgets for ${monthLabel(month, "long")} yet.`}
+        emptyText={`No budgets for ${monthLabel(month, "long")} yet. A budget sets how much to spend on a category each month.`}
+        emptyAction={{ to: "/planning/budgets", label: "Set up a budget" }}
       >
         {data && (
           <div className="space-y-3">

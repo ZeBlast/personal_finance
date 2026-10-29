@@ -15,7 +15,6 @@ export default defineWidget({
   group: "Activity",
   defaultSize: { w: 4, h: 6 },
   minSize: { w: 3, h: 4 },
-  defaultEnabled: true,
   order: 45,
   defaultConfig: { show: "out", topN: 6 },
   configFields: [

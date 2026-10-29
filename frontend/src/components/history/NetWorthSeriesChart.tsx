@@ -15,8 +15,11 @@ const DEBT_COLOR = "#dc2626";
 export function NetWorthSeriesChart({
   series,
   breakdown,
+  maxHeight,
 }: {
   series: NetWorthSeries;
+  /** Caps the chart's height in pixels, for a dashboard card. */
+  maxHeight?: number;
   /** Also draw assets and debts as separate lines. */
   breakdown?: boolean;
 }) {
@@ -53,27 +56,32 @@ export function NetWorthSeriesChart({
 
   return (
     <div>
-      <LineChart series={lines} format={money} formatAxis={formatAxisMoney} />
-      <ul className="mt-2 space-y-1 text-xs text-slate-500">
-        <li>
-          Each point is your net worth at the end of the {unit}
-          {series.granularity === "day" ? "" : " (the latest figure for one still going)"}.
-        </li>
-        {anyRebuilt && (
+      <LineChart series={lines} format={money} formatAxis={formatAxisMoney} maxHeight={maxHeight} />
+      <details className="mt-1 text-xs text-slate-500">
+        <summary className="cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">
+          ⓘ How this is worked out
+        </summary>
+        <ul className="mt-1 space-y-1">
           <li>
-            {rebuiltEarly && series.recordedFrom
-              ? `Before ${formatDay(series.recordedFrom)}, `
-              : "Where no balance was recorded, "}
-            cash accounts and cards are rebuilt from their transactions, working back from a balance
-            that was recorded. This is as complete as the transaction history the app has.
+            Each point is your net worth at the end of the {unit}
+            {series.granularity === "day" ? "" : " (the latest figure for one still going)"}.
           </li>
-        )}
-        <li>
-          Investments and loans use their last recorded balance until the next one. Before an
-          account&apos;s first transaction or record it is held at the balance it started with,
-          because what it was earlier is not known.
-        </li>
-      </ul>
+          {anyRebuilt && (
+            <li>
+              {rebuiltEarly && series.recordedFrom
+                ? `Before ${formatDay(series.recordedFrom)}, `
+                : "Where no balance was recorded, "}
+              cash accounts and cards are rebuilt from their transactions, working back from a
+              balance that was recorded. This is as complete as the transaction history the app has.
+            </li>
+          )}
+          <li>
+            Investments and loans use their last recorded balance until the next one. Before an
+            account&apos;s first transaction or record it is held at the balance it started with,
+            because what it was earlier is not known.
+          </li>
+        </ul>
+      </details>
     </div>
   );
 }

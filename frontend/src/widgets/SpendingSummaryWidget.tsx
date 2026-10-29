@@ -15,7 +15,6 @@ export default defineWidget({
   group: "Spending",
   defaultSize: { w: 4, h: 4 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 40,
   defaultConfig: { period: "this-month", accountId: "", includeTransfers: false },
   configFields: [periodField, accountField, includeTransfersField],

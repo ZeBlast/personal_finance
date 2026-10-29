@@ -13,7 +13,6 @@ export default defineWidget({
   group: "Activity",
   defaultSize: { w: 6, h: 7 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 100,
   defaultConfig: { count: 8, accountId: "" },
   configFields: [countField("count", "Transactions to show", 3, 25), accountField],

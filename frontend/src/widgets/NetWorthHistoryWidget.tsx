@@ -13,7 +13,6 @@ export default defineWidget({
   group: "Accounts",
   defaultSize: { w: 6, h: 6 },
   minSize: { w: 4, h: 4 },
-  defaultEnabled: true,
   order: 15,
   defaultConfig: { range: "365", granularity: "week", breakdown: false },
   configFields: [
@@ -39,7 +38,7 @@ export default defineWidget({
     },
     { key: "breakdown", label: "Show assets and debts as separate lines", type: "boolean" },
   ],
-  Component: function NetWorthHistoryView({ config }) {
+  Component: function NetWorthHistoryView({ config, size }) {
     const { data, error, loading } = useApi<NetWorthSeries>(
       seriesPath(config.granularity, Number(config.range)),
     );
@@ -49,8 +48,16 @@ export default defineWidget({
         error={error}
         empty={data !== null && data.points.length === 0}
         emptyText="No balances yet. Connect an account, or add one by hand, to see net worth over time."
+        emptyAction={{ to: "/accounts", label: "Add an account" }}
       >
-        {data && <NetWorthSeriesChart series={data} breakdown={config.breakdown} />}
+        {data && (
+          <NetWorthSeriesChart
+            series={data}
+            breakdown={config.breakdown}
+            // Rows are at least 60px; leave room for the title bar and the notes toggle.
+            maxHeight={Math.max(120, size.h * 60 - 60)}
+          />
+        )}
       </WidgetState>
     );
   },

@@ -229,8 +229,11 @@ export function LineChart({
   formatAxis,
   gapDays,
   dots,
+  maxHeight,
 }: {
   series: LineSeries[];
+  /** Caps the chart's height in pixels (it otherwise grows with its width), e.g. inside a card. */
+  maxHeight?: number;
   /** Draw a dot on every point. By default only when there are few enough for that to read well. */
   dots?: boolean;
   /** Stretches between neighbouring dots this long (or longer) are drawn dashed: nothing was recorded. */
@@ -318,6 +321,7 @@ export function LineChart({
           role="img"
           aria-label={summary}
           tabIndex={0}
+          style={maxHeight ? { maxHeight } : undefined}
           className="h-auto w-full cursor-crosshair touch-none rounded outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           onPointerMove={onMove}
           onPointerDown={onMove}

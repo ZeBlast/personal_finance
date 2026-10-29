@@ -19,7 +19,6 @@ export default defineWidget({
   group: "Accounts",
   defaultSize: { w: 6, h: 7 },
   minSize: { w: 4, h: 4 },
-  defaultEnabled: true,
   order: 35,
   defaultConfig: { range: "365", perCard: false },
   configFields: [

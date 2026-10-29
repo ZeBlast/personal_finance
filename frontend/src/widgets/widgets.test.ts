@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import TemplateWidget from "./TemplateWidget.example";
 import { resolveConfig } from "./config";
-import { buildDefaultLayout, GRID_COLUMNS, overlaps, placeNew } from "./layout";
+import { buildDefaultLayout, DEFAULT_PLAN, GRID_COLUMNS, overlaps, placeNew } from "./layout";
 import { allWidgets, discoveredWidgets, getWidget, validateWidget } from "./registry";
 import { defineWidget, type AnyWidget, type WidgetDefinition } from "./types";
 
@@ -85,19 +85,24 @@ describe("every widget in the folder", () => {
     }
   });
 
-  it("builds a default dashboard with no overlaps, inside the grid, from the widgets that ask for it", () => {
+  it("builds the planned default dashboard: full rows, no overlaps, no gaps", () => {
     const layout = buildDefaultLayout(allWidgets());
-    const expected = allWidgets()
-      .filter((w) => w.defaultEnabled)
-      .map((w) => w.id)
-      .sort();
-    expect(layout.map((p) => p.widgetType).sort()).toEqual(expected);
-    expect(layout.length).toBeGreaterThanOrEqual(8);
+    expect(layout.map((p) => p.widgetType)).toEqual(DEFAULT_PLAN.map((p) => p.widgetType));
     for (const [i, a] of layout.entries()) {
       expect(a.x + a.w).toBeLessThanOrEqual(GRID_COLUMNS);
       expect(a.x).toBeGreaterThanOrEqual(0);
       for (const b of layout.slice(i + 1))
         expect(overlaps(a, b), `${a.widgetType} vs ${b.widgetType}`).toBe(false);
+    }
+    // Every row is filled edge to edge, and widgets in a row are the same height.
+    const rows = new Map<number, typeof layout>();
+    for (const p of layout) rows.set(p.y, [...(rows.get(p.y) ?? []), p]);
+    for (const [y, row] of rows) {
+      expect(
+        row.reduce((sum, p) => sum + p.w, 0),
+        `row ${y}`,
+      ).toBe(GRID_COLUMNS);
+      expect(new Set(row.map((p) => p.h)).size, `row ${y}`).toBe(1);
     }
     expect(new Set(layout.map((p) => p.key)).size).toBe(layout.length);
   });

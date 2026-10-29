@@ -16,7 +16,6 @@ export default defineWidget({
   group: "Spending",
   defaultSize: { w: 6, h: 6 },
   minSize: { w: 3, h: 3 },
-  defaultEnabled: true,
   order: 60,
   defaultConfig: { period: "last-30-days", accountId: "", topN: 8, includeTransfers: false },
   configFields: [

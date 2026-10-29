@@ -94,6 +94,9 @@ export function Welcome({ settings, accounts }: { settings: Settings; accounts: 
       .catch(() => setPlaidKeysSaved(undefined));
   }, []);
   const steps = welcomeSteps(settings, accounts.length, plaidKeysSaved);
+  // Once an account is in, the checklist shrinks to one line so the dashboard starts on screen.
+  const [expanded, setExpanded] = useState(false);
+  const compact = accounts.length > 0 && !expanded;
   const complete = welcomeComplete(steps);
   const demo = settings.plaidEnvironment === "fake";
 
@@ -112,6 +115,49 @@ export function Welcome({ settings, accounts }: { settings: Settings; accounts: 
     }
     // Accounts then offers "Connect an account" with the sample banks.
     navigate("/accounts");
+  }
+
+  if (compact) {
+    const left = steps.filter((st) => !st.done);
+    return (
+      <section
+        aria-label="Getting started"
+        className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-2 text-sm dark:border-blue-900 dark:bg-blue-950/30"
+      >
+        <span className="font-medium">
+          {complete ? "You're all set" : "Getting started"}
+          <span className="ml-1 font-normal text-slate-500">
+            {steps.length - left.length} of {steps.length} done
+          </span>
+        </span>
+        {left.map((st) => (
+          <Link
+            key={st.key}
+            to={st.to}
+            className="text-blue-700 hover:underline dark:text-blue-300"
+          >
+            {st.title}
+            {st.optional ? " (optional)" : ""} →
+          </Link>
+        ))}
+        <span className="ml-auto flex gap-3">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-slate-600 hover:underline dark:text-slate-300"
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={() => void dismiss()}
+            className="text-slate-600 hover:underline dark:text-slate-300"
+          >
+            {complete ? "Close" : "Hide"}
+          </button>
+        </span>
+      </section>
+    );
   }
 
   return (
