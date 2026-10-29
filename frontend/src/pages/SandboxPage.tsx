@@ -35,6 +35,9 @@ import {
   type ValueFormat,
 } from "../lib/sandbox/graph";
 import { Select } from "../components/common/Select";
+import { Loading } from "../components/common/Loading";
+import { askConfirm } from "../components/common/ConfirmHost";
+import { toast } from "../lib/toast";
 
 /**
  * The sandbox: a playground of nodes. Add income, expenses, maths, and tax nodes from the left;
@@ -149,7 +152,14 @@ function MathSandbox() {
 
   /** Replaces the map with your real numbers (the last 6 whole months), after asking. */
   async function startFromMyNumbers(): Promise<void> {
-    if (!window.confirm("Replace everything with a map of your own income and spending?")) return;
+    if (
+      !(await askConfirm({
+        title: "Start from your numbers?",
+        message: "This replaces the current map with one built from your own income and spending.",
+        confirmLabel: "Replace the map",
+      }))
+    )
+      return;
     const months = 6;
     const thisMonth = monthOf(today());
     const from = `${shiftMonth(thisMonth, -months)}-01`;
@@ -239,10 +249,12 @@ function MathSandbox() {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("Replace everything with the take-home pay example?")) {
-                setGraph(takeHomeTemplate());
-                setSelected(null);
-              }
+              const before = graph;
+              setGraph(takeHomeTemplate());
+              setSelected(null);
+              toast("Replaced the map with the take-home pay example.", {
+                action: { label: "Undo", run: () => setGraph(before) },
+              });
             }}
             className="rounded border border-slate-300 px-3 py-1 dark:border-slate-600"
           >
@@ -259,10 +271,12 @@ function MathSandbox() {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm("Remove every node?")) {
-                setGraph({ nodes: [], wires: [] });
-                setSelected(null);
-              }
+              const before = graph;
+              setGraph({ nodes: [], wires: [] });
+              setSelected(null);
+              toast("Cleared the map.", {
+                action: { label: "Undo", run: () => setGraph(before) },
+              });
             }}
             className="rounded border border-slate-300 px-3 py-1 text-red-700 dark:border-slate-600 dark:text-red-400"
           >
@@ -307,7 +321,7 @@ function MathSandbox() {
             setSelected={setSelected}
           />
         ) : (
-          <p className="text-sm text-slate-500">Loading...</p>
+          <Loading />
         )}
       </div>
     </section>

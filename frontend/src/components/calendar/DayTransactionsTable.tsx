@@ -10,6 +10,7 @@ import type { Transaction } from "../../types/api";
 import { LoadMore } from "./LoadMore";
 import { usePagedTransactions } from "./usePagedTransactions";
 import { spanTitle, type DaySpan } from "./range";
+import { Loading } from "../common/Loading";
 
 const LIMIT = 200; // the most the server returns at once
 
@@ -64,7 +65,7 @@ export function DayTransactionsTable({
           {error}
         </p>
       )}
-      {(txs.loading || planned.loading) && <p className="text-sm text-slate-500">Loading...</p>}
+      {(txs.loading || planned.loading) && <Loading />}
       {empty && <p className="text-sm text-slate-500">Nothing in these days.</p>}
       {!empty && txs.data && planned.data && (
         <div className="max-h-[70vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-700">

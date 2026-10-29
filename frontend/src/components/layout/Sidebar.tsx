@@ -1,4 +1,21 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
+import {
+  CalendarDays,
+  ChartPie,
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  FileText,
+  FlaskConical,
+  GripVertical,
+  Landmark,
+  LayoutDashboard,
+  Pencil,
+  ReceiptText,
+  Search,
+  Settings as SettingsIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { api } from "../../api/client";
 import { areas, migrateNavOrder } from "../../app/routes";
@@ -26,6 +43,24 @@ export function moveItem<T>(list: T[], from: number, to: number): T[] {
   const [item] = next.splice(from, 1);
   next.splice(Math.max(0, Math.min(next.length, to)), 0, item!);
   return next;
+}
+
+/** Each page's icon in the sidebar; a page added later without one simply shows none. */
+const ICONS: Record<string, LucideIcon> = {
+  "/": LayoutDashboard,
+  "/transactions": ReceiptText,
+  "/calendar": CalendarDays,
+  "/planning": ClipboardList,
+  "/accounts": Landmark,
+  "/reports": ChartPie,
+  "/taxes": FileText,
+  "/sandbox": FlaskConical,
+  "/settings": SettingsIcon,
+};
+
+function PageIcon({ path }: { path: string }) {
+  const Icon = ICONS[path];
+  return Icon ? <Icon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2} /> : null;
 }
 
 /** Pages that can never be hidden: the home page, and Settings (where hiding is undone). */
@@ -119,7 +154,10 @@ export function Sidebar() {
         onClick={() => setSearching(true)}
         className="mb-1 flex items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-500 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400"
       >
-        <span>Search...</span>
+        <span className="flex items-center gap-2">
+          <Search aria-hidden="true" className="h-3.5 w-3.5" />
+          Search...
+        </span>
         <kbd className="rounded border border-slate-300 px-1 text-[10px] dark:border-slate-600">
           Ctrl K
         </kbd>
@@ -128,8 +166,8 @@ export function Sidebar() {
       {customizing ? (
         <div className="rounded-lg border border-blue-200 bg-white p-2 dark:border-blue-900 dark:bg-slate-900">
           <p className="px-1 pb-2 text-xs text-slate-600 dark:text-slate-300">
-            Drag <span aria-hidden="true">⠿</span> or use the arrows to reorder. Untick a page to
-            hide it; hidden pages are still in Search.
+            Drag the handle or use the arrows to reorder. Untick a page to hide it; hidden pages are
+            still in Search.
           </p>
           <ul className="space-y-0.5">
             {ordered.map(({ path, label }, index) => {
@@ -165,12 +203,8 @@ export function Sidebar() {
                       : ""
                   }`}
                 >
-                  <span
-                    aria-hidden="true"
-                    title="Drag to move"
-                    className="cursor-grab text-slate-400 select-none"
-                  >
-                    ⠿
+                  <span title="Drag to move" className="cursor-grab text-slate-400">
+                    <GripVertical aria-hidden="true" className="h-4 w-4" />
                   </span>
                   <label
                     className={`flex min-w-0 flex-1 items-center gap-1.5 ${
@@ -185,6 +219,7 @@ export function Sidebar() {
                       onChange={() => toggle(path)}
                       aria-label={`Show ${label} in the sidebar`}
                     />
+                    <PageIcon path={path} />
                     <span className="truncate">{label}</span>
                   </label>
                   <button
@@ -194,7 +229,7 @@ export function Sidebar() {
                     onClick={() => saveOrder(moveItem(ordered, index, index - 1))}
                     aria-label={`Move ${label} up`}
                   >
-                    ↑
+                    <ChevronUp aria-hidden="true" className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
@@ -203,7 +238,7 @@ export function Sidebar() {
                     onClick={() => saveOrder(moveItem(ordered, index, index + 1))}
                     aria-label={`Move ${label} down`}
                   >
-                    ↓
+                    <ChevronDown aria-hidden="true" className="h-4 w-4" />
                   </button>
                 </li>
               );
@@ -244,7 +279,8 @@ export function Sidebar() {
             >
               {({ isActive }) => (
                 <>
-                  {label}
+                  <PageIcon path={path} />
+                  <span className="flex-1">{label}</span>
                   <NavBadge
                     badge={path === "/" ? null : areaBadge(badges, path)}
                     active={isActive}
@@ -258,7 +294,10 @@ export function Sidebar() {
             onClick={() => setCustomizing(true)}
             className="mt-1 rounded-md px-3 py-1.5 text-left text-xs text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
           >
-            <span aria-hidden="true">✎</span> Customize sidebar
+            <span className="flex items-center gap-2">
+              <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+              Customize sidebar
+            </span>
           </button>
         </>
       )}

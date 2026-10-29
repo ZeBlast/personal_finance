@@ -116,6 +116,7 @@ export function ColumnChart({
                 return (
                   <rect
                     key={s.key}
+                    className="pf-grow-up"
                     x={startX + si * barW}
                     y={barTop}
                     width={Math.max(1, barW - 2)}

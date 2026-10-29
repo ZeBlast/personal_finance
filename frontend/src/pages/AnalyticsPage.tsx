@@ -6,6 +6,7 @@ import { formatMinor } from "../lib/money";
 import { formatDay } from "../lib/time";
 import type { Granularity, NetWorthSeries } from "../types/data";
 import { Select } from "../components/common/Select";
+import { Loading } from "../components/common/Loading";
 
 const RANGES = [
   { value: "30", label: "1 month" },
@@ -94,7 +95,7 @@ export function AnalyticsPage() {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {cappedDaily && (
         <p className="text-sm text-slate-500">
           A daily view shows the latest 1,000 days. Choose Week or Month to see further back.

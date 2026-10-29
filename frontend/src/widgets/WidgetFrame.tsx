@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { Loading } from "../components/common/Loading";
 
 /**
  * The card every widget content sits in. Widgets use `WidgetState` for the three situations every
@@ -28,7 +29,7 @@ export function WidgetState({
       </p>
     );
   }
-  if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (loading) return <Loading />;
   if (empty) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center">

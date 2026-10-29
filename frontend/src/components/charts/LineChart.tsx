@@ -167,6 +167,8 @@ const ChartBody = memo(function ChartBody({
             {solid && (
               <path
                 d={solid}
+                pathLength={1}
+                className="pf-draw"
                 fill="none"
                 stroke={s.color}
                 strokeWidth="2"
@@ -187,7 +189,14 @@ const ChartBody = memo(function ChartBody({
             )}
             {showDots &&
               points.map((p) => (
-                <circle key={p.date} cx={x(dayMs(p.date))} cy={y(p.value)} r="3.5" fill={s.color} />
+                <circle
+                  key={p.date}
+                  className="pf-fade-in"
+                  cx={x(dayMs(p.date))}
+                  cy={y(p.value)}
+                  r="3.5"
+                  fill={s.color}
+                />
               ))}
           </g>
         );

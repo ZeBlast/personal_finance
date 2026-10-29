@@ -11,6 +11,7 @@ import { accountLabel } from "../lib/accountLabel";
 import { AmountCell, TransactionTags } from "../components/transactions/TransactionCells";
 import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
+import { toast } from "../lib/toast";
 import type { Account, Transaction, TransactionPage, TransactionSort } from "../types/api";
 import { CategorySelect } from "../components/common/CategorySelect";
 import { SplitDialog } from "../components/transactions/SplitDialog";
@@ -316,15 +317,32 @@ export function TransactionsPage() {
     }
   }
 
+  async function setCategory(id: number, categoryId: number | null): Promise<Transaction> {
+    const updated = await api<Transaction>(`/transactions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ categoryId }),
+    });
+    replaceRow(updated);
+    return updated;
+  }
+
   async function quickCategory(t: Transaction, value: string): Promise<void> {
+    const previous = t.category?.id ?? null;
     try {
-      replaceRow(
-        await api<Transaction>(`/transactions/${t.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ categoryId: value === "" ? null : Number(value) }),
-        }),
-      );
+      const updated = await setCategory(t.id, value === "" ? null : Number(value));
       setError(null);
+      toast(`${t.merchant}: now ${updated.category?.name ?? "Uncategorized"}.`, {
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              await setCategory(t.id, previous);
+            } catch (e) {
+              toast(errorMessage(e, "Could not undo the change."), { kind: "error" });
+            }
+          },
+        },
+      });
     } catch (e) {
       setError(errorMessage(e, "Could not change the category."));
     }

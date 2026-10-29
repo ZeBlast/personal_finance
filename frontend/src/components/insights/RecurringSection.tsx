@@ -7,6 +7,7 @@ import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { RecurringReport, RecurringSeries } from "../../types/insights";
 import { buttonClass } from "../investments/styles";
+import { Loading } from "../common/Loading";
 
 function SeriesRow({
   series,
@@ -139,7 +140,7 @@ export function RecurringSection() {
           {error ?? problem}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && (
         <>
           <div className="flex flex-wrap gap-6 text-sm">

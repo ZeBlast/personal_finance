@@ -57,7 +57,7 @@ export function Modal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="pf-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onPointerDown={(e) => {
         // A press on the dark backdrop itself (not inside the window) closes it.
         if (dismissible && e.target === e.currentTarget) onClose();
@@ -65,7 +65,7 @@ export function Modal({
     >
       {/* Scrolls inside the window when the content is taller than the screen. */}
       <div
-        className={`max-h-[90vh] w-full overflow-y-auto rounded-lg bg-white p-5 shadow-xl dark:bg-slate-800 ${
+        className={`pf-pop-in max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-5 shadow-2xl dark:bg-slate-800 ${
           wide === "full" ? "max-w-[min(96vw,110rem)]" : wide ? "max-w-xl" : "max-w-md"
         }`}
       >

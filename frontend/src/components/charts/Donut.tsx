@@ -44,25 +44,27 @@ export function Donut({
             strokeWidth="16"
             className="stroke-slate-200 dark:stroke-slate-700"
           />
-          {positive.map((slice, index) => {
-            const arc = arcs[index]!;
-            const length = arc.fraction * CIRCUMFERENCE;
-            return (
-              <circle
-                key={slice.key}
-                cx="50"
-                cy="50"
-                r={RADIUS}
-                fill="none"
-                strokeWidth="16"
-                stroke={slice.color ?? colorAt(index)}
-                strokeDasharray={`${length} ${CIRCUMFERENCE - length}`}
-                strokeDashoffset={-arc.start * CIRCUMFERENCE}
-              >
-                <title>{`${slice.label}: ${format(slice.value)} (${percent(slice.value, total)}%)`}</title>
-              </circle>
-            );
-          })}
+          <g className="pf-sweep">
+            {positive.map((slice, index) => {
+              const arc = arcs[index]!;
+              const length = arc.fraction * CIRCUMFERENCE;
+              return (
+                <circle
+                  key={slice.key}
+                  cx="50"
+                  cy="50"
+                  r={RADIUS}
+                  fill="none"
+                  strokeWidth="16"
+                  stroke={slice.color ?? colorAt(index)}
+                  strokeDasharray={`${length} ${CIRCUMFERENCE - length}`}
+                  strokeDashoffset={-arc.start * CIRCUMFERENCE}
+                >
+                  <title>{`${slice.label}: ${format(slice.value)} (${percent(slice.value, total)}%)`}</title>
+                </circle>
+              );
+            })}
+          </g>
         </svg>
         {center && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">

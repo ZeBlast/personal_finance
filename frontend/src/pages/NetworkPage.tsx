@@ -4,6 +4,7 @@ import { NetworkGraph } from "../components/graph/NetworkGraph";
 import { useApi } from "../hooks/useApi";
 import type { GraphData } from "../lib/graph/model";
 import { today } from "../lib/period";
+import { Loading } from "../components/common/Loading";
 
 type GraphResponse = GraphData & { truncated: boolean; from: string; to: string };
 
@@ -119,7 +120,7 @@ export function NetworkPage() {
           {error}
         </p>
       )}
-      {!shown && !error && <p className="text-sm text-slate-500">Loading...</p>}
+      {!shown && !error && <Loading />}
       {shown?.truncated && (
         <p className="text-sm text-amber-700">
           Only the newest {shown.transactions.length} transactions are shown. Choose a shorter

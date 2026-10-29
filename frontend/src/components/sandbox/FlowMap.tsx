@@ -32,6 +32,8 @@ import { FILING_STATUSES, type FilingStatus } from "../../lib/sandbox/taxes";
 import { LineChart } from "../charts/LineChart";
 import { SavedMaps } from "./SavedMaps";
 import { Select } from "../common/Select";
+import { Loading } from "../common/Loading";
+import { toast } from "../../lib/toast";
 
 /**
  * The cash-flow map (experimental): buckets of money and the amounts flowing between them. Drag a
@@ -161,7 +163,7 @@ export function FlowMap() {
     return () => el.removeEventListener("wheel", onWheel);
   }, [graph === null]);
 
-  if (!graph || !result) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (!graph || !result) return <Loading />;
 
   const money = (yearly: number) => formatMinor(Math.round((yearly / period) * 100), "USD");
   const update = (change: (g: FlowGraph) => FlowGraph) => setGraph((g) => (g ? change(g) : g));
@@ -299,11 +301,19 @@ export function FlowMap() {
             <button
               type="button"
               onClick={() => {
-                if (window.confirm("Replace the map with the example?")) {
-                  setGraph(defaultFlow());
-                  setView({ x: 20, y: 20, zoom: 0.66 });
-                  setSelected(null);
-                }
+                const before = { graph, view };
+                setGraph(defaultFlow());
+                setView({ x: 20, y: 20, zoom: 0.66 });
+                setSelected(null);
+                toast("Replaced the map with the example.", {
+                  action: {
+                    label: "Undo",
+                    run: () => {
+                      setGraph(before.graph);
+                      setView(before.view);
+                    },
+                  },
+                });
               }}
               className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600"
             >

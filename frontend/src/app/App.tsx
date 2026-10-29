@@ -1,3 +1,5 @@
+import { ConfirmHost } from "../components/common/ConfirmHost";
+import { Toaster } from "../components/common/Toaster";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { DemoBanner } from "../components/layout/DemoBanner";
 import { SectionTabs } from "../components/layout/SectionTabs";
@@ -20,6 +22,8 @@ export function App() {
   return (
     <div className="relative flex h-screen overflow-hidden bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
       <Sidebar />
+      <Toaster />
+      <ConfirmHost />
       <div className="flex min-w-0 flex-1 flex-col">
         <StatusBanner status={status} />
         <DemoBanner />

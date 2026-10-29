@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { api, errorMessage } from "../../api/client";
 import { formatDay } from "../../lib/time";
 import { Modal } from "../common/Modal";
+import { askConfirm } from "../common/ConfirmHost";
+import { toast } from "../../lib/toast";
 
 /**
  * Saving and loading named copies of a sandbox drawing (the maths nodes or the cash-flow map). The
@@ -336,11 +338,18 @@ function MapsDialog({
                     disabled={busy}
                     aria-label={`Delete ${m.name}`}
                     className={`${buttonClass} text-red-700 dark:text-red-400`}
-                    onClick={() => {
-                      if (!window.confirm(`Delete “${m.name}”?`)) return;
+                    onClick={async () => {
+                      const ok = await askConfirm({
+                        title: `Delete “${m.name}”?`,
+                        message: "The saved map is removed for good.",
+                        confirmLabel: "Delete",
+                        danger: true,
+                      });
+                      if (!ok) return;
                       void run(async () => {
                         await api(`/sandbox/saves/${m.id}`, { method: "DELETE" });
                         onDeleted(m.id);
+                        toast(`Deleted “${m.name}”.`);
                       }, "Could not delete it.");
                     }}
                   >

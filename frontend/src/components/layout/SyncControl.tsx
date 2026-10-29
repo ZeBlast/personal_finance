@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import { announceSyncFinished } from "../../lib/syncEvents";
 import { timeAgo } from "../../lib/time";
+import { toast } from "../../lib/toast";
+import { RefreshCw } from "lucide-react";
 import type { SyncResult, SyncStatus } from "../../types/api";
 
 type Message = { kind: "info" | "warning" | "error"; text: string };
@@ -92,7 +94,9 @@ export function SyncControl() {
     setMessage(null);
     try {
       const result = await api<SyncResult>("/sync", { method: "POST", body: JSON.stringify({}) });
-      setMessage(describe(result));
+      const outcome = describe(result);
+      setMessage(outcome.kind === "info" ? null : outcome);
+      toast(outcome.text, { kind: outcome.kind === "info" ? "success" : outcome.kind });
     } catch (error) {
       setMessage({ kind: "error", text: errorMessage(error, "The sync could not be started.") });
     } finally {
@@ -129,7 +133,10 @@ export function SyncControl() {
         disabled={syncing || status === null}
         className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-200 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-700"
       >
-        {syncing ? "Syncing..." : "Sync now"}
+        <span className="flex items-center justify-center gap-2">
+          <RefreshCw aria-hidden="true" className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing..." : "Sync now"}
+        </span>
       </button>
       {message && (
         <p role="status" className={`mt-2 ${MESSAGE_STYLE[message.kind]}`}>

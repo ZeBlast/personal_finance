@@ -20,6 +20,7 @@ import { formatMinor } from "../lib/money";
 import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
+import { Loading } from "../components/common/Loading";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -527,7 +528,7 @@ export function AccountsPage() {
 
       {needsSignIn.length > 0 && signInAlert}
 
-      {items === null && <p className="text-sm text-slate-500">Loading...</p>}
+      {items === null && <Loading />}
 
       {items?.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-600">

@@ -22,7 +22,7 @@ export function ProgressBar({
       className="h-2 rounded bg-slate-200 dark:bg-slate-700"
     >
       <div
-        className="h-2 rounded"
+        className="pf-grow-x h-2 rounded transition-[width] duration-500"
         style={{ width: `${fill}%`, backgroundColor: over ? "#dc2626" : (color ?? "#2563eb") }}
       />
     </div>

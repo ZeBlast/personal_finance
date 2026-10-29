@@ -12,6 +12,7 @@ import { formatDay } from "../lib/time";
 import { CADENCE_LABEL } from "../lib/insights";
 import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning";
 import { Select } from "../components/common/Select";
+import { Loading } from "../components/common/Loading";
 
 type Tab = "forecast" | "bills" | "paychecks";
 
@@ -231,7 +232,7 @@ function BillsTab() {
         {bills.error}
       </p>
     );
-  if (!bills.data) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (!bills.data) return <Loading />;
   if (bills.data.length === 0)
     return <p className="text-sm text-slate-500">No credit cards yet.</p>;
 
@@ -463,7 +464,7 @@ function PaychecksTab() {
         {pay.error}
       </p>
     );
-  if (!pay.data) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (!pay.data) return <Loading />;
   const money = (n: number) => formatMinor(n, "USD");
   const active = pay.data.filter((p) => p.active);
   const year = new Date().getFullYear();

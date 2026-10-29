@@ -6,6 +6,7 @@ import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { Category } from "../../types/api";
 import { Select } from "../common/Select";
+import { Loading } from "../common/Loading";
 
 interface MerchantRow {
   key: string;
@@ -180,7 +181,7 @@ export function MerchantsSection({
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && rows.length === 0 && (
         <p className="text-sm text-slate-500">
           {q || show !== "all"

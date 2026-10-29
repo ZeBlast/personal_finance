@@ -15,6 +15,7 @@ import { getWidget } from "../widgets/registry";
 import { WidgetCard } from "../widgets/WidgetCard";
 import { WidgetSettingsDialog } from "../widgets/WidgetSettingsDialog";
 import type { PlacedWidget } from "../widgets/types";
+import { LoadingDashboard } from "../components/common/Loading";
 
 /** A classic row (60px) split into GRID_SCALE steps, with the gaps between them. */
 const MARGIN: [number, number] = [10, 10];
@@ -92,7 +93,7 @@ function DashboardView({
     return (
       <section>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="mt-2 text-sm text-slate-500">Loading...</p>
+        <LoadingDashboard />
       </section>
     );
   }
@@ -323,7 +324,11 @@ export function DashboardPage() {
     return (
       <section>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="mt-2 text-sm text-slate-500">{boards.error ?? "Loading..."}</p>
+        {boards.error ? (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{boards.error}</p>
+        ) : (
+          <LoadingDashboard />
+        )}
       </section>
     );
   }

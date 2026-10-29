@@ -54,7 +54,7 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: P
     <article
       aria-label={title}
       style={look.accent ? { borderLeft: `5px solid ${look.accent}` } : undefined}
-      className={`flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-slate-800 ${
+      className={`pf-rise-in flex h-full flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow hover:shadow-md dark:bg-slate-800 ${
         editing ? "border-dashed border-blue-400" : "border-slate-200 dark:border-slate-700"
       }`}
     >

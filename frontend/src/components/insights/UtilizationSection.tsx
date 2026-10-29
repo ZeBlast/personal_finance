@@ -6,6 +6,7 @@ import { formatDay } from "../../lib/time";
 import type { UtilizationHistory } from "../../types/insights";
 import { Select } from "../common/Select";
 import { UtilizationChart } from "./UtilizationChart";
+import { Loading } from "../common/Loading";
 
 const RANGES = [
   { value: "90", label: "3 months" },
@@ -66,7 +67,7 @@ export function UtilizationSection() {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && data.cards.length === 0 && (
         <p className="text-sm text-slate-500">No credit cards connected.</p>
       )}

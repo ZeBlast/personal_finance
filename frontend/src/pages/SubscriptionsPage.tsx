@@ -25,6 +25,7 @@ import type {
   TrackedSubscription,
   TrackedSubscriptionList,
 } from "../types/planning";
+import { Loading } from "../components/common/Loading";
 
 const money = (n: number) => formatMinor(n, "USD");
 const todayDay = () => new Date().toISOString().slice(0, 10);
@@ -132,7 +133,7 @@ function TrackedSection({
       </p>
     );
   }
-  if (!state.data) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (!state.data) return <Loading />;
   const { subscriptions, totals } = state.data;
   const shown = subscriptions.filter((s) => showEnded || !s.ended);
 
@@ -907,7 +908,7 @@ function FoundSection({
       </p>
     );
   }
-  if (!state.data) return <p className="text-sm text-slate-500">Loading...</p>;
+  if (!state.data) return <Loading />;
   const data = state.data;
   const cash = (n: number) => formatMinor(n, data.currency);
   const shown = data.subscriptions.filter((s) => showLapsed || s.status === "active");

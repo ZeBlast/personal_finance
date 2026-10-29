@@ -5,6 +5,7 @@ import { formatDay } from "../../lib/time";
 import type { InvestmentTransactionDetail, SecurityDetail } from "../../types/investments";
 import { Modal } from "../common/Modal";
 import { buttonClass } from "./styles";
+import { Loading } from "../common/Loading";
 
 const money = (n: number) => formatMinor(n, "USD");
 const dollars = (n: number | null) =>
@@ -56,7 +57,7 @@ export function SecurityDetailDialog({
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && (
         <div className="space-y-4">
           {securityFacts(data.security).map((group) => (
@@ -220,7 +221,7 @@ export function InvestmentTransactionDialog({
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && (
         <div className="space-y-3">
           <Facts

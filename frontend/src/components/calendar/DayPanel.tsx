@@ -20,6 +20,7 @@ import { DayTransactionsTable } from "./DayTransactionsTable";
 import { NoteBox } from "./NoteBox";
 import { PlannedDialog } from "./PlannedDialog";
 import { isSingleDay, spanTitle, type DaySpan } from "./range";
+import { Loading } from "../common/Loading";
 
 type Tab = "transactions" | "notes" | "expected";
 
@@ -317,7 +318,7 @@ function TransactionList({
           {list.error}
         </p>
       )}
-      {list.loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {list.loading && <Loading />}
       {list.items && list.items.length === 0 && (
         <p className="text-sm text-slate-500">
           No transactions {single ? "on this day" : "in this span"}.
@@ -642,7 +643,7 @@ function ExpectedList({
         accounts={accounts}
         onNotice={onNotice}
       />
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && open.length === 0 && (
         <p className="text-sm text-slate-500">
           Nothing still expected {isSingleDay(span) ? "on this day" : "in this span"}.
@@ -807,7 +808,7 @@ export function DayPanel({
             {summary.error}
           </p>
         )}
-        {summary.loading && <p className="text-sm text-slate-500">Loading...</p>}
+        {summary.loading && <Loading />}
         {s && <BalanceFigures s={s} single={single} />}
         {single && future && showForecast && (
           <ForecastSection day={span.from} lowCash={lowCash} onNotice={setNotice} />

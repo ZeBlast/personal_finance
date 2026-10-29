@@ -2,6 +2,8 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { api, apiBlob, apiUpload, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import type { Attachment } from "../../types/planning";
+import { askConfirm } from "../common/ConfirmHost";
+import { toast } from "../../lib/toast";
 
 const ACCEPT = "image/jpeg,image/png,image/gif,image/webp,image/heic,application/pdf,text/plain";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -56,9 +58,16 @@ export function Attachments({ transactionId }: { transactionId: number }) {
   }
 
   async function remove(a: Attachment): Promise<void> {
-    if (!window.confirm(`Delete ${a.name}?`)) return;
+    const ok = await askConfirm({
+      title: `Delete ${a.name}?`,
+      message: "The attached file is removed for good.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api(`/attachments/${a.id}`, { method: "DELETE" });
+      toast(`Deleted ${a.name}.`);
       list.reload();
     } catch (err) {
       setError(errorMessage(err, "Could not delete the file."));

@@ -4,6 +4,7 @@ import { formatMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import { formatDay } from "../lib/time";
 import type { MonthReport } from "../types/planning";
+import { Loading } from "../components/common/Loading";
 
 /** The month-end report: how a month went, next to the month before. */
 export function ReportsPage() {
@@ -58,7 +59,7 @@ export function ReportsPage() {
           {error}
         </p>
       )}
-      {!data && loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {!data && loading && <Loading />}
       {data && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

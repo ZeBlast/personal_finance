@@ -470,7 +470,7 @@ export function TransactionDetail({
     return (
       <aside
         aria-label={`Transaction: ${t.merchant}`}
-        className="sticky top-0 max-h-[calc(100vh-2rem)] w-[26rem] shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+        className="pf-slide-in-right sticky top-0 max-h-[calc(100vh-2rem)] w-[26rem] shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <h2 className="text-lg font-semibold">{t.merchant}</h2>

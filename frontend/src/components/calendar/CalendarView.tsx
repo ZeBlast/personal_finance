@@ -6,6 +6,7 @@ import { lastOfMonth, monthLabel, monthOf, shiftMonth, today } from "../../lib/p
 import { formatDay } from "../../lib/time";
 import type { TransactionPage } from "../../types/api";
 import type { CalendarDay, CalendarMonth } from "../../types/analytics";
+import { Loading } from "../common/Loading";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_DOTS = 4;
@@ -54,7 +55,7 @@ function DayDetail({ date, accountId }: { date: string; accountId: string }) {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && data.items.length === 0 && (
         <p className="text-sm text-slate-500">No transactions on this day.</p>
       )}
@@ -157,7 +158,7 @@ export function CalendarView({ accountId, compact }: { accountId: string; compac
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
 
       <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500" aria-hidden="true">
         {WEEKDAYS.map((d) => (

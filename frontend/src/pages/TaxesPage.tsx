@@ -14,6 +14,7 @@ import {
 } from "../lib/taxes/estimate";
 import { formatDay } from "../lib/time";
 import { Select } from "../components/common/Select";
+import { Loading } from "../components/common/Loading";
 
 interface IncomeTx {
   id: number;
@@ -119,7 +120,7 @@ export function TaxesPage() {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
       {data && data.year === year && <TaxWorkspace key={year} data={data} />}
     </section>
   );

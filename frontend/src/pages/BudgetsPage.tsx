@@ -10,6 +10,7 @@ import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import { formatDay } from "../lib/time";
 import type { Budget, BudgetMonth } from "../types/analytics";
 import { Select } from "../components/common/Select";
+import { Loading } from "../components/common/Loading";
 
 const inputClass =
   "mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800";
@@ -348,7 +349,7 @@ export function BudgetsPage() {
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-slate-500">Loading...</p>}
+      {loading && <Loading />}
 
       {data && (
         <>

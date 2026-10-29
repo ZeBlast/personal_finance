@@ -39,7 +39,7 @@ export function BarList({
             </div>
             <div className="mt-1 h-2 rounded bg-slate-200 dark:bg-slate-700" aria-hidden="true">
               <div
-                className="h-2 rounded"
+                className="pf-grow-x h-2 rounded transition-[width] duration-500"
                 style={{
                   width: `${Math.max(2, (Math.max(0, row.value) / max) * 100)}%`,
                   backgroundColor: color,

@@ -9,6 +9,7 @@ import { Modal } from "../common/Modal";
 import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { buttonClass, inputClass, primaryClass } from "../investments/styles";
 import { RefundSplitDialog } from "./RefundSplitDialog";
+import { Loading } from "../common/Loading";
 
 interface Part {
   categoryId: string;
@@ -118,7 +119,7 @@ export function SplitDialog(props: SplitDialogProps) {
   if (t.refundOf && allocation.loading) {
     return (
       <Modal title={`Split ${t.merchant}`} onClose={props.onClose} dismissible>
-        <p className="text-sm text-slate-500">Loading...</p>
+        <Loading />
       </Modal>
     );
   }
