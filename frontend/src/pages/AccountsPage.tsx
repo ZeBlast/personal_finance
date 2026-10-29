@@ -311,6 +311,15 @@ export function AccountsPage() {
             This tells Plaid to disconnect and removes {disconnecting.institutionName} and its
             accounts from this app. Anything already imported from it will be deleted too. This
             cannot be undone.
+            {status?.environment === "production" && (
+              <span className="mt-2 block rounded-md bg-amber-50 p-2 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                Free Plaid accounts can only make a limited number of bank connections, and a
+                connection you disconnect may still count toward that limit. Connecting this bank
+                again later may use up another one. If it only needs a fresh sign-in, use{" "}
+                <strong>Reconnect</strong> instead. Your Plaid dashboard shows how many you have
+                left.
+              </span>
+            )}
           </>
         )
       }
