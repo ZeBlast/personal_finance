@@ -9,7 +9,9 @@ on:
 jobs:
   check:
     # Windows, like the app: the encrypted SQLite module ships prebuilt for it.
-    runs-on: windows-latest
+    # windows-2022: its Visual Studio 2022 is one node-gyp can find, for when better-sqlite3 has to
+    # be compiled because no prebuilt copy downloaded (windows-latest has Visual Studio 2026).
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
