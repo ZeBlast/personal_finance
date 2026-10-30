@@ -15,6 +15,7 @@ import { ManualTransactionDialog } from "../transactions/ManualTransactionDialog
 import { CollectionDialog, isCollection } from "./CollectionDialog";
 import { AddCreditsDialog, isStoreCredit, UseCreditsDialog } from "./StoreCreditDialogs";
 import { Select } from "../common/Select";
+import { toast } from "../../lib/toast";
 
 type Kind =
   "cash" | "checking" | "savings" | "credit_card" | "store_credit" | "pokemon_cards" | "collection";
@@ -232,7 +233,8 @@ export function ManualAccountsSection() {
     setAdding(null);
     setImporting(null);
     setCredits(null);
-    setNotice({ kind: "info", text });
+    setNotice(null);
+    toast(text);
     accounts.reload();
     announceDataChanged();
   }

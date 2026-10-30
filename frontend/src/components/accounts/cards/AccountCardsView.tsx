@@ -26,6 +26,7 @@ import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
 import { HideToggle } from "../HideToggle";
 import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
+import { toast } from "../../../lib/toast";
 
 /**
  * The experimental Accounts view: every account as a card in the style of the investment account
@@ -495,11 +496,9 @@ function GroupHeading({
 /** A bank's accounts, with a button that syncs just that bank. */
 function InstitutionGroup({ item, children }: { item: PlaidItem; children: ReactNode }) {
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   async function sync(): Promise<void> {
     setBusy(true);
-    setMessage(null);
     try {
       const result = await api<{
         runs: Array<{
@@ -510,17 +509,20 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
         }>;
       }>("/sync", { method: "POST", body: JSON.stringify({ itemId: item.id }) });
       const run = result.runs[0];
-      setMessage(
-        !run
-          ? "Nothing to sync."
-          : run.status === "success"
-            ? run.added + run.modified > 0
-              ? `Synced: ${run.added} new, ${run.modified} updated.`
-              : "Synced. Nothing new."
-            : (run.errorMessage ?? "The sync did not finish."),
-      );
+      if (!run) toast(`${item.institutionName}: nothing to sync.`, { kind: "info" });
+      else if (run.status === "success") {
+        toast(
+          run.added + run.modified > 0
+            ? `${item.institutionName} synced: ${run.added} new, ${run.modified} updated.`
+            : `${item.institutionName} synced. Nothing new.`,
+        );
+      } else {
+        toast(`${item.institutionName}: ${run.errorMessage ?? "the sync did not finish."}`, {
+          kind: "error",
+        });
+      }
     } catch (e) {
-      setMessage(errorMessage(e, "Could not sync."));
+      toast(errorMessage(e, `Could not sync ${item.institutionName}.`), { kind: "error" });
     } finally {
       setBusy(false);
       announceSyncFinished();
@@ -567,7 +569,6 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
               </svg>
               {busy ? "Syncing..." : "Sync"}
             </button>
-            {message && <span className="text-xs text-slate-500">{message}</span>}
           </div>
         }
       />
