@@ -27,6 +27,7 @@ import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
 import { HideToggle } from "../HideToggle";
 import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
+import { LoanPaymentDialog } from "../LoanPaymentDialog";
 import { toast } from "../../../lib/toast";
 
 /**
@@ -46,6 +47,10 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [managing, setManaging] = useState<Account | null>(null);
   const [statementsOf, setStatementsOf] = useState<Account | null>(null);
   const [limitsOf, setLimitsOf] = useState<Account | null>(null);
+  const [paying, setPaying] = useState<Account | null>(null);
+  // Each card's and loan's rate, minimum and payoff at the minimum, from the Debt page's figures.
+  const debt = useApi<{ debts: DebtTerms[] }>("/debt");
+  const termsOf = new Map((debt.data?.debts ?? []).map((d) => [d.id, d]));
   // How the user arranged the groups (in rows) and the cards (dragged into place), remembered in
   // this browser. The older one-line order of banks seeds the rows until they are first arranged.
   const [groupOrder] = usePersistentState<string[]>("pf.accounts.groupOrder", []);
@@ -73,7 +78,9 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const changed = () => {
     setAdding(null);
     setImporting(null);
+    setPaying(null);
     accounts.reload();
+    debt.reload();
     announceDataChanged();
   };
 
@@ -199,6 +206,8 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             onImport={() => setImporting(a)}
             onStatements={() => setStatementsOf(a)}
             onLimits={() => setLimitsOf(a)}
+            onPayment={() => setPaying(a)}
+            terms={termsOf.get(a.id)}
             onHiddenChanged={() => accounts.reload()}
           />
         </div>
@@ -310,6 +319,17 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
           defaultAccountId={adding.id}
           onSaved={changed}
           onClose={() => setAdding(null)}
+        />
+      )}
+      {paying && (
+        <LoanPaymentDialog
+          loan={paying}
+          accounts={all}
+          onDone={(message) => {
+            changed();
+            toast(message);
+          }}
+          onClose={() => setPaying(null)}
         />
       )}
       {importing && (
@@ -582,6 +602,23 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
 
 const money = (a: Account, minor: number | null) => formatMinor(minor, a.currency || "USD");
 
+/** What the Debt page knows about a card or loan that owes something (GET /debt). */
+interface DebtTerms {
+  id: number;
+  aprBps: number | null;
+  minimumMinor: number;
+  minimumEstimated: boolean;
+  alone: { months: number | null; interestMinor: number } | null;
+}
+
+/** "14 months", "2 yr 3 mo". */
+export function payoffIn(months: number): string {
+  if (months < 24) return `${months} ${months === 1 ? "month" : "months"}`;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return rest === 0 ? `${years} yr` : `${years} yr ${rest} mo`;
+}
+
 /** A plain outline of a card chip, drawn in the text colour. */
 function ChipOutline() {
   return (
@@ -653,6 +690,8 @@ function AccountCard({
   onImport,
   onStatements,
   onLimits,
+  onPayment,
+  terms,
   onHiddenChanged,
 }: {
   account: Account;
@@ -660,6 +699,10 @@ function AccountCard({
   onImport: () => void;
   onStatements: () => void;
   onLimits: () => void;
+  /** A loan kept by hand: record a payment on it. */
+  onPayment: () => void;
+  /** A card's or loan's rate, minimum, and payoff at the minimum, when it owes something. */
+  terms: DebtTerms | undefined;
   /** After the account was hidden or shown again, so the cards refresh. */
   onHiddenChanged: () => void;
 }) {
@@ -770,9 +813,14 @@ function AccountCard({
         {/* Back. */}
         <div className={faceClass} style={{ ...hidden, transform: "rotateY(180deg)" }}>
           {accent}
-          <div className="truncate font-medium">{a.name}</div>
-          <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-            {a.officialName && a.officialName !== a.name && (
+          <div className="shrink-0 truncate font-medium" title={a.officialName ?? undefined}>
+            {a.name}
+          </div>
+          {/* The details scroll inside the card when there are more than fit, so the name and
+              the buttons always show. */}
+          <dl className="mt-1 grid min-h-0 shrink grid-cols-2 content-start gap-x-3 gap-y-0.5 overflow-y-auto text-xs">
+            {/* A card with debt terms needs the room; its official name is the name's tooltip. */}
+            {!terms && a.officialName && a.officialName !== a.name && (
               <>
                 <dt className="text-slate-500">Official name</dt>
                 <dd className="truncate text-right">{a.officialName}</dd>
@@ -798,7 +846,8 @@ function AccountCard({
                     <dd className="text-right tabular-nums">{money(a, a.availableBalanceMinor)}</dd>
                   </>
                 )}
-            {credit && (
+            {/* The limit is on the front too; with debt terms the room goes to them. */}
+            {credit && !terms && (
               <>
                 <dt className="text-slate-500">Credit limit</dt>
                 <dd className="text-right tabular-nums">
@@ -812,6 +861,26 @@ function AccountCard({
                 <dd className="text-right">{dayOfMonth(a.statementDueDay)}</dd>
               </>
             )}
+            {terms && (
+              <>
+                <dt className="text-slate-500">Rate · minimum</dt>
+                <dd className="text-right tabular-nums">
+                  {terms.aprBps === null
+                    ? "rate not entered"
+                    : `${(terms.aprBps / 100).toFixed(2).replace(/\.?0+$/, "")}% · ${money(a, terms.minimumMinor)}/mo`}
+                </dd>
+                {terms.alone && a.type === "loan" && (
+                  <>
+                    <dt className="text-slate-500">At the minimum</dt>
+                    <dd className="text-right">
+                      {terms.alone.months === null
+                        ? "never paid off"
+                        : `paid off in ${payoffIn(terms.alone.months)}`}
+                    </dd>
+                  </>
+                )}
+              </>
+            )}
           </dl>
           {hideError && (
             <p role="alert" className="mt-1 text-xs text-red-600">
@@ -819,7 +888,7 @@ function AccountCard({
             </p>
           )}
           <div
-            className="mt-auto flex flex-wrap gap-1.5"
+            className="mt-auto flex shrink-0 flex-wrap gap-1.5 pt-1"
             onClick={(e) => e.stopPropagation()}
             // Enter or Space on a button here must not turn the card over.
             onKeyDown={(e) => e.stopPropagation()}
@@ -842,6 +911,9 @@ function AccountCard({
             )}
             {a.type === "investment" && (
               <BackButton onClick={() => navigate("/accounts/investments")}>Holdings</BackButton>
+            )}
+            {a.isManual && a.type === "loan" && (
+              <BackButton onClick={onPayment}>Record payment</BackButton>
             )}
             {a.isManual && (payment || a.type === "loan") && (
               <>
