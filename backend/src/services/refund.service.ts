@@ -147,6 +147,7 @@ export function detectRefunds(tx: Tx, now: string): number {
 function load(db: Pick<AppDb, "all">, id: number) {
   const row = db.all<{
     id: number;
+    account_id: number;
     amount: number;
     currency: string;
     day: string;
@@ -155,7 +156,7 @@ function load(db: Pick<AppDb, "all">, id: number) {
     transfer_source: string | null;
     text: string;
   }>(sql`
-    select id, amount_minor as amount, currency, coalesce(authorized_date, date) as day,
+    select id, account_id, amount_minor as amount, currency, coalesce(authorized_date, date) as day,
       refund_of_id, transfer_pair_id, transfer_source,
       coalesce(merchant_name_user, '') || ' ' || coalesce(merchant_name, '') || ' ' || name as text
     from transactions where id = ${id}`)[0];
@@ -251,45 +252,184 @@ export function setRefundOf(
 export interface RefundSuggestion {
   transaction: TransactionDto;
   namesAgree: boolean;
-  /** The charge is exactly the refund's amount. */
+  /** The refund is exactly the charge's amount, or exactly what is left of it to give back. */
   exactAmount: boolean;
+  /** Days from the charge to the refund (negative when the bank posted the charge later). */
   daysBefore: number;
+  /** For a suggested charge: what is left of it to give back, after the refunds already linked. */
+  leftMinor: number | null;
+}
+
+export interface RefundSuggestions {
+  suggestions: RefundSuggestion[];
+  /** More fit than were returned (ask with a higher limit). */
+  more: boolean;
+  /** `recent`: within REFUND_WINDOW_DAYS days; `all`: the whole history (a search, or asked). */
+  range: "recent" | "all";
+}
+
+export interface RefundSearch {
+  /** Words or an amount to look for (see matchesRefundSearch). Searching looks through all history. */
+  q?: string;
+  /** Look past REFUND_WINDOW_DAYS days. */
+  all?: boolean;
+  limit?: number;
+}
+
+interface SearchRow {
+  text: string;
+  account: string;
+  category: string;
+  /** Positive cents. */
+  amount: number;
+}
+
+/** "49.99", "$1,250", "49": an amount, in cents, and whether it gave cents. */
+function amountOf(word: string): { cents: number; exact: boolean } | null {
+  const m = /^\$?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?$/.exec(word);
+  if (!m) return null;
+  const dollars = Number(m[1]!.replace(/,/g, ""));
+  if (m[2] === undefined) return { cents: dollars * 100, exact: false };
+  return { cents: dollars * 100 + Number(m[2].padEnd(2, "0")), exact: true };
 }
 
 /**
- * Charges a refund could give back: money that went out, in the same currency, from
- * REFUND_WINDOW_DAYS days before the refund until 3 days after, at least as much as the refund,
- * not itself a refund or a transfer. The same merchant first, then the exact amount, then the
- * closest date.
+ * Whether a transaction fits what was typed: every word is in its merchant, the bank's
+ * description, its account or its category; or, for a number, its amount ("49.99" exactly, "49"
+ * for anything from $49.00 to $49.99). Pure, for testing.
  */
-export function refundCandidates(db: AppDb, id: number, limit = 10): RefundSuggestion[] {
-  const refund = load(db, id);
-  const amount = -refund.amount;
-  const rows = db.all<{ id: number; amount: number; days: number; text: string }>(sql`
-    select t.id, t.amount_minor as amount,
-      julianday(${refund.day}) - julianday(coalesce(t.authorized_date, t.date)) as days,
-      coalesce(t.merchant_name_user, '') || ' ' || coalesce(t.merchant_name, '') || ' ' || t.name
-        as text
+export function matchesRefundSearch(q: string, row: SearchRow): boolean {
+  const haystack = `${row.text} ${row.account} ${row.category}`.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => {
+      const money = amountOf(word);
+      if (money) {
+        const fits = money.exact
+          ? row.amount === money.cents
+          : Math.floor(row.amount / 100) * 100 === money.cents;
+        if (fits) return true;
+      }
+      return haystack.includes(word.replace(/^\$/, ""));
+    });
+}
+
+/** Cents given back of a charge by its linked refunds, apart from one (positive). */
+const refundedSql = (except: number) => sql`coalesce((select -sum(r.amount_minor)
+  from transactions r where r.refund_of_id = t.id and r.id <> ${except}), 0)`;
+
+/**
+ * For money coming back: the charges it could give back. For a charge: the money coming back that
+ * could be its refund. Either way only pairs setRefundOf accepts: the same currency, the charge no
+ * more than 3 days after the refund, what is left of the charge at least the refund, neither one a
+ * transfer, pending or on a hidden account. Within REFUND_WINDOW_DAYS days unless `all` or a search
+ * (which looks through all history). The same merchant first, then the exact amount, then the same
+ * account, then anything but pay or interest, then the closest date.
+ */
+export function refundCandidates(
+  db: AppDb,
+  id: number,
+  { q = "", all = false, limit = 10 }: RefundSearch = {},
+): RefundSuggestions {
+  const self = load(db, id);
+  const search = q.trim();
+  const range = all || search !== "" ? "all" : "recent";
+  const day = sql`coalesce(t.authorized_date, t.date)`;
+  const text = sql`coalesce(t.merchant_name_user, '') || ' ' || coalesce(t.merchant_name, '') || ' ' || t.name`;
+  const common = sql`t.id <> ${id} and t.currency = ${self.currency} and t.refund_of_id is null
+    and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0`;
+  // A charge already linked as a refund, or with nothing left to give back, gets no suggestions.
+  const isRefund = self.amount < 0;
+  const left = isRefund ? 0 : self.amount - refundedBy(db, id, 0);
+  if (!isRefund && (self.refund_of_id !== null || left <= 0)) {
+    return { suggestions: [], more: false, range };
+  }
+  const where = isRefund
+    ? sql`${common} and t.amount_minor > 0
+        and t.amount_minor - ${refundedSql(id)} >= ${-self.amount}
+        and ${day} <= ${addDays(self.day, 3)}
+        ${range === "recent" ? sql`and ${day} >= ${addDays(self.day, -REFUND_WINDOW_DAYS)}` : sql``}`
+    : sql`${common} and t.amount_minor < 0 and -t.amount_minor <= ${left}
+        and t.transfer_pair_id is null
+        and ${day} >= ${addDays(self.day, -3)}
+        ${range === "recent" ? sql`and ${day} <= ${addDays(self.day, REFUND_WINDOW_DAYS)}` : sql``}`;
+  const rows = db.all<{
+    id: number;
+    amount: number;
+    left: number | null;
+    days: number;
+    text: string;
+    account: string;
+    category: string;
+    same_account: number;
+    income: number;
+  }>(sql`
+    select t.id, abs(t.amount_minor) as amount,
+      t.account_id = ${self.account_id} as same_account,
+      (coalesce(c.income_treatment, '') = 'income'
+        or coalesce(t.plaid_category_primary, '') = 'INCOME') as income,
+      ${isRefund ? sql`t.amount_minor - ${refundedSql(id)}` : sql`null`} as "left",
+      ${
+        isRefund
+          ? sql`julianday(${self.day}) - julianday(${day})`
+          : sql`julianday(${day}) - julianday(${self.day})`
+      } as days,
+      ${text} as text, a.name as account, coalesce(c.name, '') as category
     from transactions t join accounts a on a.id = t.account_id
-    where t.id <> ${id} and t.amount_minor >= ${amount} and t.currency = ${refund.currency}
-      and t.refund_of_id is null and t.is_transfer = 0 and a.hidden = 0
-      and coalesce(t.authorized_date, t.date)
-        between ${addDays(refund.day, -REFUND_WINDOW_DAYS)} and ${addDays(refund.day, 3)}
-    order by days limit 300`);
-  return rows
+      left join categories c on c.id = t.category_id
+    where ${where}
+    order by abs(days) limit 5000`);
+  // What the refund is and what is left of the charge, from either side.
+  const refundAmount = (r: (typeof rows)[number]) => (isRefund ? -self.amount : r.amount);
+  const chargeLeft = (r: (typeof rows)[number]) => (isRefund ? r.left! : left);
+  const chargeAmount = (r: (typeof rows)[number]) => (isRefund ? r.amount : self.amount);
+  const ranked = rows
+    .filter((r) => search === "" || matchesRefundSearch(search, r))
     .map((r) => ({
       id: r.id,
-      namesAgree: namesAgree(refund.text, r.text),
-      exactAmount: r.amount === amount,
+      namesAgree: namesAgree(self.text, r.text),
+      exactAmount: refundAmount(r) === chargeAmount(r) || refundAmount(r) === chargeLeft(r),
       daysBefore: Math.round(r.days),
+      leftMinor: isRefund ? r.left : null,
+      // A refund nearly always goes back to the card or account that paid.
+      sameAccount: r.same_account === 1,
+      // Pay or interest is rarely a refund (still listed, for a search).
+      income: r.income === 1,
     }))
     .sort(
       (x, y) =>
         Number(y.namesAgree) - Number(x.namesAgree) ||
         Number(y.exactAmount) - Number(x.exactAmount) ||
+        Number(y.sameAccount) - Number(x.sameAccount) ||
+        Number(x.income) - Number(y.income) ||
         Math.abs(x.daysBefore) - Math.abs(y.daysBefore) ||
         x.id - y.id,
+    );
+  return {
+    suggestions: ranked
+      .slice(0, limit)
+      .map((s) => ({
+        transaction: getTransaction(db, s.id),
+        namesAgree: s.namesAgree,
+        exactAmount: s.exactAmount,
+        daysBefore: s.daysBefore,
+        leftMinor: s.leftMinor,
+      })),
+    more: ranked.length > limit,
+    range,
+  };
+}
+
+/** The refunds linked to a charge, oldest first. */
+export function refundsOf(db: AppDb, id: number): TransactionDto[] {
+  load(db, id);
+  return db
+    .all<{ id: number }>(
+      sql`
+      select id from transactions where refund_of_id = ${id}
+      order by coalesce(authorized_date, date), id`,
     )
-    .slice(0, limit)
-    .map(({ id: chargeId, ...rest }) => ({ transaction: getTransaction(db, chargeId), ...rest }));
+    .map((r) => getTransaction(db, r.id));
 }

@@ -81,7 +81,11 @@ describe("linking a refund with its charge", () => {
 
     const suggestions = (
       await t.call("get", `/api/transactions/${refund}/refund-candidates`).expect(200)
-    ).body as Array<{ transaction: { id: number }; namesAgree: boolean; exactAmount: boolean }>;
+    ).body.suggestions as Array<{
+      transaction: { id: number };
+      namesAgree: boolean;
+      exactAmount: boolean;
+    }>;
     expect(suggestions[0]).toMatchObject({
       transaction: { id: charge },
       namesAgree: true,
@@ -159,5 +163,179 @@ describe("linking a refund with its charge", () => {
       direction: "in",
     });
     await link(early, charge, 400); // before the charge
+  });
+});
+
+describe("finding what a refund gives back", () => {
+  type Found = {
+    suggestions: Array<{
+      transaction: { id: number };
+      exactAmount: boolean;
+      daysBefore: number;
+      leftMinor: number | null;
+    }>;
+    more: boolean;
+    range: "recent" | "all";
+  };
+
+  it("searches by merchant, account, category or amount, through all history", async () => {
+    const { t, add, charge, refund, link } = await setup();
+    await link(refund, null); // so the September charge is free again
+    const old = await add({
+      date: "2025-11-20",
+      merchant: "Camping World",
+      amountMinor: 12999,
+      direction: "out",
+    });
+    const coffee = await add({
+      date: "2026-09-30",
+      merchant: "Coffee",
+      amountMinor: 6000,
+      direction: "out",
+    });
+    const find = async (query: string) =>
+      (await t.call("get", `/api/transactions/${refund}/refund-candidates${query}`).expect(200))
+        .body as Found;
+    const ids = (f: Found) => f.suggestions.map((s) => s.transaction.id);
+
+    // Within 6 months: the charge first (same merchant), then the coffee; not last November's.
+    const recent = await find("");
+    expect(recent.range).toBe("recent");
+    expect(ids(recent)).toEqual([charge, coffee]);
+    expect((await find("?all=true")).suggestions.map((s) => s.transaction.id)).toContain(old);
+    // A search looks through everything.
+    const camping = await find("?q=camping");
+    expect([ids(camping), camping.range]).toEqual([[old], "all"]);
+    expect(ids(await find("?q=129.99"))).toEqual([old]);
+    expect(ids(await find("?q=%24129"))).toEqual([old]);
+    expect(ids(await find("?q=129.00"))).toEqual([]);
+    expect(ids(await find("?q=shopping"))).toEqual([charge]);
+    expect(ids(await find("?q=card%2060"))).toEqual([coffee]);
+    expect(ids(await find("?q=nothing"))).toEqual([]);
+    // A few at a time.
+    const one = await find("?all=true&limit=1");
+    expect([ids(one), one.more]).toEqual([[charge], true]);
+  });
+
+  it("leaves out charges with too little left to give back, and says what is left", async () => {
+    const { t, add, charge, refund, link } = await setup();
+    await link(refund, null);
+    const half = await add({
+      date: "2026-10-01",
+      merchant: "Outdoor Store",
+      amountMinor: 2000,
+      direction: "in",
+    });
+    await link(half, charge); // $20 of the $50 back
+    const suggestions = (
+      await t.call("get", `/api/transactions/${refund}/refund-candidates`).expect(200)
+    ).body.suggestions as Found["suggestions"];
+    // $50 back no longer fits a charge with $30 left.
+    expect(suggestions.map((s) => s.transaction.id)).not.toContain(charge);
+
+    const small = await add({
+      date: "2026-10-04",
+      merchant: "Outdoor Store",
+      amountMinor: 3000,
+      direction: "in",
+    });
+    const forSmall = (
+      await t.call("get", `/api/transactions/${small}/refund-candidates`).expect(200)
+    ).body.suggestions as Found["suggestions"];
+    expect(forSmall[0]).toMatchObject({
+      transaction: { id: charge },
+      leftMinor: 3000,
+      exactAmount: true, // exactly what is left
+      daysBefore: 24,
+    });
+  });
+
+  it("from a charge: finds money back that could be its refund, and lists the linked ones", async () => {
+    const { t, add, charge, refund, link } = await setup();
+    await link(refund, null);
+    const tooBig = await add({
+      date: "2026-10-03",
+      merchant: "Outdoor Store",
+      amountMinor: 9000,
+      direction: "in",
+    });
+    const before = await add({
+      date: "2026-08-01",
+      merchant: "Outdoor Store",
+      amountMinor: 1000,
+      direction: "in",
+    });
+    const found = (await t.call("get", `/api/transactions/${charge}/refund-candidates`).expect(200))
+      .body as Found;
+    const ids = found.suggestions.map((s) => s.transaction.id);
+    expect(ids[0]).toBe(refund);
+    expect(ids).not.toContain(tooBig); // more than was charged
+    expect(ids).not.toContain(before); // before the charge
+    expect(found.suggestions[0]).toMatchObject({ exactAmount: true, leftMinor: null });
+
+    await link(refund, charge);
+    const linked = (await t.call("get", `/api/transactions/${charge}/refunds`).expect(200))
+      .body as Array<{ id: number }>;
+    expect(linked.map((r) => r.id)).toEqual([refund]);
+    // Fully refunded: nothing more to find.
+    expect(
+      (await t.call("get", `/api/transactions/${charge}/refund-candidates`).expect(200)).body
+        .suggestions,
+    ).toEqual([]);
+  });
+
+  it("ranks money back on the same account first, and pay or interest last", async () => {
+    const { t, add, charge, refund, link } = await setup();
+    await link(refund, null);
+    const checking = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Checking", kind: "checking" })
+        .expect(201)
+    ).body.id as number;
+    const pay = (await t.call("post", "/api/categories").send({ name: "Pay" }).expect(201)).body
+      .id as number;
+    await t.call("patch", `/api/categories/${pay}`).send({ incomeTreatment: "income" }).expect(200);
+    const inChecking = async (body: Record<string, unknown>) =>
+      (
+        await t
+          .call("post", "/api/transactions")
+          .send({ accountId: checking, direction: "in", ...body })
+          .expect(201)
+      ).body.id as number;
+    // Closest in date, but pay on another account; then money from a friend on another account;
+    // then a credit on the card that paid.
+    const interest = await inChecking({
+      date: "2026-09-11",
+      merchant: "Interest",
+      amountMinor: 100,
+      categoryId: pay,
+    });
+    const friend = await inChecking({ date: "2026-09-12", merchant: "Sam", amountMinor: 2000 });
+    const cardCredit = await add({
+      date: "2026-09-20",
+      merchant: "Statement adjustment",
+      amountMinor: 1000,
+      direction: "in",
+    });
+    const found = (await t.call("get", `/api/transactions/${charge}/refund-candidates`).expect(200))
+      .body as Found;
+    expect(found.suggestions.map((s) => s.transaction.id)).toEqual([
+      refund,
+      cardCredit,
+      friend,
+      interest,
+    ]);
+  });
+
+  it("reads amounts the way people type them", async () => {
+    const { matchesRefundSearch } = await import("./services/refund.service.js");
+    const row = { text: "AMZN Mktp US", account: "Visa", category: "Shopping", amount: 125050 };
+    expect(matchesRefundSearch("1,250.50", row)).toBe(true);
+    expect(matchesRefundSearch("$1250", row)).toBe(true);
+    expect(matchesRefundSearch("1250.5", row)).toBe(true);
+    expect(matchesRefundSearch("1251", row)).toBe(false);
+    expect(matchesRefundSearch("amzn visa", row)).toBe(true);
+    expect(matchesRefundSearch("amzn target", row)).toBe(false);
   });
 });

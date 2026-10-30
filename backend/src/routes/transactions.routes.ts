@@ -19,7 +19,7 @@ import {
 } from "../services/transfer-link.service.js";
 import { linkMirror, mirrorCandidates, unlinkMirror } from "../services/paypal-mirror.service.js";
 import { refundAllocation } from "../services/refund-allocation.service.js";
-import { refundCandidates, setRefundOf } from "../services/refund.service.js";
+import { refundCandidates, refundsOf, setRefundOf } from "../services/refund.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
 import { getTransaction, listTransactions, SORTS } from "../services/transaction.service.js";
 
@@ -233,9 +233,29 @@ export function transactionsRoutes(db: AppDb): Router {
   router.delete("/transactions/:id/mirror", (req, res) => {
     res.json(unlinkMirror(db, idParam.parse(req.params["id"])));
   });
-  /** Charges this refund could give back, the likeliest first. */
+  /**
+   * Charges this refund could give back, or for a charge the money back that could be its refund:
+   * the likeliest first, optionally searched (`q`) or past the usual 6 months (`all`).
+   */
   router.get("/transactions/:id/refund-candidates", (req, res) => {
-    res.json(refundCandidates(db, idParam.parse(req.params["id"])));
+    const query = z
+      .object({
+        q: z.string().max(100).optional(),
+        all: z.enum(["true", "false"]).optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+      })
+      .parse(req.query);
+    res.json(
+      refundCandidates(db, idParam.parse(req.params["id"]), {
+        q: query.q,
+        all: query.all === "true",
+        limit: query.limit,
+      }),
+    );
+  });
+  /** The refunds linked to this charge. */
+  router.get("/transactions/:id/refunds", (req, res) => {
+    res.json(refundsOf(db, idParam.parse(req.params["id"])));
   });
   /**
    * How this refund of a split purchase is divided across the purchase's categories, with what is
