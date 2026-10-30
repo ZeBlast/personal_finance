@@ -34,6 +34,11 @@ export interface DebtAccount {
   /** The minimum used: entered, or estimated. */
   minimumMinor: number;
   minimumEstimated: boolean;
+  /**
+   * This debt on its own, paying only its minimum: months until paid off (null when the minimum
+   * never catches up with the interest) and the interest paid. Null until the rate is entered.
+   */
+  alone: { months: number | null; interestMinor: number } | null;
 }
 
 export interface PayoffPlan {
@@ -146,14 +151,24 @@ export function listDebts(db: AppDb): DebtAccount[] {
     .map((a) => {
       const t = terms.get(a.id);
       const balance = a.currentBalanceMinor ?? 0;
+      const minimumMinor = t?.minimumMinor ?? estimateMinimum(balance, t?.aprBps ?? 0);
+      const alone =
+        t?.aprBps == null
+          ? null
+          : simulatePayoff(
+              [{ id: a.id, name: a.name, balanceMinor: balance, aprBps: t.aprBps, minimumMinor }],
+              0,
+              "avalanche",
+            );
       return {
         id: a.id,
         name: a.name,
         type: a.type,
         balanceMinor: balance,
         aprBps: t?.aprBps ?? null,
-        minimumMinor: t?.minimumMinor ?? estimateMinimum(balance, t?.aprBps ?? 0),
+        minimumMinor,
         minimumEstimated: t?.minimumMinor == null,
+        alone: alone && { months: alone.months, interestMinor: alone.totalInterestMinor },
       };
     });
 }
