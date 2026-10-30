@@ -1,24 +1,50 @@
-import type { ComponentType } from "react";
-import { AccountsPage } from "../pages/AccountsPage";
-import { AnalyticsPage } from "../pages/AnalyticsPage";
-import { BudgetsPage } from "../pages/BudgetsPage";
-import { CalendarPage } from "../pages/CalendarPage";
-import { CategoriesPage } from "../pages/CategoriesPage";
+import { lazy, Suspense, type ComponentType } from "react";
+import { Loading } from "../components/common/Loading";
 import { DashboardPage } from "../pages/DashboardPage";
-import { DataPage } from "../pages/DataPage";
-import { InsightsPage } from "../pages/InsightsPage";
-import { InvestmentsPage } from "../pages/InvestmentsPage";
-import { NetworkPage } from "../pages/NetworkPage";
-import { PlanningPage } from "../pages/PlanningPage";
-import { DebtPage } from "../pages/DebtPage";
-import { GoalsPage } from "../pages/GoalsPage";
-import { ReportsPage } from "../pages/ReportsPage";
-import { ReviewPage } from "../pages/ReviewPage";
-import { SandboxPage } from "../pages/SandboxPage";
-import { SettingsPage } from "../pages/SettingsPage";
-import { SubscriptionsPage } from "../pages/SubscriptionsPage";
-import { TaxesPage } from "../pages/TaxesPage";
-import { TransactionsPage } from "../pages/TransactionsPage";
+
+/**
+ * A page loaded the first time it is opened, not when the app starts, so the app starts with
+ * only the dashboard's code. While its code arrives (a moment, from the computer itself), the
+ * page area shows the loading placeholder.
+ */
+function lazyPage(load: () => Promise<ComponentType>): ComponentType {
+  const Lazy = lazy(async () => ({ default: await load() }));
+  return function LazyPage() {
+    return (
+      <Suspense fallback={<Loading lines={6} />}>
+        <Lazy />
+      </Suspense>
+    );
+  };
+}
+
+const AccountsPage = lazyPage(() => import("../pages/AccountsPage").then((m) => m.AccountsPage));
+const AnalyticsPage = lazyPage(() => import("../pages/AnalyticsPage").then((m) => m.AnalyticsPage));
+const BudgetsPage = lazyPage(() => import("../pages/BudgetsPage").then((m) => m.BudgetsPage));
+const CalendarPage = lazyPage(() => import("../pages/CalendarPage").then((m) => m.CalendarPage));
+const CategoriesPage = lazyPage(() =>
+  import("../pages/CategoriesPage").then((m) => m.CategoriesPage),
+);
+const DataPage = lazyPage(() => import("../pages/DataPage").then((m) => m.DataPage));
+const InsightsPage = lazyPage(() => import("../pages/InsightsPage").then((m) => m.InsightsPage));
+const InvestmentsPage = lazyPage(() =>
+  import("../pages/InvestmentsPage").then((m) => m.InvestmentsPage),
+);
+const NetworkPage = lazyPage(() => import("../pages/NetworkPage").then((m) => m.NetworkPage));
+const PlanningPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.PlanningPage));
+const DebtPage = lazyPage(() => import("../pages/DebtPage").then((m) => m.DebtPage));
+const GoalsPage = lazyPage(() => import("../pages/GoalsPage").then((m) => m.GoalsPage));
+const ReportsPage = lazyPage(() => import("../pages/ReportsPage").then((m) => m.ReportsPage));
+const ReviewPage = lazyPage(() => import("../pages/ReviewPage").then((m) => m.ReviewPage));
+const SandboxPage = lazyPage(() => import("../pages/SandboxPage").then((m) => m.SandboxPage));
+const SettingsPage = lazyPage(() => import("../pages/SettingsPage").then((m) => m.SettingsPage));
+const SubscriptionsPage = lazyPage(() =>
+  import("../pages/SubscriptionsPage").then((m) => m.SubscriptionsPage),
+);
+const TaxesPage = lazyPage(() => import("../pages/TaxesPage").then((m) => m.TaxesPage));
+const TransactionsPage = lazyPage(() =>
+  import("../pages/TransactionsPage").then((m) => m.TransactionsPage),
+);
 
 export interface AppRoute {
   path: string;
