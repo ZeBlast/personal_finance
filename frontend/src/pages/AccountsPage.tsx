@@ -21,6 +21,7 @@ import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from 
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
 import { Loading } from "../components/common/Loading";
+import { toast } from "../lib/toast";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -214,12 +215,12 @@ export function AccountsPage() {
       await api(`/plaid/items/${disconnecting.id}${localOnly ? "?force=1" : ""}`, {
         method: "DELETE",
       });
-      setNotice({
-        kind: "info",
-        text: localOnly
+      setNotice(null);
+      toast(
+        localOnly
           ? `${disconnecting.institutionName} was removed from this app.`
           : `${disconnecting.institutionName} was disconnected.`,
-      });
+      );
       setDisconnecting(null);
       setLocalOnly(false);
       setDisconnectCause(null);
@@ -415,7 +416,7 @@ export function AccountsPage() {
           <NewAccountDialog
             onCreated={(text) => {
               setAddingAccount(null);
-              setNotice({ kind: "info", text });
+              toast(text);
               announceDataChanged();
             }}
             onClose={() => setAddingAccount(null)}

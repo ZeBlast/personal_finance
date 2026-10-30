@@ -99,6 +99,14 @@ function SortHeader({
   );
 }
 
+/**
+ * What Undo sends back after a quick category change: the category the user had chosen, or null
+ * when the rules had chosen it (or none), so the rules choose again and it stays automatic.
+ */
+export function categoryToRestore(t: Pick<Transaction, "category">): number | null {
+  return t.category?.source === "manual" ? t.category.id : null;
+}
+
 export function TransactionsPage() {
   const [data, setData] = useState<TransactionPage | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -327,7 +335,7 @@ export function TransactionsPage() {
   }
 
   async function quickCategory(t: Transaction, value: string): Promise<void> {
-    const previous = t.category?.id ?? null;
+    const previous = categoryToRestore(t);
     try {
       const updated = await setCategory(t.id, value === "" ? null : Number(value));
       setError(null);
