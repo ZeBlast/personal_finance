@@ -107,6 +107,29 @@ export function categoryToRestore(t: Pick<Transaction, "category">): number | nu
   return t.category?.source === "manual" ? t.category.id : null;
 }
 
+/**
+ * What Undo sends back after marking transactions as transfers (or not): the user's own earlier
+ * answer, or null when the app had decided, so the app decides again.
+ */
+export function transferToRestore(
+  t: Pick<Transaction, "isTransfer" | "transferSource">,
+): boolean | null {
+  return t.transferSource === "manual" ? t.isTransfer : null;
+}
+
+/** Groups transactions by the value Undo must send back for each, one request per value. */
+export function undoGroups<V>(
+  items: readonly Transaction[],
+  restore: (t: Transaction) => V,
+): Array<{ value: V; ids: number[] }> {
+  const groups = new Map<V, number[]>();
+  for (const t of items) {
+    const value = restore(t);
+    groups.set(value, [...(groups.get(value) ?? []), t.id]);
+  }
+  return [...groups].map(([value, ids]) => ({ value, ids }));
+}
+
 export function TransactionsPage() {
   const [data, setData] = useState<TransactionPage | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -118,6 +141,9 @@ export function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<Transaction | null>(null);
+  /** The rows ticked for a bulk change (on the page shown). */
+  const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   /** Adding a transaction by hand ("new"), or editing one that was entered by hand. */
   const [manualDialog, setManualDialog] = useState<"new" | Transaction | null>(null);
   /** The transaction whose split is being edited. */
@@ -332,6 +358,77 @@ export function TransactionsPage() {
     });
     replaceRow(updated);
     return updated;
+  }
+
+  // A new page, filter or sort shows other rows: keep only the ticks still on screen.
+  useEffect(() => {
+    setChecked((c) => {
+      if (c.size === 0 || !data) return c;
+      const shown = new Set(data.items.map((t) => t.id));
+      const kept = new Set([...c].filter((id) => shown.has(id)));
+      return kept.size === c.size ? c : kept;
+    });
+  }, [data]);
+
+  const toggleChecked = (id: number, on: boolean) =>
+    setChecked((c) => {
+      const next = new Set(c);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  /**
+   * One change to every ticked row, all or nothing, with Undo that puts each back as it was (a
+   * rule's category or the app's transfer decision goes back to being automatic).
+   */
+  async function bulk(
+    change: { categoryId: number | null } | { isTransfer: boolean | null },
+    done: string,
+  ): Promise<void> {
+    const rows = (data?.items ?? []).filter((t) => checked.has(t.id));
+    if (rows.length === 0) return;
+    const send = (ids: number[], patch: typeof change) =>
+      api("/transactions/bulk", { method: "POST", body: JSON.stringify({ ids, ...patch }) });
+    const undo =
+      "categoryId" in change
+        ? undoGroups(rows, categoryToRestore).map((g) => ({
+            ids: g.ids,
+            patch: { categoryId: g.value },
+          }))
+        : undoGroups(rows, transferToRestore).map((g) => ({
+            ids: g.ids,
+            patch: { isTransfer: g.value },
+          }));
+    setBulkBusy(true);
+    try {
+      await send(
+        rows.map((t) => t.id),
+        change,
+      );
+      setError(null);
+      setChecked(new Set());
+      setReloads((n) => n + 1);
+      announceDataChanged();
+      toast(`${rows.length} ${rows.length === 1 ? "transaction" : "transactions"} ${done}.`, {
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              for (const g of undo) await send(g.ids, g.patch);
+              setReloads((n) => n + 1);
+              announceDataChanged();
+            } catch (e) {
+              toast(errorMessage(e, "Could not undo the change."), { kind: "error" });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      setError(errorMessage(e, "Could not change those transactions. Nothing was changed."));
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   async function quickCategory(t: Transaction, value: string): Promise<void> {
@@ -578,6 +675,64 @@ export function TransactionsPage() {
 
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1 space-y-4">
+          {data && data.items.length > 0 && checked.size > 0 && (
+            <div
+              role="toolbar"
+              aria-label="Change the selected transactions"
+              className="pf-fade-in sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-900 dark:bg-blue-950/60"
+            >
+              <span className="font-medium">{checked.size} selected</span>
+              <CategorySelect
+                aria-label="Set a category on the selected transactions"
+                value=""
+                disabled={bulkBusy}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "") return;
+                  const name =
+                    v === "auto"
+                      ? null
+                      : (options.find((o) => String(o.id) === v)?.label ?? "").trim();
+                  void bulk(
+                    { categoryId: v === "auto" ? null : Number(v) },
+                    name ? `set to ${name}` : "handed back to your rules",
+                  );
+                }}
+                className="w-48 rounded border border-slate-300 bg-white py-1 pr-6 pl-2 dark:border-slate-600 dark:bg-slate-900"
+              >
+                <option value="">Set category...</option>
+                <option value="auto">Automatic (let rules decide)</option>
+                {options.map((o) => (
+                  <option key={o.id} value={o.id} data-depth={o.depth}>
+                    {o.label}
+                  </option>
+                ))}
+              </CategorySelect>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => void bulk({ isTransfer: true }, "marked as transfers")}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800"
+              >
+                Mark as transfers
+              </button>
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => void bulk({ isTransfer: false }, "marked as not transfers")}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800"
+              >
+                Not transfers
+              </button>
+              <button
+                type="button"
+                onClick={() => setChecked(new Set())}
+                className="ml-auto text-slate-600 underline dark:text-slate-300"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
           {data && data.items.length > 0 && (
             <div
               ref={tableRef}
@@ -586,6 +741,25 @@ export function TransactionsPage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500 uppercase dark:bg-slate-800 dark:text-slate-400">
                   <tr>
+                    <th className="w-px py-2 pr-1 pl-3">
+                      <input
+                        type="checkbox"
+                        aria-label="Select every transaction on this page"
+                        checked={data.items.every((t) => checked.has(t.id))}
+                        ref={(el) => {
+                          if (el) {
+                            el.indeterminate =
+                              checked.size > 0 && !data.items.every((t) => checked.has(t.id));
+                          }
+                        }}
+                        onChange={(e) =>
+                          setChecked(
+                            e.target.checked ? new Set(data.items.map((t) => t.id)) : new Set(),
+                          )
+                        }
+                        className="block h-4 w-4"
+                      />
+                    </th>
                     <SortHeader
                       label="Transaction date"
                       ascending="txdate_asc"
@@ -652,11 +826,20 @@ export function TransactionsPage() {
                       }${
                         flash === t.id
                           ? "bg-amber-200 dark:bg-amber-700/50"
-                          : highlight === t.id
+                          : highlight === t.id || checked.has(t.id)
                             ? "bg-blue-50 dark:bg-blue-950/50"
                             : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
                       }`}
                     >
+                      <td className="w-px py-2 pr-1 pl-3">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${t.merchant}`}
+                          checked={checked.has(t.id)}
+                          onChange={(e) => toggleChecked(t.id, e.target.checked)}
+                          className="block h-4 w-4"
+                        />
+                      </td>
                       <td className="px-2 py-2 whitespace-nowrap">
                         {formatDay(t.authorizedDate ?? t.date)}
                       </td>
