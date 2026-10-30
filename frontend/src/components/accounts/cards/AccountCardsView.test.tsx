@@ -39,6 +39,8 @@ function account(id: number, name: string, extra: Partial<Account>): Account {
     creditLimitMinor: null,
     statementClosingDay: null,
     statementDueDay: null,
+    // Still shared by Plaid (a field newer versions of the API send).
+    noLongerSharedAt: null,
     ...extra,
   } as Account;
 }
