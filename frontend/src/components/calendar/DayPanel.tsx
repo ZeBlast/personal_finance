@@ -250,7 +250,11 @@ function BalanceFigures({ s, single }: { s: PeriodSummary; single: boolean }) {
 function HowCalculated({ s }: { s: PeriodSummary }) {
   const b = s.balance;
   const names = (list: Array<{ name: string; type: string }>) =>
-    list.map((a) => `${a.name} (${a.type === "credit" ? "card" : "cash"})`).join(", ");
+    list
+      .map(
+        (a) => `${a.name} (${a.type === "credit" ? "card" : a.type === "loan" ? "loan" : "cash"})`,
+      )
+      .join(", ");
   return (
     <details className="text-xs text-slate-500 dark:text-slate-400">
       <summary className="cursor-pointer">How this is calculated</summary>
@@ -716,7 +720,7 @@ export function DayPanel({
   if (accountId) query.set("accountId", accountId);
   const summary = useApi<PeriodSummary>(`/calendar/summary?${query}`);
   const handAccounts = accounts.filter(
-    (a) => a.isManual && (a.type === "depository" || a.type === "credit"),
+    (a) => a.isManual && (a.type === "depository" || a.type === "credit" || a.type === "loan"),
   );
 
   // A new selection starts with no leftover message.

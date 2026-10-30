@@ -57,7 +57,9 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const all = accounts.data ?? [];
   const collections = all.filter(isCollection);
   const manual = all.filter((a) => a.isManual && !isCollection(a));
-  const manualBank = manual.filter((a) => a.type === "depository" || a.type === "credit");
+  const manualBank = manual.filter(
+    (a) => a.type === "depository" || a.type === "credit" || a.type === "loan",
+  );
   // One group per connection, in the order the connections were made.
   const groups = useMemo(
     () =>
@@ -833,7 +835,7 @@ function AccountCard({
             {a.type === "investment" && (
               <BackButton onClick={() => navigate("/accounts/investments")}>Holdings</BackButton>
             )}
-            {a.isManual && payment && (
+            {a.isManual && (payment || a.type === "loan") && (
               <>
                 <BackButton onClick={onAdd}>Add transaction</BackButton>
                 <BackButton onClick={onImport}>Import CSV</BackButton>

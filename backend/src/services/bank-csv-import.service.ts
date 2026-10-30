@@ -228,7 +228,7 @@ export function importBankCsv(
   if (!account) throw notFound("That account");
   if (
     !account.isManual ||
-    (account.type !== "depository" && account.type !== "credit") ||
+    (account.type !== "depository" && account.type !== "credit" && account.type !== "loan") ||
     account.subtype === STORE_CREDIT_SUBTYPE
   ) {
     throw new AppError(
