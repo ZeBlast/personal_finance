@@ -45,6 +45,54 @@ const firstTx = async (q: string) => {
   return items[0]!;
 };
 
+describe("editing many transactions at once", () => {
+  it("sets one category on all of them, as the user's own choice", async () => {
+    const mine = await category("Mine");
+    const ids = (await list()).items.slice(0, 3).map((t) => t.id as number);
+    const res = await h
+      .call("post", "/api/transactions/bulk")
+      .send({ ids, categoryId: mine.id })
+      .expect(200);
+    expect(res.body).toEqual({ updated: 3 });
+    for (const id of ids) {
+      const t = (await h.call("get", `/api/transactions/${id}`).expect(200)).body;
+      expect(t.category).toMatchObject({ id: mine.id, source: "manual" });
+    }
+  });
+
+  it("changes none of them when one cannot be changed", async () => {
+    const mine = await category("Mine");
+    const [a, b] = (await list()).items.map((t) => t.id as number);
+    const before = (await h.call("get", `/api/transactions/${a}`).expect(200)).body.category;
+    await h
+      .call("post", "/api/transactions/bulk")
+      .send({ ids: [a, b, 999999], categoryId: mine.id })
+      .expect(404);
+    expect((await h.call("get", `/api/transactions/${a}`).expect(200)).body.category).toEqual(
+      before,
+    );
+    await h
+      .call("post", "/api/transactions/bulk")
+      .send({ ids: [a] })
+      .expect(400);
+    await h.call("post", "/api/transactions/bulk").send({ ids: [], categoryId: null }).expect(400);
+  });
+
+  it("marks them as transfers, and hands them back to the app's matching", async () => {
+    const ids = (await list("q=whole%20foods")).items.slice(0, 2).map((t) => t.id as number);
+    await h.call("post", "/api/transactions/bulk").send({ ids, isTransfer: true }).expect(200);
+    for (const id of ids) {
+      const t = (await h.call("get", `/api/transactions/${id}`).expect(200)).body;
+      expect(t.isTransfer).toBe(true);
+    }
+    await h.call("post", "/api/transactions/bulk").send({ ids, isTransfer: null }).expect(200);
+    for (const id of ids) {
+      const t = (await h.call("get", `/api/transactions/${id}`).expect(200)).body;
+      expect(t.isTransfer).toBe(false);
+    }
+  });
+});
+
 describe("editing a transaction", () => {
   it("sets a category by hand, which rules then leave alone", async () => {
     const mine = await category("Mine");

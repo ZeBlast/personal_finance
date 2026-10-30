@@ -7,6 +7,7 @@ import {
   createManualTransaction,
   deleteManualTransaction,
   updateAnyTransaction,
+  updateManyTransactions,
 } from "../services/manual-transaction.service.js";
 import { transactionCashback } from "../services/cashback.service.js";
 import { transactionGraph } from "../services/graph.service.js";
@@ -84,6 +85,18 @@ const patchBody = z
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." });
+
+/** One change for many transactions at once: a category, or whether they are transfers. */
+const bulkBody = z
+  .object({
+    ids: z.array(z.number().int().positive()).min(1).max(500),
+    categoryId: z.number().int().positive().nullable().optional(),
+    isTransfer: z.boolean().nullable().optional(),
+  })
+  .strict()
+  .refine((body) => body.categoryId !== undefined || body.isTransfer !== undefined, {
+    message: "Nothing to change.",
+  });
 
 const createBody = z
   .object({
@@ -166,6 +179,11 @@ export function transactionsRoutes(db: AppDb): Router {
   router.get("/transactions/:id", (req, res) => {
     const t = getTransaction(db, idParam.parse(req.params["id"]));
     res.json({ ...t, cashback: transactionCashback(db, [t.id]).get(t.id) ?? null });
+  });
+
+  router.post("/transactions/bulk", (req, res) => {
+    const { ids, ...patch } = bulkBody.parse(req.body);
+    res.json({ updated: updateManyTransactions(db, ids, patch) });
   });
 
   router.patch("/transactions/:id", (req, res) => {

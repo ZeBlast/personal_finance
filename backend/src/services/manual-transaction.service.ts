@@ -454,6 +454,30 @@ export function updateAnyTransaction(
   );
 }
 
+/** The changes that can be made to many transactions at once (Activity's bulk edit). */
+export interface BulkTransactionPatch {
+  categoryId?: number | null | undefined;
+  isTransfer?: boolean | null | undefined;
+}
+
+/**
+ * Applies one change to many transactions, all or nothing: if any of them cannot take it (one
+ * was deleted meanwhile, or the category was archived), none is changed. Returns how many were.
+ */
+export function updateManyTransactions(
+  db: AppDb,
+  ids: readonly number[],
+  patch: BulkTransactionPatch,
+  now: string = new Date().toISOString(),
+): number {
+  const unique = [...new Set(ids)];
+  db.transaction((tx) => {
+    for (const id of unique)
+      updateAnyTransactionInTransaction(tx as unknown as AppDb, id, patch, now);
+  });
+  return unique.length;
+}
+
 function updateAnyTransactionInTransaction(
   db: AppDb,
   id: number,
