@@ -195,7 +195,7 @@ export function TransactionDetail({
               <span className="text-slate-500"> (authorized {formatDay(t.authorizedDate)})</span>
             )}
             {t.pending && (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
                 Pending
               </span>
             )}

@@ -4,6 +4,7 @@ import { formatDay } from "../../lib/time";
 import { Modal } from "../common/Modal";
 import { askConfirm } from "../common/ConfirmHost";
 import { toast } from "../../lib/toast";
+import { Loading } from "../common/Loading";
 
 /**
  * Saving and loading named copies of a sandbox drawing (the maths nodes or the cash-flow map). The
@@ -267,7 +268,7 @@ function MapsDialog({
         <div>
           <div className="mb-1 font-medium">Saved</div>
           {maps === null ? (
-            <p className="text-slate-500">Loading...</p>
+            <Loading lines={2} />
           ) : maps.length === 0 ? (
             <p className="text-slate-500">Nothing saved yet.</p>
           ) : (

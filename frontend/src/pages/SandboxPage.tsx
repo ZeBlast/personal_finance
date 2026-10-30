@@ -523,7 +523,7 @@ function Canvas({
       {notice && (
         <p
           role="status"
-          className="absolute top-2 left-2 z-20 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900"
+          className="absolute top-2 left-2 z-20 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
         >
           {notice}
         </p>

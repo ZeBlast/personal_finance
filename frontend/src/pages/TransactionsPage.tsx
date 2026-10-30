@@ -546,7 +546,7 @@ export function TransactionsPage() {
       {notice && (
         <p
           role="status"
-          className="flex items-start justify-between gap-3 rounded-md bg-blue-100 px-3 py-2 text-sm text-blue-900"
+          className="flex items-start justify-between gap-3 rounded-md bg-blue-100 px-3 py-2 text-sm text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"
         >
           <span>{notice}</span>
           <button

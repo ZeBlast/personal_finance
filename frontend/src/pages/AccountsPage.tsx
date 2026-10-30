@@ -25,9 +25,18 @@ import { Loading } from "../components/common/Loading";
 type Notice = { kind: "info" | "error"; text: string };
 
 const STATUS_LABEL: Record<ItemStatus, { text: string; className: string }> = {
-  active: { text: "Connected", className: "bg-green-100 text-green-800" },
-  login_required: { text: "Needs sign-in", className: "bg-amber-100 text-amber-900" },
-  error: { text: "Problem", className: "bg-red-100 text-red-800" },
+  active: {
+    text: "Connected",
+    className: "bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-200",
+  },
+  login_required: {
+    text: "Needs sign-in",
+    className: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+  },
+  error: {
+    text: "Problem",
+    className: "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-200",
+  },
 };
 
 function AccountRow({
@@ -274,7 +283,10 @@ export function AccountsPage() {
   );
 
   const signInAlert = (
-    <div role="alert" className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+    <div
+      role="alert"
+      className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+    >
       {needsSignIn.map((i) => i.institutionName).join(", ")}{" "}
       {needsSignIn.length === 1 ? "needs" : "need"} you to sign in again. Use the Reconnect button;
       your existing data is kept.
@@ -425,7 +437,9 @@ export function AccountsPage() {
           <div
             role={notice.kind === "error" ? "alert" : "status"}
             className={`rounded-md px-3 py-2 text-sm ${
-              notice.kind === "error" ? "bg-red-100 text-red-900" : "bg-blue-100 text-blue-900"
+              notice.kind === "error"
+                ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200"
+                : "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"
             }`}
           >
             {notice.text}
@@ -511,7 +525,9 @@ export function AccountsPage() {
         <div
           role={notice.kind === "error" ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-md px-3 py-2 text-sm ${
-            notice.kind === "error" ? "bg-red-100 text-red-900" : "bg-blue-100 text-blue-900"
+            notice.kind === "error"
+              ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200"
+              : "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"
           }`}
         >
           <span>{notice.text}</span>
@@ -570,7 +586,7 @@ export function AccountsPage() {
                   </span>
                   {item.borrowed && (
                     <span
-                      className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900"
+                      className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-200"
                       title="This connection belongs to your real app. This copy can read it, but cannot disconnect or repair it."
                     >
                       Borrowed · read-only

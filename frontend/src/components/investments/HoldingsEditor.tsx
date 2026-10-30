@@ -5,6 +5,7 @@ import { Modal } from "../common/Modal";
 import { buildPayload, draftFromHolding, emptyDraft, type HoldingDraft } from "./holdingsForm";
 import { buttonClass, inputClass, primaryClass } from "./styles";
 import { Select } from "../common/Select";
+import { Loading } from "../common/Loading";
 
 /**
  * Edits everything a manual account holds. Saving replaces the account's holdings with exactly
@@ -79,7 +80,11 @@ export function HoldingsEditor({
   return (
     <Modal title={`Holdings in ${accountName}`} onClose={onCancel} wide>
       {!presets || !rows ? (
-        <p className="text-sm text-slate-500">{error ?? "Loading..."}</p>
+        error ? (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        ) : (
+          <Loading lines={4} />
+        )
       ) : (
         <form onSubmit={(e) => void submit(e)} className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">

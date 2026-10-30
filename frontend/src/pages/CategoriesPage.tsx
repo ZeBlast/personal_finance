@@ -324,7 +324,7 @@ function CategoriesSection({ onChanged }: { onChanged: () => void }) {
       {notice && (
         <p
           role={notice.kind === "error" ? "alert" : "status"}
-          className={`rounded-md px-3 py-2 text-sm ${notice.kind === "error" ? "bg-red-100 text-red-900" : "bg-blue-100 text-blue-900"}`}
+          className={`rounded-md px-3 py-2 text-sm ${notice.kind === "error" ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200" : "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"}`}
         >
           {notice.text}
         </p>
@@ -726,7 +726,7 @@ function RulesSection({ categories }: { categories: Category[] }) {
       {notice && (
         <p
           role={notice.kind === "error" ? "alert" : "status"}
-          className={`rounded-md px-3 py-2 text-sm ${notice.kind === "error" ? "bg-red-100 text-red-900" : "bg-blue-100 text-blue-900"}`}
+          className={`rounded-md px-3 py-2 text-sm ${notice.kind === "error" ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200" : "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"}`}
         >
           {notice.text}
         </p>

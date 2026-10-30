@@ -468,7 +468,7 @@ function SourceRow({
                 ? "bg-teal-100 text-teal-900"
                 : s.kind === "manual"
                   ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
-                  : "bg-green-100 text-green-900"
+                  : "bg-green-100 text-green-900 dark:bg-green-950/60 dark:text-green-200"
             }`}
           >
             {s.kind === "credit" ? "Credit" : s.kind === "manual" ? "Added by hand" : "Income"}
