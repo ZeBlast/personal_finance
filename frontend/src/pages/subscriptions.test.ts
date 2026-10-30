@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RenewalItem, Subscription } from "../types/planning";
-import { billingText, buildSubscription, draftFromSeries, renewalWhen } from "./SubscriptionsPage";
+import { buildSubscription, draftFromSeries } from "../components/subscriptions/subscriptionDraft";
+import { billingText, renewalWhen } from "../components/subscriptions/subscriptionText";
 
 describe("the renewal inbox", () => {
   const item: RenewalItem = {
