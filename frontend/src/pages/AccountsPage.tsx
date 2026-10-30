@@ -1,32 +1,14 @@
-import { AccountName } from "../components/common/AccountName";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, errorMessage } from "../api/client";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
-import { LimitHistory } from "../components/accounts/LimitHistory";
-import { CashbackSection } from "../components/accounts/CashbackSection";
-import { dayOfMonth, StatementsButton } from "../components/accounts/StatementsDialog";
-import { ReconcileButton } from "../components/accounts/ReconcileDialog";
 import { UtilizationSection } from "../components/insights/UtilizationSection";
-import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
-import {
-  ManualAccountsSection,
-  NewAccountDialog,
-} from "../components/accounts/ManualAccountsSection";
+import { NewAccountDialog } from "../components/accounts/ManualAccountsSection";
 import { AccountCardsView } from "../components/accounts/cards/AccountCardsView";
-import { usePersistentState } from "../hooks/usePersistentState";
 import { ConnectButton } from "../components/plaid/ConnectButton";
-import { formatMinor } from "../lib/money";
-import {
-  availableCreditMinor,
-  balanceDetail,
-  isDebtAccount,
-  shownBalanceMinor,
-} from "../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
 import { timeAgo } from "../lib/time";
-import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
-import { Loading } from "../components/common/Loading";
+import type { ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
 import { toast } from "../lib/toast";
 
 type Notice = { kind: "info" | "error"; text: string };
@@ -46,88 +28,6 @@ const STATUS_LABEL: Record<ItemStatus, { text: string; className: string }> = {
   },
 };
 
-function AccountRow({
-  account,
-  onChanged,
-  onError,
-}: {
-  account: Account;
-  onChanged: () => void;
-  onError: (message: string) => void;
-}) {
-  const isCredit = account.type === "credit";
-  const available = availableCreditMinor(account);
-  const linkClass =
-    "rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700";
-  return (
-    <li className={`py-2 text-sm ${account.hidden ? "opacity-60" : ""}`}>
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="h-3 w-3 shrink-0 rounded-full"
-            style={{ backgroundColor: account.color ?? "#94a3b8" }}
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium">
-                <AccountName name={account.name} institutionName={account.institutionName} />
-              </span>
-              {account.hidden && <HiddenBadge />}
-            </div>
-            <div className="text-xs text-slate-500">
-              {[account.subtype ?? account.type, account.mask ? `••${account.mask}` : null]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-3 text-right">
-          <div>
-            <div className="font-medium">
-              {formatMinor(shownBalanceMinor(account), account.currency)}
-            </div>
-            <div className="text-xs text-slate-500">{balanceDetail(account)}</div>
-            {/* A card's second line: what can still be spent, and when the payment is due. */}
-            {isCredit && (
-              <div className="text-xs text-slate-500">
-                {[
-                  available !== null
-                    ? `${formatMinor(available, account.currency)} available`
-                    : null,
-                  account.statementDueDay
-                    ? `payment due ${dayOfMonth(account.statementDueDay)}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </div>
-            )}
-          </div>
-          <HideToggle account={account} onChanged={onChanged} onError={onError} />
-        </div>
-      </div>
-      {isCredit && <LimitHistory account={account} />}
-      <div className="mt-2 flex flex-wrap gap-2 empty:hidden">
-        {isCredit && <StatementsButton account={account} />}
-        {(isCredit || account.type === "depository") && <ReconcileButton account={account} />}
-        {/* Plaid does not send a card's or loan's interest rate here; the Debt page keeps it. */}
-        {isDebtAccount(account) && (
-          <Link to="/planning/debt" className={linkClass}>
-            Rate &amp; payoff plan
-          </Link>
-        )}
-        {account.type === "investment" && (
-          <Link to="/accounts/investments" className={linkClass}>
-            View holdings
-          </Link>
-        )}
-      </div>
-      {isCredit && <CashbackSection account={account} />}
-    </li>
-  );
-}
-
 export function AccountsPage() {
   const [items, setItems] = useState<PlaidItem[] | null>(null);
   const [status, setStatus] = useState<PlaidStatus | null>(null);
@@ -138,9 +38,7 @@ export function AccountsPage() {
   /** Why the last disconnect attempt failed, to explain the "delete local copy" option. */
   const [disconnectCause, setDisconnectCause] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<number | null>(null);
-  /** The experimental card view, remembered between visits. */
-  const [cardView, setCardView] = usePersistentState("pf.accounts.cardView", false);
-  /** The card view's "Add account" window: choosing what to add, or the manual account form. */
+  /** The "Add account" window: choosing what to add, or the manual account form. */
   const [addingAccount, setAddingAccount] = useState<"choose" | "manual" | null>(null);
 
   const load = useCallback(async (): Promise<PlaidItem[]> => {
@@ -265,6 +163,24 @@ export function AccountsPage() {
 
   const demo = status?.environment === "fake";
 
+  /** A collection exported from another copy of the app becomes a new account here. */
+  async function importCollectionFile(file: File): Promise<void> {
+    try {
+      const made = await api<{ name: string; items: unknown[] }>("/collections/import", {
+        method: "POST",
+        body: await file.text(),
+      });
+      setAddingAccount(null);
+      toast(`${made.name} was imported with ${made.items.length} items.`);
+      announceDataChanged();
+    } catch (e) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(e, "That file is not a collection exported from this app."),
+      });
+    }
+  }
+
   /** A finished connection: a warning stays on the page; plain success passes by as a pop-up. */
   function showConnected(text: string, needsAttention: boolean): void {
     if (needsAttention) {
@@ -276,7 +192,7 @@ export function AccountsPage() {
   }
   const needsSignIn = items?.filter((i) => i.status === "login_required") ?? [];
 
-  /** Reconnect, check and disconnect a bank: in both the classic and the card view. */
+  /** Reconnect, check and disconnect a bank, in the Bank connections strip. */
   const connectionActions = (item: PlaidItem) => (
     <div className="flex flex-wrap items-center gap-2">
       {item.status === "login_required" && !item.borrowed && (
@@ -396,149 +312,19 @@ export function AccountsPage() {
     />
   );
 
-  const viewSwitch = (
-    <label className="flex w-fit items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={cardView}
-        onChange={(e) => setCardView(e.target.checked)}
-        className="h-4 w-4"
-      />
-      Show as cards
-    </label>
-  );
-
-  if (cardView) {
-    return (
-      <section className="@container w-full space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Accounts</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Click a card to turn it over. Each bank's connection is managed in the strip below.
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            {viewSwitch}
-            <button
-              type="button"
-              onClick={() => setAddingAccount("choose")}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              + Add account
-            </button>
-          </div>
-        </div>
-        {addingAccount === "choose" && (
-          <Modal title="Add an account" onClose={() => setAddingAccount(null)} dismissible>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-                <div className="font-medium">Connect a bank</div>
-                <p className="flex-1 text-sm text-slate-500">
-                  Sign in to your bank through Plaid; its accounts and transactions sync on their
-                  own.
-                </p>
-                <ConnectButton
-                  label="Connect a bank"
-                  primary
-                  onDone={(text, itemId, needsAttention) => {
-                    setAddingAccount(null);
-                    showConnected(text, needsAttention);
-                    void syncConnection(itemId);
-                  }}
-                  onError={(text) => setNotice({ kind: "error", text })}
-                />
-              </div>
-              <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-                <div className="font-medium">Keep one by hand</div>
-                <p className="flex-1 text-sm text-slate-500">
-                  Cash, a card or account you update yourself, a loan, an asset or a collection.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setAddingAccount("manual")}
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-                >
-                  Add a manual account
-                </button>
-              </div>
-            </div>
-          </Modal>
-        )}
-        {addingAccount === "manual" && (
-          <NewAccountDialog
-            onCreated={(text) => {
-              setAddingAccount(null);
-              toast(text);
-              announceDataChanged();
-            }}
-            onClose={() => setAddingAccount(null)}
-          />
-        )}
-        {notice && (
-          <div
-            role={notice.kind === "error" ? "alert" : "status"}
-            className={`rounded-md px-3 py-2 text-sm ${
-              notice.kind === "error"
-                ? "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200"
-                : "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200"
-            }`}
-          >
-            {notice.text}
-          </div>
-        )}
-        {needsSignIn.length > 0 && signInAlert}
-        {(items ?? []).length > 0 && (
-          <section aria-label="Bank connections" className="space-y-2">
-            <h2 className="text-sm font-medium text-slate-500">Bank connections</h2>
-            <ul className="grid gap-2 @min-[48rem]:grid-cols-2 @min-[80rem]:grid-cols-3">
-              {(items ?? []).map((item) => (
-                <li
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 font-medium">
-                      {item.institutionName}
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[item.status].className}`}
-                      >
-                        {STATUS_LABEL[item.status].text}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {item.lastSuccessfulSyncAt
-                        ? `Last synced ${timeAgo(item.lastSuccessfulSyncAt)}`
-                        : "Not synced yet"}
-                    </div>
-                  </div>
-                  {connectionActions(item)}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <AccountCardsView items={items ?? []} />
-        <div className="max-w-4xl">
-          <UtilizationSection />
-        </div>
-        {disconnectDialog}
-      </section>
-    );
-  }
-
   return (
-    <section className="@container max-w-6xl space-y-5">
-      <div className="flex items-start justify-between gap-4">
+    <section className="@container w-full space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Accounts</h1>
-          {status && (
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {demo
-                ? "Demo mode: connections use built-in sample data. Switch to Plaid Sandbox or Production in Settings."
-                : `Connected through Plaid (${status.environment}).`}
-            </p>
-          )}
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Click a card to turn it over for its details and what you can do. Each bank&apos;s
+            connection is managed in the strip below.
+            {status &&
+              (demo
+                ? " Demo mode: connections use built-in sample data; switch to Plaid Sandbox or Production in Settings."
+                : ` Connected through Plaid (${status.environment}).`)}
+          </p>
           {status &&
             status.environment !== "fake" &&
             !status.credentialsSaved[status.environment] && (
@@ -550,19 +336,81 @@ export function AccountsPage() {
                 .
               </p>
             )}
-          <div className="mt-2">{viewSwitch}</div>
         </div>
-        <ConnectButton
-          label="Connect an account"
-          primary
-          onDone={(text, itemId, needsAttention) => {
-            showConnected(text, needsAttention);
-            void syncConnection(itemId);
-          }}
-          onError={(text) => setNotice({ kind: "error", text })}
-        />
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setAddingAccount("choose")}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + Add account
+          </button>
+        </div>
       </div>
-
+      {addingAccount === "choose" && (
+        <Modal title="Add an account" onClose={() => setAddingAccount(null)} dismissible>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+              <div className="font-medium">Connect a bank</div>
+              <p className="flex-1 text-sm text-slate-500">
+                Sign in to your bank through Plaid; its accounts and transactions sync on their own.
+              </p>
+              <ConnectButton
+                label="Connect a bank"
+                primary
+                onDone={(text, itemId, needsAttention) => {
+                  setAddingAccount(null);
+                  showConnected(text, needsAttention);
+                  void syncConnection(itemId);
+                }}
+                onError={(text) => setNotice({ kind: "error", text })}
+              />
+            </div>
+            <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+              <div className="font-medium">Keep one by hand</div>
+              <p className="flex-1 text-sm text-slate-500">
+                Cash, a card or account you update yourself, a loan, an asset or a collection.
+              </p>
+              <button
+                type="button"
+                onClick={() => setAddingAccount("manual")}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+              >
+                Add a manual account
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 rounded-md border border-slate-200 p-3 sm:col-span-2 dark:border-slate-700">
+              <div className="font-medium">Import a collection file</div>
+              <p className="flex-1 text-sm text-slate-500">
+                A collection exported from another copy of this app becomes a new account here.
+              </p>
+              <label className="w-fit cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800">
+                Choose a file
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void importCollectionFile(file);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {addingAccount === "manual" && (
+        <NewAccountDialog
+          onCreated={(text) => {
+            setAddingAccount(null);
+            toast(text);
+            announceDataChanged();
+          }}
+          onClose={() => setAddingAccount(null)}
+        />
+      )}
       {notice && (
         <div
           role={notice.kind === "error" ? "alert" : "status"}
@@ -583,124 +431,77 @@ export function AccountsPage() {
           </button>
         </div>
       )}
-
       {needsSignIn.length > 0 && signInAlert}
-
-      {items === null && <Loading />}
-
-      {items?.length === 0 && (
-        <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-600">
-          No accounts connected yet. Choose “Connect an account” to add your first one.
-        </div>
-      )}
-
-      <div className="grid items-start gap-4 @min-[64rem]:grid-cols-2">
-        {items?.map((item) => {
-          const label = STATUS_LABEL[item.status];
-          return (
-            <article
-              key={item.id}
-              className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"
-            >
-              <header className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="flex items-center gap-2 text-lg font-medium">
-                    {item.logo ? (
-                      <img
-                        src={item.logo}
-                        alt=""
-                        className="h-7 w-7 shrink-0 rounded-full bg-white object-contain p-0.5 ring-1 ring-slate-200 dark:ring-slate-600"
-                      />
-                    ) : (
+      {(items ?? []).length > 0 && (
+        <section aria-label="Bank connections" className="space-y-2">
+          <h2 className="text-sm font-medium text-slate-500">Bank connections</h2>
+          <ul className="grid gap-2 @min-[48rem]:grid-cols-2 @min-[80rem]:grid-cols-3">
+            {(items ?? []).map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 font-medium">
+                    {item.institutionName}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[item.status].className}`}
+                    >
+                      {STATUS_LABEL[item.status].text}
+                    </span>
+                    {item.borrowed && (
                       <span
-                        aria-hidden="true"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                        className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-200"
+                        title="This connection belongs to your real app. This copy can read it, but cannot disconnect or repair it."
                       >
-                        {item.institutionName.trim().charAt(0).toUpperCase()}
+                        Borrowed · read-only
                       </span>
                     )}
-                    {item.institutionName}
-                  </h2>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${label.className}`}
-                  >
-                    {label.text}
-                  </span>
-                  {item.borrowed && (
-                    <span
-                      className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-200"
-                      title="This connection belongs to your real app. This copy can read it, but cannot disconnect or repair it."
-                    >
-                      Borrowed · read-only
-                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {item.lastSuccessfulSyncAt
+                      ? `Last synced ${timeAgo(item.lastSuccessfulSyncAt)}`
+                      : "Not synced yet"}
+                    {item.borrowed &&
+                      " · syncs only with Sync now; sign-ins and disconnecting happen in the real app"}
+                  </div>
+                  {item.lastErrorMessage && item.status !== "active" && (
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                      {item.lastErrorMessage}
+                    </p>
+                  )}
+                  {demo && item.status === "active" && (
+                    <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
+                      <button
+                        type="button"
+                        onClick={() => void simulateExpiry(item)}
+                        className="underline"
+                      >
+                        Demo: simulate an expired login
+                      </button>
+                      {item.accounts.some((a) => a.type === "credit") && (
+                        <button
+                          type="button"
+                          onClick={() => void simulateLimitChange(item)}
+                          className="underline"
+                        >
+                          Demo: raise the credit limit by $500
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 {connectionActions(item)}
-              </header>
-
-              {item.borrowed && (
-                <p className="mt-1 text-xs text-violet-800 dark:text-violet-300">
-                  Borrowed from your real app. It syncs only when you press Sync now, and signing in
-                  again or disconnecting has to be done in the real app.
-                </p>
-              )}
-
-              <p className="mt-1 text-xs text-slate-500">
-                {item.lastSuccessfulSyncAt
-                  ? `Last synced ${timeAgo(item.lastSuccessfulSyncAt)}`
-                  : "Not synced yet"}
-              </p>
-
-              {item.lastErrorMessage && item.status !== "active" && (
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  {item.lastErrorMessage}
-                </p>
-              )}
-
-              <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-700">
-                {item.accounts.map((account) => (
-                  <AccountRow
-                    key={account.id}
-                    account={account}
-                    onChanged={() => void load()}
-                    onError={(text) => setNotice({ kind: "error", text })}
-                  />
-                ))}
-                {item.accounts.length === 0 && (
-                  <li className="py-2 text-sm text-slate-500">No accounts loaded yet.</li>
-                )}
-              </ul>
-
-              {demo && item.status === "active" && (
-                <button
-                  type="button"
-                  onClick={() => void simulateExpiry(item)}
-                  className="mt-2 text-xs text-slate-500 underline"
-                >
-                  Demo: simulate an expired login
-                </button>
-              )}
-              {demo &&
-                item.status === "active" &&
-                item.accounts.some((a) => a.type === "credit") && (
-                  <button
-                    type="button"
-                    onClick={() => void simulateLimitChange(item)}
-                    className="mt-2 ml-4 text-xs text-slate-500 underline"
-                  >
-                    Demo: raise the credit limit by $500
-                  </button>
-                )}
-            </article>
-          );
-        })}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <AccountCardsView items={items ?? []} />
+      <div className="max-w-4xl">
+        <UtilizationSection />
       </div>
-
       {disconnectDialog}
-
-      <ManualAccountsSection />
-
-      <UtilizationSection />
     </section>
   );
 }

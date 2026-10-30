@@ -66,9 +66,12 @@ const PREVIEW_GAP = 12;
 export function CollectionShowcase({
   account,
   onManage,
+  onDelete,
 }: {
   account: Account;
   onManage: () => void;
+  /** Deletes the whole collection account (after asking); the dashboard widget leaves it out. */
+  onDelete?: () => void;
 }) {
   const loaded = useApi<Collection>(`/accounts/${account.id}/collection`);
   const [browsing, setBrowsing] = useState(false);
@@ -130,6 +133,16 @@ export function CollectionShowcase({
           >
             Manage
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete the collection ${account.name}`}
+              className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
       {loaded.error && <p className="text-sm text-red-600">{loaded.error}</p>}

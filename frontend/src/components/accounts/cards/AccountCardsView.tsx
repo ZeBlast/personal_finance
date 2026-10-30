@@ -33,10 +33,14 @@ import { CollectionShowcase } from "./CollectionShowcase";
 import { HideToggle } from "../HideToggle";
 import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
 import { LoanPaymentDialog } from "../LoanPaymentDialog";
+import { ReconcileDialog } from "../ReconcileDialog";
+import { AddCreditsDialog, isStoreCredit, UseCreditsDialog } from "../StoreCreditDialogs";
+import { askConfirm } from "../../common/ConfirmHost";
+import { AccountMoreDialog } from "./AccountMoreDialog";
 import { toast } from "../../../lib/toast";
 
 /**
- * The experimental Accounts view: every account as a card in the style of the investment account
+ * The Accounts page: every account as a card in the style of the investment account
  * cards, with the account's colour as an accent down the left side. Cards are grouped by the bank
  * they come from (each group with its own Sync button), accounts kept by hand together after
  * them, and the grid fills the width of the window. A card shows the account's name, its number's
@@ -53,6 +57,9 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [statementsOf, setStatementsOf] = useState<Account | null>(null);
   const [limitsOf, setLimitsOf] = useState<Account | null>(null);
   const [paying, setPaying] = useState<Account | null>(null);
+  const [more, setMore] = useState<Account | null>(null);
+  const [reconciling, setReconciling] = useState<Account | null>(null);
+  const [credits, setCredits] = useState<{ account: Account; action: "add" | "use" } | null>(null);
   // Each card's and loan's rate, minimum and payoff at the minimum, from the Debt page's figures.
   const debt = useApi<{ debts: DebtTerms[] }>("/debt");
   const termsOf = new Map((debt.data?.debts ?? []).map((d) => [d.id, d]));
@@ -84,10 +91,29 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
     setAdding(null);
     setImporting(null);
     setPaying(null);
+    setCredits(null);
     accounts.reload();
     debt.reload();
     announceDataChanged();
   };
+
+  async function deleteManual(account: Account): Promise<void> {
+    const ok = await askConfirm({
+      title: `Delete ${account.name}?`,
+      message:
+        "The account and all of its transactions will be removed from this app. This cannot be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/accounts/manual/${account.id}`, { method: "DELETE" });
+      changed();
+      toast(`${account.name} was deleted.`);
+    } catch (e) {
+      toast(errorMessage(e, "Could not delete the account."), { kind: "error" });
+    }
+  }
 
   if (accounts.error) return <p className="text-sm text-red-600">{accounts.error}</p>;
   if (!accounts.data) return <Loading lines={4} />;
@@ -208,10 +234,10 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
           <AccountCard
             account={a}
             onAdd={() => setAdding(a)}
-            onImport={() => setImporting(a)}
             onStatements={() => setStatementsOf(a)}
-            onLimits={() => setLimitsOf(a)}
             onPayment={() => setPaying(a)}
+            onCredits={(action) => setCredits({ account: a, action })}
+            onMore={() => setMore(a)}
             terms={termsOf.get(a.id)}
             onHiddenChanged={() => accounts.reload()}
           />
@@ -264,7 +290,12 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
         <section className="space-y-4">
           <GroupHeading title="Collections" subtitle="Valued item by item" />
           {collections.map((a) => (
-            <CollectionShowcase key={a.id} account={a} onManage={() => setManaging(a)} />
+            <CollectionShowcase
+              key={a.id}
+              account={a}
+              onManage={() => setManaging(a)}
+              onDelete={() => void deleteManual(a)}
+            />
           ))}
         </section>
       )}
@@ -335,6 +366,60 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             toast(message);
           }}
           onClose={() => setPaying(null)}
+        />
+      )}
+      {more && (
+        <AccountMoreDialog
+          account={more}
+          onLimits={() => {
+            setMore(null);
+            setLimitsOf(more);
+          }}
+          onReconcile={() => {
+            setMore(null);
+            setReconciling(more);
+          }}
+          onImport={() => {
+            setMore(null);
+            setImporting(more);
+          }}
+          onDelete={() => {
+            const target = more;
+            setMore(null);
+            void deleteManual(target);
+          }}
+          onClose={() => setMore(null)}
+        />
+      )}
+      {reconciling && (
+        <ReconcileDialog
+          account={reconciling}
+          onClose={() => {
+            setReconciling(null);
+            accounts.reload();
+          }}
+        />
+      )}
+      {credits?.action === "add" && (
+        <AddCreditsDialog
+          account={credits.account}
+          onSaved={(message) => {
+            changed();
+            toast(message);
+          }}
+          onClose={() => setCredits(null)}
+        />
+      )}
+      {credits?.action === "use" && (
+        <UseCreditsDialog
+          account={credits.account}
+          accounts={manualBank}
+          categories={categories ?? []}
+          onSaved={(message) => {
+            changed();
+            toast(message);
+          }}
+          onClose={() => setCredits(null)}
         />
       )}
       {importing && (
@@ -700,20 +785,22 @@ const KIND: Record<string, string> = {
 function AccountCard({
   account: a,
   onAdd,
-  onImport,
   onStatements,
-  onLimits,
   onPayment,
+  onCredits,
+  onMore,
   terms,
   onHiddenChanged,
 }: {
   account: Account;
   onAdd: () => void;
-  onImport: () => void;
   onStatements: () => void;
-  onLimits: () => void;
   /** A loan kept by hand: record a payment on it. */
   onPayment: () => void;
+  /** A gift card (store credit): add credits to it, or record a purchase that used them. */
+  onCredits: (action: "add" | "use") => void;
+  /** The rest of the account's actions, in a window. */
+  onMore: () => void;
   /** A card's or loan's rate, minimum, and payoff at the minimum, when it owes something. */
   terms: DebtTerms | undefined;
   /** After the account was hidden or shown again, so the cards refresh. */
@@ -922,7 +1009,6 @@ function AccountCard({
               Transactions
             </BackButton>
             {credit && <BackButton onClick={onStatements}>Statements</BackButton>}
-            {credit && <BackButton onClick={onLimits}>Credit limit</BackButton>}
             {isDebtAccount(a) && (
               <BackButton onClick={() => navigate("/planning/debt")}>Rate &amp; payoff</BackButton>
             )}
@@ -932,12 +1018,18 @@ function AccountCard({
             {a.isManual && a.type === "loan" && (
               <BackButton onClick={onPayment}>Record payment</BackButton>
             )}
-            {a.isManual && (payment || a.type === "loan") && (
+            {isStoreCredit(a) ? (
               <>
-                <BackButton onClick={onAdd}>Add transaction</BackButton>
-                <BackButton onClick={onImport}>Import CSV</BackButton>
+                <BackButton onClick={() => onCredits("add")}>Add credits</BackButton>
+                <BackButton onClick={() => onCredits("use")}>Use credits</BackButton>
               </>
+            ) : (
+              a.isManual &&
+              (payment || a.type === "loan") && (
+                <BackButton onClick={onAdd}>Add transaction</BackButton>
+              )
             )}
+            <BackButton onClick={onMore}>More...</BackButton>
           </div>
         </div>
       </div>
