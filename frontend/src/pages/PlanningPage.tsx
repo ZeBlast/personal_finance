@@ -94,7 +94,7 @@ function ForecastTab() {
         {error}
       </p>
     );
-  if (!data) return <p className="text-sm text-slate-500">{loading ? "Loading..." : ""}</p>;
+  if (!data) return loading ? <Loading lines={5} /> : null;
   const money = (n: number) => formatMinor(n, data.currency);
   const upcoming = data.days.filter((d) => d.events.length > 0);
 
@@ -216,10 +216,22 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
 // ---- Card bills --------------------------------------------------------------------------------
 
 const STATUS: Record<BillStatus, { text: string; className: string }> = {
-  paid: { text: "Paid", className: "bg-green-100 text-green-900" },
-  partial: { text: "Partly paid", className: "bg-amber-100 text-amber-900" },
-  due: { text: "Due", className: "bg-blue-100 text-blue-900" },
-  overdue: { text: "Overdue", className: "bg-red-100 text-red-900" },
+  paid: {
+    text: "Paid",
+    className: "bg-green-100 text-green-900 dark:bg-green-950/60 dark:text-green-200",
+  },
+  partial: {
+    text: "Partly paid",
+    className: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+  },
+  due: {
+    text: "Due",
+    className: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
+  },
+  overdue: {
+    text: "Overdue",
+    className: "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200",
+  },
   nothing_due: { text: "Nothing due", className: "bg-slate-200 text-slate-700" },
 };
 

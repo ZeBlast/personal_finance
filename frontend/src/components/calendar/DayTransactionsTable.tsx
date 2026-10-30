@@ -106,7 +106,7 @@ export function DayTransactionsTable({
                       : formatMinor(-o.amountMinor, "USD")}
                   </td>
                   <td className="w-44 min-w-36 px-2 py-2">
-                    <span className="rounded-xl bg-violet-100 px-2 py-0.5 text-xs leading-tight font-medium text-violet-900">
+                    <span className="rounded-xl bg-violet-100 px-2 py-0.5 text-xs leading-tight font-medium text-violet-900 dark:bg-violet-950/60 dark:text-violet-200">
                       {o.source === "pending" ? "Expected · pending manual" : "Expected · planned"}
                     </span>
                   </td>

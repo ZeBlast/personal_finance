@@ -116,7 +116,7 @@ export function ReviewPage() {
                     {reasons.map((r) => (
                       <span
                         key={r}
-                        className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900"
+                        className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
                       >
                         {REASONS[r]}
                       </span>

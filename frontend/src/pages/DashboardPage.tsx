@@ -176,7 +176,10 @@ function DashboardView({
       </div>
 
       {dashboard.error && (
-        <p role="alert" className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-900">
+        <p
+          role="alert"
+          className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-900 dark:bg-red-950/60 dark:text-red-200"
+        >
           {dashboard.error}
         </p>
       )}
@@ -337,7 +340,10 @@ export function DashboardPage() {
     <>
       {welcoming && accounts.data && <Welcome settings={settings.data!} accounts={accounts.data} />}
       {problem && (
-        <p role="alert" className="mb-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-900">
+        <p
+          role="alert"
+          className="mb-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-900 dark:bg-red-950/60 dark:text-red-200"
+        >
           {problem}
         </p>
       )}

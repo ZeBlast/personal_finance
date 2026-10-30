@@ -8,7 +8,9 @@ export function StatusBanner({ status }: { status: BackendStatus }) {
     <div
       role="alert"
       className={`px-4 py-2 text-sm ${
-        isDown ? "bg-red-600 text-white" : "bg-amber-100 text-amber-900"
+        isDown
+          ? "bg-red-600 text-white"
+          : "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
       }`}
     >
       {isDown

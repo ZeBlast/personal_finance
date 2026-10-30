@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePersistentState } from "../../../hooks/usePersistentState";
+import { Loading } from "../../common/Loading";
 import { Modal } from "../../common/Modal";
 import { LimitHistory } from "../LimitHistory";
 import { applyOrder, moveBeside, moveToNewRow, normalizeRows } from "./order";
@@ -73,7 +74,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   };
 
   if (accounts.error) return <p className="text-sm text-red-600">{accounts.error}</p>;
-  if (!accounts.data) return <p className="text-sm text-slate-500">Loading your accounts...</p>;
+  if (!accounts.data) return <Loading lines={4} />;
 
   const groupKey = (g: { item: PlaidItem }) => `item-${g.item.id}`;
   const byKey = new Map(groups.map((g) => [groupKey(g), g]));

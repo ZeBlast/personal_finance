@@ -35,7 +35,7 @@ export default defineWidget({
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium">{t.merchant}</span>
                   {t.pending && (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2 text-xs text-amber-900">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2 text-xs text-amber-900 dark:bg-amber-950/60 dark:text-amber-200">
                       Pending
                     </span>
                   )}

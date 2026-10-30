@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { FakeInstitution } from "../../types/api";
 import { Modal } from "../common/Modal";
+import { Loading } from "../common/Loading";
 
 interface Props {
   /** Present when re-authenticating an existing connection (update mode). */
@@ -77,7 +78,11 @@ export function FakeLinkDialog({ reconnectName, onSuccess, onCancel }: Props) {
             </button>
           </li>
         ))}
-        {institutions === null && <li className="text-sm text-slate-500">Loading...</li>}
+        {institutions === null && (
+          <li>
+            <Loading lines={3} />
+          </li>
+        )}
       </ul>
       <div className="mt-4 flex justify-end">
         <button

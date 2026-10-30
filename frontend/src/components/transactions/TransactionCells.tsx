@@ -57,7 +57,11 @@ export function mirrorLabel(t: Pick<Transaction, "mirror" | "amountMinor">): str
 /** Pending, a transfer and where it went or came from, and "entered by hand", as small tags. */
 export function TransactionTags({ t }: { t: Transaction }) {
   const tags: Array<{ text: string; className: string; title?: string }> = [];
-  if (t.pending) tags.push({ text: "Pending", className: "bg-amber-100 text-amber-900" });
+  if (t.pending)
+    tags.push({
+      text: "Pending",
+      className: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+    });
   const mirrorTag = mirrorLabel(t);
   if (mirrorTag) {
     tags.push({
@@ -71,14 +75,14 @@ export function TransactionTags({ t }: { t: Transaction }) {
   } else if (t.isTransfer) {
     tags.push({
       text: transferLabel(t) ?? "Own-account transfer",
-      className: "bg-blue-100 text-blue-900",
+      className: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
       title: "Money moved between your own accounts. It is left out of income and spending.",
     });
   }
   if (t.refundOf) {
     tags.push({
       text: `Refund of ${t.refundOf.merchant}`,
-      className: "bg-emerald-100 text-emerald-900",
+      className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200",
       title: `${
         t.refundOf.source === "auto" ? "Found by the app. " : ""
       }Counted against that purchase, in its category and month, not as income.`,
@@ -87,14 +91,16 @@ export function TransactionTags({ t }: { t: Transaction }) {
   if (t.refundedMinor > 0) {
     tags.push({
       text: `Refunded ${formatMinor(t.refundedMinor, t.currency)}`,
-      className: "bg-emerald-100 text-emerald-900",
+      className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200",
       title: "Linked refunds give this much back. Totals count only what was kept.",
     });
   }
   if (t.splits.length > 0) {
     tags.push({
       text: t.splitValid ? `Split ${t.splits.length} ways` : "Split (no longer adds up)",
-      className: t.splitValid ? "bg-violet-100 text-violet-900" : "bg-amber-100 text-amber-900",
+      className: t.splitValid
+        ? "bg-violet-100 text-violet-900 dark:bg-violet-950/60 dark:text-violet-200"
+        : "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
       title: t.splits
         .map(
           (s) =>
