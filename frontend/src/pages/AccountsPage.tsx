@@ -17,7 +17,12 @@ import { AccountCardsView } from "../components/accounts/cards/AccountCardsView"
 import { usePersistentState } from "../hooks/usePersistentState";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { formatMinor } from "../lib/money";
-import { balanceDetail, isDebtAccount, shownBalanceMinor } from "../lib/accountKinds";
+import {
+  availableCreditMinor,
+  balanceDetail,
+  isDebtAccount,
+  shownBalanceMinor,
+} from "../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
@@ -41,6 +46,7 @@ function AccountRow({
   onError: (message: string) => void;
 }) {
   const isCredit = account.type === "credit";
+  const available = availableCreditMinor(account);
   const linkClass =
     "rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700";
   return (
@@ -71,12 +77,22 @@ function AccountRow({
             <div className="font-medium">
               {formatMinor(shownBalanceMinor(account), account.currency)}
             </div>
-            <div className="text-xs text-slate-500">
-              {balanceDetail(account)}
-              {isCredit && account.statementDueDay
-                ? ` · payment due ${dayOfMonth(account.statementDueDay)}`
-                : ""}
-            </div>
+            <div className="text-xs text-slate-500">{balanceDetail(account)}</div>
+            {/* A card's second line: what can still be spent, and when the payment is due. */}
+            {isCredit && (
+              <div className="text-xs text-slate-500">
+                {[
+                  available !== null
+                    ? `${formatMinor(available, account.currency)} available`
+                    : null,
+                  account.statementDueDay
+                    ? `payment due ${dayOfMonth(account.statementDueDay)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            )}
           </div>
           <HideToggle account={account} onChanged={onChanged} onError={onError} />
         </div>

@@ -42,10 +42,9 @@ export function balanceDetail(a: Shape): string {
   const money = (minor: number) => formatMinor(minor, a.currency);
   if (a.type === "credit") {
     if (hasCreditBalance(a)) return "credit balance · the card owes you this";
-    const available = availableCreditMinor(a);
-    if (available === null || !a.creditLimitMinor) return "balance owed";
+    if (!a.creditLimitMinor) return "balance owed";
     const used = Math.round((Math.max(0, a.currentBalanceMinor ?? 0) / a.creditLimitMinor) * 100);
-    return `balance owed · ${money(available)} available of ${money(a.creditLimitMinor)} · ${used}% used`;
+    return `balance owed · ${used}% of ${money(a.creditLimitMinor)} used`;
   }
   if (a.type === "loan") return "balance owed";
   if (a.type === "investment") return "market value";

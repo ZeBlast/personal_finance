@@ -26,9 +26,8 @@ describe("account kinds", () => {
     const card = account("credit", 25_000, { creditLimitMinor: 100_000 });
     expect(availableCreditMinor(card)).toBe(75_000);
     expect(balanceLabel(card)).toBe("Balance owed");
-    expect(balanceDetail(card)).toBe(
-      `balance owed · ${usd(75_000)} available of ${usd(100_000)} · 25% used`,
-    );
+    expect(balanceDetail(card)).toBe(`balance owed · 25% of ${usd(100_000)} used`);
+    expect(balanceDetail(account("credit", 25_000))).toBe("balance owed");
   });
 
   it("never shows negative available credit on a card over its limit", () => {
