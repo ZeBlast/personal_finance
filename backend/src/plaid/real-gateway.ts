@@ -297,12 +297,17 @@ export class RealPlaidGateway implements PlaidGateway {
         language: "en",
         country_codes: COUNTRY_CODES,
       };
-      // Update mode (re-authentication) passes the existing access token and no products.
+      // Update mode (re-authentication) passes the existing access token and no products; with
+      // account selection it also lets the user add or remove the bank's accounts.
       // A brokerage is linked on its own with only Investments: Plaid lists only institutions that
       // support every product in `products`, and brokerages such as Fidelity have no Transactions.
       // A bank also asks for Investments as an optional extra, which costs nothing unless used.
       const body = request.updateAccessToken
-        ? { ...base, access_token: request.updateAccessToken }
+        ? {
+            ...base,
+            access_token: request.updateAccessToken,
+            ...(request.accountSelection ? { update: { account_selection_enabled: true } } : {}),
+          }
         : request.kind === "investments"
           ? { ...base, products: [Products.Investments] }
           : {

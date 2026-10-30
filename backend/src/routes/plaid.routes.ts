@@ -37,6 +37,9 @@ const credentialsBody = z.object({
 
 const reauthBody = z.object({ publicToken: z.string().max(512).optional() }).default({});
 
+/** Update mode: just sign in again, or also choose which of the bank's accounts are shared. */
+const updateLinkBody = z.object({ chooseAccounts: z.boolean().optional() }).strict();
+
 interface Deps {
   db: AppDb;
   cipher: TokenCipher;
@@ -92,7 +95,12 @@ export function plaidRoutes({ db, cipher, plaid, getGateway }: Deps): Router {
   });
 
   router.post("/plaid/items/:id/link-token", async (req, res) => {
-    res.json(await plaid.createUpdateLinkToken(idParam.parse(req.params["id"])));
+    const body = updateLinkBody.parse(req.body ?? {});
+    res.json(
+      await plaid.createUpdateLinkToken(idParam.parse(req.params["id"]), {
+        chooseAccounts: body.chooseAccounts ?? false,
+      }),
+    );
   });
 
   router.post("/plaid/items/:id/reauthenticated", async (req, res) => {
