@@ -348,6 +348,35 @@ describe("recipients", () => {
   });
 });
 
+describe("accounts Plaid stops reporting", () => {
+  it("marks one turned off as no longer shared, keeps it, and unmarks it if it comes back", async () => {
+    await h.sync.syncItem(itemId, "manual");
+    const plaidItemId = h.item(itemId).plaidItemId;
+    const savings = () =>
+      h.ctx.db.select().from(accounts).where(eq(accounts.subtype, "savings")).get()!;
+    const index = Number(savings().plaidAccountId!.split("~").at(-1));
+    const before = savings().currentBalanceMinor;
+
+    h.gateway.simulateAccountShared(plaidItemId, index, false);
+    await h.sync.syncItem(itemId, "manual");
+    expect(savings().noLongerSharedAt).not.toBeNull();
+    expect(savings().currentBalanceMinor).toBe(before);
+    const listed = (await h.ctx.call("get", "/api/accounts").expect(200)).body.find(
+      (a: { id: number }) => a.id === savings().id,
+    );
+    expect(listed.noLongerSharedAt).toBe(savings().noLongerSharedAt);
+    // Accounts still shared are not marked.
+    expect(
+      h.ctx.db.select().from(accounts).where(eq(accounts.subtype, "checking")).get()!
+        .noLongerSharedAt,
+    ).toBeNull();
+
+    h.gateway.simulateAccountShared(plaidItemId, index, true);
+    await h.sync.syncItem(itemId, "manual");
+    expect(savings().noLongerSharedAt).toBeNull();
+  });
+});
+
 describe("credit limits", () => {
   const cardId = () =>
     h.ctx.db.select().from(accounts).where(eq(accounts.subtype, "credit card")).get()!.id;

@@ -330,6 +330,13 @@
       "when": 1792345536395,
       "tag": "0046_refund_of_index",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1793336026009,
+      "tag": "0047_accounts_no_longer_shared",
+      "breakpoints": true
     }
   ]
 }

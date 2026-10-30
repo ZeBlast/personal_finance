@@ -66,6 +66,8 @@ export interface Account {
   statementClosingDay: number | null;
   /** For a credit card: the day of the month its payment is due, when set. */
   statementDueDay: number | null;
+  /** For a connected account: when Plaid stopped reporting it, so its balance stopped updating. */
+  noLongerSharedAt: string | null;
 }
 
 export interface SyncRun {

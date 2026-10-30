@@ -17,9 +17,14 @@ import { api, errorMessage } from "../../../api/client";
 import { useApi } from "../../../hooks/useApi";
 import { useCategories } from "../../../hooks/useCategories";
 import { formatMinor } from "../../../lib/money";
-import { balanceLabel, isDebtAccount, shownBalanceMinor } from "../../../lib/accountKinds";
+import {
+  balanceLabel,
+  frozenSince,
+  isDebtAccount,
+  shownBalanceMinor,
+} from "../../../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished } from "../../../lib/syncEvents";
-import { timeAgo } from "../../../lib/time";
+import { formatDay, timeAgo } from "../../../lib/time";
 import type { Account, PlaidItem } from "../../../types/api";
 import { ManualTransactionDialog } from "../../transactions/ManualTransactionDialog";
 import { BankCsvImportDialog } from "../BankCsvImportDialog";
@@ -619,15 +624,23 @@ function Status({ account: a }: { account: Account }) {
       </span>
     );
   }
-  const ok = a.connectionStatus === "active";
+  const ok = a.connectionStatus === "active" && a.noLongerSharedAt === null;
   // A connection that needs a fresh sign-in still has its data; only its updates have stopped.
-  const label = ok
-    ? "Connected"
-    : a.connectionStatus === "login_required"
-      ? "Needs sign-in"
-      : "Problem";
+  const label =
+    a.noLongerSharedAt !== null
+      ? "No longer shared"
+      : ok
+        ? "Connected"
+        : a.connectionStatus === "login_required"
+          ? "Needs sign-in"
+          : "Problem";
   return (
     <span
+      title={
+        a.noLongerSharedAt !== null
+          ? "Plaid no longer reports this account (it was turned off in Add or remove accounts, or closed at the bank). Its history is kept; hide it to leave it out of totals."
+          : undefined
+      }
       className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
         ok
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
@@ -672,6 +685,7 @@ function AccountCard({
   const limit = credit ? a.creditLimitMinor : null;
   const used =
     limit && limit > 0 ? Math.min(1, Math.max(0, (a.currentBalanceMinor ?? 0) / limit)) : null;
+  const frozen = frozenSince(a);
   const kind = a.subtype
     ? `${a.subtype[0]!.toUpperCase()}${a.subtype.slice(1)}`
     : (KIND[a.type] ?? a.type);
@@ -731,7 +745,10 @@ function AccountCard({
           </div>
           <div className="mt-auto">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs text-slate-500">{balanceLabel(a)}</span>
+              <span className="text-xs text-slate-500">
+                {balanceLabel(a)}
+                {frozen ? ` as of ${formatDay(frozen)}` : ""}
+              </span>
               <span className="text-lg font-semibold tabular-nums">
                 {money(a, shownBalanceMinor(a))}
               </span>

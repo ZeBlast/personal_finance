@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `no_longer_shared_at` text;
