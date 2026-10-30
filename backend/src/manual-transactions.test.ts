@@ -294,6 +294,33 @@ describe("transactions entered by hand", () => {
     expect(await balanceOf(t, card)).toBe(9000);
   });
 
+  it("keeps a loan by hand like a card: interest raises what is owed, payments lower it", async () => {
+    const t = app();
+    const loan = await account(t, {
+      name: "Car loan",
+      kind: "loan",
+      openingBalanceMinor: 1_500_000,
+    });
+    const listed = (await t.call("get", "/api/accounts").expect(200)).body.find(
+      (a: { id: number }) => a.id === loan,
+    );
+    expect(listed).toMatchObject({ type: "loan", subtype: "loan", currentBalanceMinor: 1_500_000 });
+    await add(t, base(loan, { merchant: "Interest", amountMinor: 6_000 })).expect(201);
+    await add(
+      t,
+      base(loan, { merchant: "Payment", direction: "in", amountMinor: 40_000, isTransfer: true }),
+    ).expect(201);
+    expect(await balanceOf(t, loan)).toBe(1_466_000);
+    // It owes something, so the Debt page lists it, ready for its interest rate.
+    const debts = (await t.call("get", "/api/debt").expect(200)).body;
+    expect(JSON.stringify(debts)).toContain("Car loan");
+    // A loan has no credit limit.
+    await t
+      .call("post", "/api/accounts/manual")
+      .send({ name: "Other", kind: "loan", creditLimitMinor: 1000 })
+      .expect(400);
+  });
+
   it("validates what you enter", async () => {
     const t = app();
     const id = await account(t);

@@ -32,7 +32,7 @@ export function pendingManualTransactions(
     from transactions t join accounts a on a.id = t.account_id
       left join categories c on c.id = t.category_id
     where t.source = 'manual' and t.pending = 1 and a.is_manual = 1
-      and a.type in ('depository', 'credit') and ${accountScope(options.accountId)}
+      and a.type in ('depository', 'credit', 'loan') and ${accountScope(options.accountId)}
       and t.currency = ${options.currency} and t.date <= ${options.to}
       ${options.from === undefined ? sql`` : sql`and t.date >= ${options.from}`}
       ${options.accountId === undefined ? sql`` : sql`and t.account_id = ${options.accountId}`}

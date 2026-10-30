@@ -13,7 +13,7 @@ const linkable = (a: Account, from: number) =>
   a.isManual &&
   !a.hidden &&
   a.id !== from &&
-  (a.type === "depository" || a.type === "credit") &&
+  (a.type === "depository" || a.type === "credit" || a.type === "loan") &&
   a.subtype !== STORE_CREDIT_SUBTYPE;
 
 interface Candidate {

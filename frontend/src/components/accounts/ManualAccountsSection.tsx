@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../../api/client";
+import { isDebtAccount } from "../../lib/accountKinds";
 import { useApi } from "../../hooks/useApi";
 import { useCategories } from "../../hooks/useCategories";
 import { formatMinor, parseMoneyToMinor } from "../../lib/money";
@@ -18,7 +19,14 @@ import { Select } from "../common/Select";
 import { toast } from "../../lib/toast";
 
 type Kind =
-  "cash" | "checking" | "savings" | "credit_card" | "store_credit" | "pokemon_cards" | "collection";
+  | "cash"
+  | "checking"
+  | "savings"
+  | "credit_card"
+  | "loan"
+  | "store_credit"
+  | "pokemon_cards"
+  | "collection";
 
 const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: string }> = [
   {
@@ -44,6 +52,12 @@ const KINDS: Array<{ value: Kind; label: string; balanceLabel: string; help: str
     label: "Credit card",
     balanceLabel: "Amount owed right now",
     help: "Purchases raise what you owe; payments lower it.",
+  },
+  {
+    value: "loan",
+    label: "Loan (car, student, personal)",
+    balanceLabel: "Amount owed right now",
+    help: "For a lender that cannot be connected. Interest and fees raise what you owe; payments lower it. Add its interest rate on the Debt payoff page to see when it will be paid off.",
   },
   {
     value: "store_credit",
@@ -334,7 +348,7 @@ export function ManualAccountsSection() {
                   </div>
                   <div className="text-xs text-slate-500">
                     {a.subtype ?? a.type}
-                    {a.type === "credit" ? " · amount owed" : ""}
+                    {isDebtAccount(a) ? " · amount owed" : ""}
                     {isStoreCredit(a) ? " · credit left" : ""}
                     {a.creditLimitMinor
                       ? ` · limit ${formatMinor(a.creditLimitMinor, a.currency)}`

@@ -5,7 +5,7 @@ import { api, ApiError, errorMessage } from "../api/client";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { LimitHistory } from "../components/accounts/LimitHistory";
 import { CashbackSection } from "../components/accounts/CashbackSection";
-import { StatementsButton } from "../components/accounts/StatementsDialog";
+import { dayOfMonth, StatementsButton } from "../components/accounts/StatementsDialog";
 import { ReconcileButton } from "../components/accounts/ReconcileDialog";
 import { UtilizationSection } from "../components/insights/UtilizationSection";
 import { HiddenBadge, HideToggle } from "../components/accounts/HideToggle";
@@ -17,6 +17,12 @@ import { AccountCardsView } from "../components/accounts/cards/AccountCardsView"
 import { usePersistentState } from "../hooks/usePersistentState";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { formatMinor } from "../lib/money";
+import {
+  availableCreditMinor,
+  balanceDetail,
+  isDebtAccount,
+  shownBalanceMinor,
+} from "../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
@@ -50,10 +56,9 @@ function AccountRow({
   onError: (message: string) => void;
 }) {
   const isCredit = account.type === "credit";
-  const used =
-    isCredit && account.creditLimitMinor && account.currentBalanceMinor !== null
-      ? Math.round((account.currentBalanceMinor / account.creditLimitMinor) * 100)
-      : null;
+  const available = availableCreditMinor(account);
+  const linkClass =
+    "rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700";
   return (
     <li className={`py-2 text-sm ${account.hidden ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between gap-4">
@@ -80,30 +85,44 @@ function AccountRow({
         <div className="flex shrink-0 items-center gap-3 text-right">
           <div>
             <div className="font-medium">
-              {formatMinor(account.currentBalanceMinor, account.currency)}
+              {formatMinor(shownBalanceMinor(account), account.currency)}
             </div>
-            <div className="text-xs text-slate-500">
-              {isCredit
-                ? account.creditLimitMinor
-                  ? `balance owed · limit ${formatMinor(account.creditLimitMinor, account.currency)}${
-                      used === null ? "" : ` · ${used}% used`
-                    }`
-                  : "balance owed"
-                : account.availableBalanceMinor !== null
-                  ? `${formatMinor(account.availableBalanceMinor, account.currency)} available`
-                  : "current balance"}
-            </div>
+            <div className="text-xs text-slate-500">{balanceDetail(account)}</div>
+            {/* A card's second line: what can still be spent, and when the payment is due. */}
+            {isCredit && (
+              <div className="text-xs text-slate-500">
+                {[
+                  available !== null
+                    ? `${formatMinor(available, account.currency)} available`
+                    : null,
+                  account.statementDueDay
+                    ? `payment due ${dayOfMonth(account.statementDueDay)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            )}
           </div>
           <HideToggle account={account} onChanged={onChanged} onError={onError} />
         </div>
       </div>
       {isCredit && <LimitHistory account={account} />}
-      {(isCredit || account.type === "depository") && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {isCredit && <StatementsButton account={account} />}
-          <ReconcileButton account={account} />
-        </div>
-      )}
+      <div className="mt-2 flex flex-wrap gap-2 empty:hidden">
+        {isCredit && <StatementsButton account={account} />}
+        {(isCredit || account.type === "depository") && <ReconcileButton account={account} />}
+        {/* Plaid does not send a card's or loan's interest rate here; the Debt page keeps it. */}
+        {isDebtAccount(account) && (
+          <Link to="/planning/debt" className={linkClass}>
+            Rate &amp; payoff plan
+          </Link>
+        )}
+        {account.type === "investment" && (
+          <Link to="/accounts/investments" className={linkClass}>
+            View holdings
+          </Link>
+        )}
+      </div>
       {isCredit && <CashbackSection account={account} />}
     </li>
   );

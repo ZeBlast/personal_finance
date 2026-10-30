@@ -40,7 +40,7 @@ export function BankCsvImportDialog({
   const id = useId();
   const [csv, setCsv] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [flip, setFlip] = useState(account.type === "credit");
+  const [flip, setFlip] = useState(account.type === "credit" || account.type === "loan");
   // An account that already holds money most likely includes this history in its balance.
   const [keepBalance, setKeepBalance] = useState((account.currentBalanceMinor ?? 0) !== 0);
   const [preview, setPreview] = useState<ImportResult | null>(null);

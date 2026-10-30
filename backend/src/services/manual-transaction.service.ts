@@ -33,6 +33,7 @@ export const MANUAL_ACCOUNT_KINDS = [
   "checking",
   "savings",
   "credit_card",
+  "loan",
   "store_credit",
   "collection",
   "pokemon_cards",
@@ -50,12 +51,14 @@ export const COLLECTION_SUBTYPES: ReadonlySet<string> = new Set([
 
 const KIND: Record<
   ManualAccountKind,
-  { type: "depository" | "credit" | "other"; subtype: string }
+  { type: "depository" | "credit" | "loan" | "other"; subtype: string }
 > = {
   cash: { type: "depository", subtype: "cash" },
   checking: { type: "depository", subtype: "checking" },
   savings: { type: "depository", subtype: "savings" },
   credit_card: { type: "credit", subtype: "credit card" },
+  // A car, student or personal loan from a lender that cannot be connected: kept like a card.
+  loan: { type: "loan", subtype: "loan" },
   store_credit: { type: "depository", subtype: STORE_CREDIT_SUBTYPE },
   // Worth what its items are worth: no transactions, so no opening balance.
   collection: { type: "other", subtype: COLLECTION_SUBTYPE },
@@ -63,6 +66,12 @@ const KIND: Record<
 };
 
 const MAX_AMOUNT = 100_000_000_000;
+
+/**
+ * A card's or loan's balance is what is owed: a charge (or interest) raises it and a payment
+ * lowers it. A deposit account's balance is what is in it, the other way round.
+ */
+const owes = (type: string): boolean => type === "credit" || type === "loan";
 export const OPENING_BALANCE_NAME = "Opening balance";
 
 type Tx = Pick<AppDb, "select" | "insert" | "update" | "delete">;
@@ -98,7 +107,7 @@ export function rebuildManualBalanceHistory(db: Tx, accountId: number): void {
     while (position < flows.length && flows[position]!.date <= day) {
       total += flows[position++]!.amount;
     }
-    const balance = account.type === "credit" ? total : -total;
+    const balance = owes(account.type) ? total : -total;
     if (snapshot.balance !== balance) {
       db.update(balanceSnapshots)
         .set({ currentBalanceMinor: balance })
@@ -114,14 +123,16 @@ export function repairManualBalanceHistories(db: AppDb): void {
     const rows = tx
       .select({ id: accounts.id })
       .from(accounts)
-      .where(and(eq(accounts.isManual, true), sql`${accounts.type} in ('depository', 'credit')`))
+      .where(
+        and(eq(accounts.isManual, true), sql`${accounts.type} in ('depository', 'credit', 'loan')`),
+      )
       .all();
     for (const row of rows) {
       rebuildManualBalanceHistory(tx, row.id);
       // Older versions included pending charges in the current balance as well as its history.
       tx.update(accounts)
         .set({
-          currentBalanceMinor: sql`(case when ${accounts.type} = 'credit' then 1 else -1 end) *
+          currentBalanceMinor: sql`(case when ${accounts.type} in ('credit', 'loan') then 1 else -1 end) *
         (select coalesce(sum(amount_minor), 0) from transactions where account_id = ${row.id} and pending = 0)`,
         })
         .where(eq(accounts.id, row.id))
@@ -149,7 +160,7 @@ function requireManualBankAccount(db: Pick<AppDb, "select">, accountId: number):
     .where(eq(accounts.id, accountId))
     .get();
   if (!account) throw notFound("That account");
-  if (!account.isManual || (account.type !== "depository" && account.type !== "credit")) {
+  if (!account.isManual || (account.type !== "depository" && !owes(account.type))) {
     throw new AppError(
       409,
       "not_manual_account",
@@ -173,8 +184,8 @@ export function recomputeManualBalance(db: Tx, accountId: number, now: string): 
       .from(transactions)
       .where(and(eq(transactions.accountId, accountId), eq(transactions.pending, false)))
       .get()?.sum ?? 0;
-  // Money in raises a deposit account; a purchase raises what is owed on a card.
-  const balance = account.type === "credit" ? total : -total;
+  // Money in raises a deposit account; a purchase raises what is owed on a card or loan.
+  const balance = owes(account.type) ? total : -total;
   db.update(accounts)
     .set({ currentBalanceMinor: balance, lastBalanceUpdateAt: now, updatedAt: now })
     .where(eq(accounts.id, accountId))
@@ -252,8 +263,8 @@ export function createManualBankAccount(
           date: now.slice(0, 10),
           name: OPENING_BALANCE_NAME,
           merchantName: OPENING_BALANCE_NAME,
-          // A deposit account that holds money received it; a card that owes money was charged it.
-          amountMinor: kind.type === "credit" ? opening : -opening,
+          // A deposit account that holds money received it; a card or loan that owes was charged it.
+          amountMinor: owes(kind.type) ? opening : -opening,
           currency: "USD",
           pending: false,
           // Not income or spending: it is where the account starts.

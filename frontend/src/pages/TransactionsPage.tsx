@@ -295,7 +295,7 @@ export function TransactionsPage() {
     ...new Set(accounts.map((a) => a.institutionName).filter((n): n is string => !!n)),
   ].sort();
   const handAccounts = accounts.filter(
-    (a) => a.isManual && (a.type === "depository" || a.type === "credit"),
+    (a) => a.isManual && (a.type === "depository" || a.type === "credit" || a.type === "loan"),
   );
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const filtered = Object.values(filters).some((v) => v !== "") || search !== "";
