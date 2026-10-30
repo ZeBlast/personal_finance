@@ -6,6 +6,7 @@ import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/a
 import { Select } from "../components/common/Select";
 import { StatusOverview } from "../components/data/StatusOverview";
 import { UpdateCheck } from "../components/data/UpdateCheck";
+import { RemindersSettings } from "../components/settings/RemindersSettings";
 
 const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
   fake: "Made-up banks, to see how the app works. Nothing leaves your computer and no Plaid account is needed.",
@@ -368,6 +369,14 @@ export function SettingsPage() {
             </Select>
           </label>
         </div>
+      )}
+
+      {settings && (
+        <RemindersSettings
+          reminders={settings.reminders}
+          disabled={saving}
+          onSave={(reminders) => save({ reminders })}
+        />
       )}
 
       {settings && (

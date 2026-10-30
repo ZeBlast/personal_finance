@@ -29,6 +29,7 @@ import {
   subscriptionReview,
 } from "../services/subscriptions.service.js";
 import { AppError } from "../utils/errors.js";
+import { dueReminders } from "../services/reminders.service.js";
 
 const idParam = z.coerce.number().int().positive();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -97,6 +98,12 @@ export function planningRoutes(db: AppDb): Router {
   });
 
   /** The daily brief: safe to spend until the next income, and where it comes from. */
+  /** What to remind the user of now, for the notifications turned on in Settings. */
+  router.get("/reminders", (req, res) => {
+    const q = z.object({ today: day.optional() }).parse(req.query);
+    res.json(dueReminders(db, q.today));
+  });
+
   router.get("/brief", (req, res) => {
     const q = z
       .object({

@@ -26,6 +26,8 @@ export interface Settings {
   recoveryKeySaved: boolean;
   /** The user closed the first-run welcome. */
   welcomeDismissed: boolean;
+  /** Desktop notifications the user turned on. */
+  reminders: { bills: boolean; signIn: boolean; budgets: boolean };
 }
 
 export interface PlaidStatus {

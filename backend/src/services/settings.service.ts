@@ -50,6 +50,11 @@ export const settingsSchema = z.object({
   recoveryKeySaved: z.boolean(),
   /** The user closed the first-run welcome. */
   welcomeDismissed: z.boolean(),
+  /**
+   * Desktop notifications, each off until the user turns it on: payments due in the next few
+   * days, banks that need a fresh sign-in, and budgets nearly or fully used.
+   */
+  reminders: z.object({ bills: z.boolean(), signIn: z.boolean(), budgets: z.boolean() }).strict(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -73,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debtExtraInForecastMinor: 0,
   recoveryKeySaved: false,
   welcomeDismissed: false,
+  reminders: { bills: false, signIn: false, budgets: false },
 };
 
 export function getSettings(db: AppDb): Settings {
