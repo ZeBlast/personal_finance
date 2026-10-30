@@ -15,6 +15,8 @@ import { toast } from "../lib/toast";
 import type { Account, Transaction, TransactionPage, TransactionSort } from "../types/api";
 import { CategorySelect } from "../components/common/CategorySelect";
 import { SplitDialog } from "../components/transactions/SplitDialog";
+import { SavedViews } from "../components/transactions/SavedViews";
+import { activityKey, keyBelongsElsewhere, moveHighlight } from "../lib/activityKeys";
 import { Select } from "../components/common/Select";
 
 const PAGE_SIZE = 50;
@@ -385,6 +387,8 @@ export function TransactionsPage() {
   async function bulk(
     change: { categoryId: number | null } | { isTransfer: boolean | null },
     done: string,
+    /** After a category change: offer rules so these merchants get it automatically from now on. */
+    ruleCategory?: { id: number; name: string },
   ): Promise<void> {
     const rows = (data?.items ?? []).filter((t) => checked.has(t.id));
     if (rows.length === 0) return;
@@ -424,12 +428,86 @@ export function TransactionsPage() {
           },
         },
       });
+      if (ruleCategory) offerRules(rows, ruleCategory);
     } catch (e) {
       setError(errorMessage(e, "Could not change those transactions. Nothing was changed."));
     } finally {
       setBulkBusy(false);
     }
   }
+
+  /**
+   * "Always do this": one rule per merchant in the selection (the same place, ignoring case and
+   * store numbers), so their future transactions get the category on their own.
+   */
+  function offerRules(rows: readonly Transaction[], category: { id: number; name: string }): void {
+    const merchants = [
+      ...new Map(rows.map((t) => [t.merchant.trim().toLowerCase(), t.merchant.trim()])).values(),
+    ].filter((m) => m !== "");
+    if (merchants.length === 0 || merchants.length > 10) return;
+    const who = merchants.length === 1 ? merchants[0]! : `these ${merchants.length} merchants`;
+    toast(`Always put ${who} in ${category.name}?`, {
+      kind: "info",
+      action: {
+        label: merchants.length === 1 ? "Make a rule" : "Make rules",
+        run: async () => {
+          try {
+            for (const m of merchants) {
+              await api("/rules", {
+                method: "POST",
+                body: JSON.stringify({
+                  name: `${m} → ${category.name}`.slice(0, 80),
+                  field: "merchant",
+                  operator: "same_merchant",
+                  matchValue: m.slice(0, 200),
+                  categoryId: category.id,
+                }),
+              });
+            }
+            toast(
+              `Made ${merchants.length === 1 ? "a rule" : `${merchants.length} rules`}. Change ${merchants.length === 1 ? "it" : "them"} in Categories & rules.`,
+            );
+          } catch (e) {
+            toast(errorMessage(e, "Could not make the rule."), { kind: "error" });
+          }
+        },
+      },
+    });
+  }
+
+  // Keyboard on the table: J/K move, X ticks, Enter opens, Escape clears the ticks.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || keyBelongsElsewhere(e.target)) return;
+      const action = activityKey(e.key);
+      const rows = data?.items ?? [];
+      if (!action || rows.length === 0) return;
+      if (action === "clear") {
+        if (checked.size > 0) setChecked(new Set());
+        return;
+      }
+      const current = rows.find((t) => t.id === highlight) ?? null;
+      if ((action === "tick" || action === "open") && !current) return;
+      // Enter on a focused button or link is that control's own.
+      if (action === "open" && e.target instanceof Element && e.target.closest("button, a")) return;
+      e.preventDefault();
+      if (action === "next" || action === "previous") {
+        const next = moveHighlight(
+          rows.map((t) => t.id),
+          highlight,
+          action === "next" ? 1 : -1,
+        );
+        setHighlight(next);
+        document.querySelector(`[data-row="${next}"]`)?.scrollIntoView({ block: "nearest" });
+      } else if (action === "tick") {
+        toggleChecked(current!.id, !checked.has(current!.id));
+      } else {
+        open(current!);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   async function quickCategory(t: Transaction, value: string): Promise<void> {
     const previous = categoryToRestore(t);
@@ -675,6 +753,17 @@ export function TransactionsPage() {
 
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1 space-y-4">
+          <SavedViews
+            current={filters}
+            sort={sort}
+            canSave={filtered}
+            onApply={(v) => {
+              setSearch(v.filters.q);
+              setFilters({ ...NO_FILTERS, ...v.filters });
+              setSort(v.sort as TransactionSort);
+              setPage(1);
+            }}
+          />
           {data && data.items.length > 0 && checked.size > 0 && (
             <div
               role="toolbar"
@@ -696,6 +785,7 @@ export function TransactionsPage() {
                   void bulk(
                     { categoryId: v === "auto" ? null : Number(v) },
                     name ? `set to ${name}` : "handed back to your rules",
+                    name ? { id: Number(v), name } : undefined,
                   );
                 }}
                 className="w-48 rounded border border-slate-300 bg-white py-1 pr-6 pl-2 dark:border-slate-600 dark:bg-slate-900"
@@ -985,6 +1075,12 @@ export function TransactionsPage() {
             </div>
           )}
 
+          {data && data.items.length > 0 && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Keyboard: <kbd>J</kbd> / <kbd>K</kbd> to move, <kbd>X</kbd> to tick, <kbd>Enter</kbd>{" "}
+              to open, <kbd>Esc</kbd> to clear the ticks.
+            </p>
+          )}
           {data && data.total > PAGE_SIZE && (
             <div className="flex items-center justify-between text-sm">
               <button
