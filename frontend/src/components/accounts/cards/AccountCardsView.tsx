@@ -16,6 +16,7 @@ import { api, errorMessage } from "../../../api/client";
 import { useApi } from "../../../hooks/useApi";
 import { useCategories } from "../../../hooks/useCategories";
 import { formatMinor } from "../../../lib/money";
+import { balanceLabel, isDebtAccount, shownBalanceMinor } from "../../../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished } from "../../../lib/syncEvents";
 import { timeAgo } from "../../../lib/time";
 import type { Account, PlaidItem } from "../../../types/api";
@@ -720,9 +721,9 @@ function AccountCard({
           </div>
           <div className="mt-auto">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs text-slate-500">{credit ? "Balance owed" : "Balance"}</span>
+              <span className="text-xs text-slate-500">{balanceLabel(a)}</span>
               <span className="text-lg font-semibold tabular-nums">
-                {money(a, a.currentBalanceMinor)}
+                {money(a, shownBalanceMinor(a))}
               </span>
             </div>
             {credit && (
@@ -743,9 +744,11 @@ function AccountCard({
                 <div className="mt-0.5 flex justify-between text-xs text-slate-500">
                   <span>
                     {used === null ? "" : `${Math.round(used * 100)}% used`}
-                    {a.statementClosingDay
-                      ? `${used === null ? "" : " · "}closes ${dayOfMonth(a.statementClosingDay)}`
-                      : ""}
+                    {a.statementDueDay
+                      ? `${used === null ? "" : " · "}due ${dayOfMonth(a.statementDueDay)}`
+                      : a.statementClosingDay
+                        ? `${used === null ? "" : " · "}closes ${dayOfMonth(a.statementClosingDay)}`
+                        : ""}
                   </span>
                   <span>{limit ? `Limit ${money(a, limit)}` : "No limit known"}</span>
                 </div>
@@ -793,6 +796,12 @@ function AccountCard({
                 </dd>
               </>
             )}
+            {credit && a.statementDueDay && (
+              <>
+                <dt className="text-slate-500">Payment due</dt>
+                <dd className="text-right">{dayOfMonth(a.statementDueDay)}</dd>
+              </>
+            )}
           </dl>
           {hideError && (
             <p role="alert" className="mt-1 text-xs text-red-600">
@@ -818,6 +827,12 @@ function AccountCard({
             </BackButton>
             {credit && <BackButton onClick={onStatements}>Statements</BackButton>}
             {credit && <BackButton onClick={onLimits}>Credit limit</BackButton>}
+            {isDebtAccount(a) && (
+              <BackButton onClick={() => navigate("/planning/debt")}>Rate &amp; payoff</BackButton>
+            )}
+            {a.type === "investment" && (
+              <BackButton onClick={() => navigate("/accounts/investments")}>Holdings</BackButton>
+            )}
             {a.isManual && payment && (
               <>
                 <BackButton onClick={onAdd}>Add transaction</BackButton>
