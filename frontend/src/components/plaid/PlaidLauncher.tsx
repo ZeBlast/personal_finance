@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { usePlaidLink } from "react-plaid-link";
+import type { LinkExitError } from "../../lib/plaidLinkExit";
 
 interface Props {
   linkToken: string;
   onSuccess: (publicToken: string, institution: { id: string; name: string } | null) => void;
-  onExit: () => void;
+  /** Called when Link closes without connecting: `error` is set when something went wrong. */
+  onExit: (error: LinkExitError | null, institutionName: string | undefined) => void;
 }
 
 /** Opens Plaid's real Link window as soon as it is ready. Renders nothing itself. */
@@ -14,7 +16,7 @@ export function PlaidLauncher({ linkToken, onSuccess, onExit }: Props) {
     onSuccess: (publicToken, metadata) => {
       // Link can in principle report success without a token; treat that as a cancelled attempt.
       if (!publicToken) {
-        onExit();
+        onExit(null, undefined);
         return;
       }
       onSuccess(
@@ -24,7 +26,7 @@ export function PlaidLauncher({ linkToken, onSuccess, onExit }: Props) {
           : null,
       );
     },
-    onExit: () => onExit(),
+    onExit: (error, metadata) => onExit(error, metadata.institution?.name ?? undefined),
   });
 
   useEffect(() => {

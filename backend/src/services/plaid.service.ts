@@ -338,15 +338,16 @@ export function createPlaidService({ db, cipher, getGateway }: Deps) {
         .map(summarize);
     },
 
-    async createUpdateLinkToken(id: number) {
+    async createUpdateLinkToken(id: number, options: { chooseAccounts: boolean }) {
       const row = requireItem(id);
-      refuseIfBorrowed(row, "signed in again");
+      refuseIfBorrowed(row, options.chooseAccounts ? "changed" : "signed in again");
       const gateway = gatewayFor(row);
       try {
         const token = await gateway.createLinkToken({
           userId: LOCAL_USER_ID,
           daysRequested: row.daysRequested,
           updateAccessToken: readToken(row),
+          ...(options.chooseAccounts ? { accountSelection: true } : {}),
         });
         return { ...token, environment: gateway.environment };
       } catch (error) {

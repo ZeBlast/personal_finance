@@ -397,6 +397,16 @@ describe("Plaid connections (built-in demo gateway)", () => {
 
     const link = await ctx.call("post", `/api/plaid/items/${item.id}/link-token`).expect(200);
     expect(link.body.linkToken).toMatch(/^link-fake~update~/);
+    // Choosing accounts reuses the same connection: update mode with account selection.
+    const choose = await ctx
+      .call("post", `/api/plaid/items/${item.id}/link-token`)
+      .send({ chooseAccounts: true })
+      .expect(200);
+    expect(choose.body.linkToken).toMatch(/^link-fake~choose~/);
+    await ctx
+      .call("post", `/api/plaid/items/${item.id}/link-token`)
+      .send({ chooseAccounts: "yes" })
+      .expect(400);
 
     const fixed = await ctx
       .call("post", `/api/plaid/items/${item.id}/reauthenticated`)

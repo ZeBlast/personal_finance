@@ -21,6 +21,11 @@ export interface LinkTokenRequest {
   daysRequested: number;
   /** Re-authentication ("update mode") for an existing Item: its access token. */
   updateAccessToken?: string;
+  /**
+   * With `updateAccessToken`: let the user change which of the bank's accounts are shared, so a
+   * new account at a bank already connected joins that connection instead of making another.
+   */
+  accountSelection?: boolean;
 }
 
 export interface LinkToken {

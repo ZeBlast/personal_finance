@@ -532,7 +532,7 @@ function InstitutionGroup({ item, children }: { item: PlaidItem; children: React
         ? `Synced ${timeAgo(item.lastSuccessfulSyncAt)}`
         : "Not synced yet"
       : item.status === "login_required"
-        ? "Needs you to sign in again (reconnect in the classic view)"
+        ? "Needs you to sign in again: use Reconnect under Bank connections"
         : "Connection problem";
 
   return (
@@ -615,6 +615,12 @@ function Status({ account: a }: { account: Account }) {
     );
   }
   const ok = a.connectionStatus === "active";
+  // A connection that needs a fresh sign-in still has its data; only its updates have stopped.
+  const label = ok
+    ? "Connected"
+    : a.connectionStatus === "login_required"
+      ? "Needs sign-in"
+      : "Problem";
   return (
     <span
       className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
@@ -624,7 +630,7 @@ function Status({ account: a }: { account: Account }) {
       }`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} />
-      {ok ? "Connected" : "Disconnected"}
+      {label}
     </span>
   );
 }

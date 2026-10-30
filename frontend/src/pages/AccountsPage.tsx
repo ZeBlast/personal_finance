@@ -21,6 +21,7 @@ import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from 
 import { timeAgo } from "../lib/time";
 import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
 import { Loading } from "../components/common/Loading";
+import { toast } from "../lib/toast";
 
 type Notice = { kind: "info" | "error"; text: string };
 
@@ -235,6 +236,16 @@ export function AccountsPage() {
   }
 
   const demo = status?.environment === "fake";
+
+  /** A finished connection: a warning stays on the page; plain success passes by as a pop-up. */
+  function showConnected(text: string, needsAttention: boolean): void {
+    if (needsAttention) {
+      setNotice({ kind: "info", text });
+    } else {
+      setNotice(null);
+      toast(text);
+    }
+  }
   const needsSignIn = items?.filter((i) => i.status === "login_required") ?? [];
 
   /** Reconnect, check and disconnect a bank: in both the classic and the card view. */
@@ -245,8 +256,20 @@ export function AccountsPage() {
           label="Reconnect"
           primary
           reconnect={item}
-          onDone={(text, itemId) => {
-            setNotice({ kind: "info", text });
+          onDone={(text, itemId, needsAttention) => {
+            showConnected(text, needsAttention);
+            void syncConnection(itemId);
+          }}
+          onError={(text) => setNotice({ kind: "error", text })}
+        />
+      )}
+      {item.status === "active" && !item.borrowed && !demo && (
+        <ConnectButton
+          label="Add or remove accounts"
+          reconnect={item}
+          chooseAccounts
+          onDone={(text, itemId, needsAttention) => {
+            showConnected(text, needsAttention);
             void syncConnection(itemId);
           }}
           onError={(text) => setNotice({ kind: "error", text })}
@@ -387,9 +410,9 @@ export function AccountsPage() {
                 <ConnectButton
                   label="Connect a bank"
                   primary
-                  onDone={(text, itemId) => {
+                  onDone={(text, itemId, needsAttention) => {
                     setAddingAccount(null);
-                    setNotice({ kind: "info", text });
+                    showConnected(text, needsAttention);
                     void syncConnection(itemId);
                   }}
                   onError={(text) => setNotice({ kind: "error", text })}
@@ -499,8 +522,8 @@ export function AccountsPage() {
         <ConnectButton
           label="Connect an account"
           primary
-          onDone={(text, itemId) => {
-            setNotice({ kind: "info", text });
+          onDone={(text, itemId, needsAttention) => {
+            showConnected(text, needsAttention);
             void syncConnection(itemId);
           }}
           onError={(text) => setNotice({ kind: "error", text })}

@@ -182,7 +182,11 @@ export class FakePlaidGateway implements PlaidGateway {
   }
 
   async createLinkToken(request: LinkTokenRequest): Promise<LinkToken> {
-    const kind = request.updateAccessToken ? "update" : "new";
+    const kind = request.updateAccessToken
+      ? request.accountSelection
+        ? "choose"
+        : "update"
+      : "new";
     return {
       linkToken: `link-fake~${kind}~${crypto.randomBytes(6).toString("hex")}`,
       expiration: new Date(Date.now() + 4 * 3600 * 1000).toISOString(),
