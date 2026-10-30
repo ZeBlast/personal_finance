@@ -143,6 +143,7 @@ describe("settings", () => {
       debtExtraInForecastMinor: 0,
       recoveryKeySaved: false,
       welcomeDismissed: false,
+      reminders: { bills: false, signIn: false, budgets: false },
     });
   });
 
