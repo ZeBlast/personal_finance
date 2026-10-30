@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Diagnostics } from "../../types/data";
-import { ruleEffectText } from "../../pages/CategoriesPage";
+import { ruleEffectText } from "../categories/ruleText";
 import { statusItems } from "./StatusOverview";
 
 const NOW = Date.parse("2026-10-18T12:00:00Z");
