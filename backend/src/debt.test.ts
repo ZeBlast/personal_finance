@@ -104,5 +104,14 @@ describe("paying off debt", () => {
     expect(res.body.plan.debts.map((d: { name: string }) => d.name)).toEqual(["Visa"]);
     expect(res.body.plan.monthlyPaymentMinor).toBe(30_000);
     expect(res.body.minimumsOnly.months).toBeGreaterThan(res.body.plan.months);
+
+    // Each debt on its own at its minimum, for its account card; none until its rate is entered.
+    const byName = new Map(
+      res.body.debts.map((d: { name: string; alone: unknown }) => [d.name, d.alone]),
+    );
+    expect(byName.get("Store card")).toBeNull();
+    const visaAlone = byName.get("Visa") as { months: number; interestMinor: number };
+    expect(visaAlone.months).toBe(res.body.minimumsOnly.months);
+    expect(visaAlone.interestMinor).toBe(res.body.minimumsOnly.totalInterestMinor);
   });
 });

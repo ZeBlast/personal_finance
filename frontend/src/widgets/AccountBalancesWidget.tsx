@@ -1,5 +1,7 @@
 import { useApi } from "../hooks/useApi";
+import { frozenSince } from "../lib/accountKinds";
 import { formatMinor } from "../lib/money";
+import { formatDay } from "../lib/time";
 import type { Account } from "../types/api";
 import { WidgetState } from "./WidgetFrame";
 import { defineWidget } from "./types";
@@ -77,8 +79,14 @@ export default defineWidget({
                       <span className="truncate">{a.name}</span>
                       {a.mask && <span className="text-xs text-slate-500">••{a.mask}</span>}
                     </span>
-                    <span className="shrink-0 tabular-nums">
+                    <span className="shrink-0 text-right tabular-nums">
                       {formatMinor(a.currentBalanceMinor, a.currency)}
+                      {/* A balance that stopped updating says how old it is. */}
+                      {frozenSince(a) && (
+                        <span className="block text-xs text-amber-700 dark:text-amber-300">
+                          as of {formatDay(frozenSince(a)!)}
+                        </span>
+                      )}
                     </span>
                   </li>
                 ))}

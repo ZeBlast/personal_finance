@@ -106,6 +106,11 @@ export const accounts = sqliteTable(
     statementClosingDay: integer("statement_closing_day"),
     /** For a credit card: the day of the month its payment is due, after the statement closes. */
     statementDueDay: integer("statement_due_day"),
+    /**
+     * For a connected account: when Plaid stopped reporting it (the user turned it off in "Add or
+     * remove accounts", or the bank closed it). Its balance stops updating; null while reported.
+     */
+    noLongerSharedAt: text("no_longer_shared_at"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

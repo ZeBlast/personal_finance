@@ -29,6 +29,19 @@ export function shownBalanceMinor(a: Shape): number | null {
   return hasCreditBalance(a) ? -(a.currentBalanceMinor ?? 0) : a.currentBalanceMinor;
 }
 
+/**
+ * The day a connected account's balance was last updated, when it is no longer being kept up to
+ * date (its bank needs a sign-in or has a problem, or Plaid no longer shares it); null when it is
+ * current or kept by hand.
+ */
+export function frozenSince(
+  a: Pick<Account, "isManual" | "connectionStatus" | "noLongerSharedAt" | "lastBalanceUpdateAt">,
+): string | null {
+  if (a.isManual) return null;
+  if (a.noLongerSharedAt === null && a.connectionStatus === "active") return null;
+  return (a.lastBalanceUpdateAt ?? a.noLongerSharedAt)?.slice(0, 10) ?? null;
+}
+
 /** The short word under or beside a balance: "Balance owed", "Credit balance", "Value"... */
 export function balanceLabel(a: Shape): string {
   if (hasCreditBalance(a)) return "Credit balance";

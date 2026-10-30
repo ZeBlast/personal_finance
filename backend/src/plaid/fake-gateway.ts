@@ -149,6 +149,15 @@ export class FakePlaidGateway implements PlaidGateway {
     this.limitOverrides.set(itemId, limit);
   }
 
+  /** Demo of "Add or remove accounts": the account at `index` is no longer shared (or is again). */
+  private readonly unshared = new Map<string, Set<number>>();
+  simulateAccountShared(itemId: string, index: number, shared: boolean): void {
+    const set = this.unshared.get(itemId) ?? new Set<number>();
+    if (shared) set.delete(index);
+    else set.add(index);
+    this.unshared.set(itemId, set);
+  }
+
   async syncTransactions(accessToken: string, cursor: string | null): Promise<TransactionSyncPage> {
     const itemId = this.itemIdOf(accessToken);
     if (this.broken.has(itemId)) {
@@ -261,14 +270,23 @@ export class FakePlaidGateway implements PlaidGateway {
       throw new PlaidGatewayError("ITEM_NOT_FOUND", "ITEM_ERROR", "Item not found.");
     const limitOverride = this.limitOverrides.get(itemId);
     const today = isoDate(this.now());
-    return institution.accounts.map((a, index) => ({
-      ...a,
-      // An investment account is worth what it holds, so its balance follows the demo prices.
-      currentBalance: a.type === "investment" ? demoAccountValue(today) : a.currentBalance,
-      creditLimit:
-        a.creditLimit !== null && limitOverride !== undefined ? limitOverride : a.creditLimit,
-      accountId: `acct-fake~${itemId}~${index}`,
-    }));
+    const unshared = this.unshared.get(itemId);
+    return institution.accounts.flatMap((a, index) =>
+      unshared?.has(index)
+        ? []
+        : [
+            {
+              ...a,
+              // An investment account is worth what it holds, so its balance follows the demo prices.
+              currentBalance: a.type === "investment" ? demoAccountValue(today) : a.currentBalance,
+              creditLimit:
+                a.creditLimit !== null && limitOverride !== undefined
+                  ? limitOverride
+                  : a.creditLimit,
+              accountId: `acct-fake~${itemId}~${index}`,
+            },
+          ],
+    );
   }
 
   async getInvestmentHoldings(accessToken: string): Promise<HoldingsSnapshot> {

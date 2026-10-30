@@ -67,6 +67,8 @@ export interface AccountSummary {
   statementClosingDay: number | null;
   /** For a credit card: the day of the month its payment is due, when set. */
   statementDueDay: number | null;
+  /** When Plaid stopped reporting this connected account (so its balance stopped updating). */
+  noLongerSharedAt: string | null;
 }
 
 const summaryColumns = {
@@ -90,6 +92,7 @@ const summaryColumns = {
   color: accounts.color,
   statementClosingDay: accounts.statementClosingDay,
   statementDueDay: accounts.statementDueDay,
+  noLongerSharedAt: accounts.noLongerSharedAt,
 };
 
 /**
@@ -180,6 +183,28 @@ export function upsertItemAccounts(
   gatewayAccounts: GatewayAccount[],
   now: string,
 ): void {
+  // An account Plaid stops reporting (turned off in "Add or remove accounts", or closed at the
+  // bank) is kept with its history, marked so its frozen balance is not mistaken for a current
+  // one; one that comes back is unmarked. An empty answer says nothing, so it marks nothing.
+  if (gatewayAccounts.length > 0) {
+    const reported = new Set(gatewayAccounts.map((a) => a.accountId));
+    for (const known of db
+      .select({
+        id: accounts.id,
+        plaidAccountId: accounts.plaidAccountId,
+        noLongerSharedAt: accounts.noLongerSharedAt,
+      })
+      .from(accounts)
+      .where(eq(accounts.plaidItemId, itemRowId))
+      .all()) {
+      const shared = known.plaidAccountId !== null && reported.has(known.plaidAccountId);
+      if (shared === (known.noLongerSharedAt === null)) continue;
+      db.update(accounts)
+        .set({ noLongerSharedAt: shared ? null : now, updatedAt: now })
+        .where(eq(accounts.id, known.id))
+        .run();
+    }
+  }
   for (const incoming of gatewayAccounts) {
     const values = {
       name: incoming.name,

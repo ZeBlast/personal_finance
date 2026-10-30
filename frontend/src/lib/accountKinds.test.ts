@@ -3,6 +3,7 @@ import {
   availableCreditMinor,
   balanceDetail,
   balanceLabel,
+  frozenSince,
   hasCreditBalance,
   shownBalanceMinor,
 } from "./accountKinds";
@@ -55,5 +56,24 @@ describe("account kinds", () => {
     );
     expect(balanceDetail(account("depository", 50_000))).toBe("current balance");
     expect(shownBalanceMinor(account("depository", -1_000))).toBe(-1_000);
+  });
+});
+
+describe("balances that stopped updating", () => {
+  const connected = {
+    isManual: false,
+    connectionStatus: "active",
+    noLongerSharedAt: null,
+    lastBalanceUpdateAt: "2026-10-01T08:00:00.000Z",
+  };
+  it("says nothing for a current balance or one kept by hand", () => {
+    expect(frozenSince(connected)).toBeNull();
+    expect(frozenSince({ ...connected, isManual: true, connectionStatus: null })).toBeNull();
+  });
+  it("gives the day of the last update when sign-in is needed or Plaid stopped sharing it", () => {
+    expect(frozenSince({ ...connected, connectionStatus: "login_required" })).toBe("2026-10-01");
+    expect(frozenSince({ ...connected, noLongerSharedAt: "2026-10-05T00:00:00.000Z" })).toBe(
+      "2026-10-01",
+    );
   });
 });
