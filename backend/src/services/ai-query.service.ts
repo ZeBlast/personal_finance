@@ -183,26 +183,64 @@ USER QUERY:
 }
 
 /**
- * Built-in local offline semantic query planner.
+ * Calculates Levenshtein edit distance between two strings.
+ */
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], prev, row[j]) + 1;
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+}
+
+/**
+ * Typo-tolerant matcher: checks if target appears as a substring, or matches any word in text
+ * within a small edit distance (1-2 characters).
+ */
+export function hasWordFuzzy(text: string, target: string, maxDistance = 2): boolean {
+  if (text.includes(target)) return true;
+  const words = text.split(/[\s,?.!/\\-]+/);
+  const targetLen = target.length;
+  const allowed = targetLen <= 4 ? 1 : maxDistance;
+
+  for (const word of words) {
+    if (Math.abs(word.length - targetLen) > allowed) continue;
+    if (levenshtein(word, target) <= allowed) return true;
+  }
+  return false;
+}
+
+/**
+ * Built-in local offline semantic query planner with fuzzy matching for typo tolerance.
  * Runs instantly with 0ms network latency and 100% offline privacy when Gemini API key
  * is not configured or network is unreachable.
  */
 export function localSemanticPlanner(userQuery: string, today: string): QueryPlan {
   const q = userQuery.toLowerCase().trim();
 
-  // 1. Cash Forecast
+  // 1. Cash Forecast (handles typos like "forcast", "foreacst", "runwy")
   if (
-    q.includes("forecast") ||
-    q.includes("runway") ||
+    hasWordFuzzy(q, "forecast") ||
+    hasWordFuzzy(q, "runway") ||
     q.includes("cash balance") ||
     q.includes("bank account in") ||
     q.includes("going to go negative") ||
     q.includes("cash in")
   ) {
     let days = 60;
-    const matchDays = q.match(/(\d+)\s*(day|days)/);
-    const matchWeeks = q.match(/(\d+)\s*(week|weeks)/);
-    const matchMonths = q.match(/(\d+)\s*(month|months)/);
+    const matchDays = q.match(/(\d+)\s*(day|days|dais)/);
+    const matchWeeks = q.match(/(\d+)\s*(week|weeks|weks)/);
+    const matchMonths = q.match(/(\d+)\s*(month|months|moths)/);
 
     if (matchDays) days = parseInt(matchDays[1], 10);
     else if (matchWeeks) days = parseInt(matchWeeks[1], 10) * 7;
@@ -226,8 +264,13 @@ export function localSemanticPlanner(userQuery: string, today: string): QueryPla
     };
   }
 
-  // 2. Budget status
-  if (q.includes("budget") || q.includes("allowance") || q.includes("overspend")) {
+  // 2. Budget status (handles typos like "bugdet", "budgt", "allownace")
+  if (
+    hasWordFuzzy(q, "budget") ||
+    hasWordFuzzy(q, "budgets") ||
+    hasWordFuzzy(q, "allowance") ||
+    hasWordFuzzy(q, "overspend")
+  ) {
     const month = today.slice(0, 7);
     return {
       intent: "budget_status",
@@ -245,11 +288,11 @@ export function localSemanticPlanner(userQuery: string, today: string): QueryPla
     };
   }
 
-  // 3. Recurring Subscriptions
+  // 3. Recurring Subscriptions (handles typos like "subcription", "subscripton", "recurrng")
   if (
-    q.includes("subscription") ||
-    q.includes("subscriptions") ||
-    q.includes("recurring") ||
+    hasWordFuzzy(q, "subscription") ||
+    hasWordFuzzy(q, "subscriptions") ||
+    hasWordFuzzy(q, "recurring") ||
     q.includes("monthly bill") ||
     q.includes("streaming")
   ) {
@@ -266,8 +309,13 @@ export function localSemanticPlanner(userQuery: string, today: string): QueryPla
     };
   }
 
-  // 4. Net worth trend
-  if (q.includes("net worth") || q.includes("wealth") || q.includes("assets minus")) {
+  // 4. Net worth trend (handles "networth", "net-worth", "welth")
+  if (
+    hasWordFuzzy(q, "networth") ||
+    q.includes("net worth") ||
+    hasWordFuzzy(q, "wealth") ||
+    q.includes("assets minus")
+  ) {
     let months = 6;
     const matchMonths = q.match(/(\d+)\s*(month|months|year|years)/);
     if (matchMonths) {
@@ -292,33 +340,44 @@ export function localSemanticPlanner(userQuery: string, today: string): QueryPla
     };
   }
 
-  // 5. Default: Top spending (e.g. "top spending category in past 2 weeks")
+  // 5. Default: Top spending (handles typos like "spnding", "expnses", "categori", "weks")
   let days = 14;
   let periodDesc = "past 2 weeks";
 
-  if (q.includes("week") && !q.includes("2 week") && !q.includes("two week")) {
-    days = 7;
-    periodDesc = "past 7 days";
-  } else if (q.includes("2 week") || q.includes("two week") || q.includes("14 day") || q.includes("fortnight")) {
+  const isOneWeek =
+    (hasWordFuzzy(q, "week") && !q.includes("2") && !q.includes("two")) ||
+    q.includes("7 day");
+  const isTwoWeeks =
+    q.includes("2 week") ||
+    q.includes("two week") ||
+    q.includes("14 day") ||
+    hasWordFuzzy(q, "fortnight") ||
+    hasWordFuzzy(q, "weks");
+
+  if (isTwoWeeks) {
     days = 14;
     periodDesc = "past 2 weeks";
-  } else if (q.includes("month") || q.includes("30 day")) {
+  } else if (isOneWeek) {
+    days = 7;
+    periodDesc = "past 7 days";
+  } else if (hasWordFuzzy(q, "month") || q.includes("30 day")) {
     days = 30;
     periodDesc = "past 30 days";
-  } else if (q.includes("year") || q.includes("365 day")) {
+  } else if (hasWordFuzzy(q, "year") || q.includes("365 day")) {
     days = 365;
     periodDesc = "past year";
   } else {
-    const matchDays = q.match(/(\d+)\s*(day|days)/);
+    const matchDays = q.match(/(\d+)\s*(day|days|dais)/);
     if (matchDays) {
       days = parseInt(matchDays[1], 10);
       periodDesc = `past ${days} days`;
     }
   }
 
-  const groupBy: "category" | "merchant" = q.includes("merchant") || q.includes("store") || q.includes("place")
-    ? "merchant"
-    : "category";
+  const groupBy: "category" | "merchant" =
+    hasWordFuzzy(q, "merchant") || hasWordFuzzy(q, "merchants") || hasWordFuzzy(q, "store") || hasWordFuzzy(q, "place")
+      ? "merchant"
+      : "category";
 
   const fromDate = addDays(today, -days);
   const toDate = today;

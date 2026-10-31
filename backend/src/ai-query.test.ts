@@ -91,6 +91,30 @@ describe("Local Semantic Planner (Offline Fallback)", () => {
 
     expect(plan.intent).toBe("recurring_subscriptions");
   });
+
+  it("gracefully handles typos in natural language questions", () => {
+    // Typos: "spnding" & "weks"
+    const p1 = localSemanticPlanner("show me my top spnding in past 2 weks", today);
+    expect(p1.intent).toBe("top_spending");
+    expect(p1.parameters.fromDate).toBe("2026-10-17");
+
+    // Typo: "forcast"
+    const p2 = localSemanticPlanner("what is my forcast for next 60 days?", today);
+    expect(p2.intent).toBe("cash_forecast");
+    expect(p2.parameters.days).toBe(60);
+
+    // Typo: "bugdet"
+    const p3 = localSemanticPlanner("how is my bugdet doing this month?", today);
+    expect(p3.intent).toBe("budget_status");
+
+    // Typo: "subcriptions"
+    const p4 = localSemanticPlanner("show my recurring subcriptions", today);
+    expect(p4.intent).toBe("recurring_subscriptions");
+
+    // Typo: "netwroth"
+    const p5 = localSemanticPlanner("show my netwroth trend", today);
+    expect(p5.intent).toBe("net_worth_trend");
+  });
 });
 
 describe("End-to-End Local Execution & Hydration", () => {
