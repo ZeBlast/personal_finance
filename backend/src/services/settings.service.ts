@@ -46,6 +46,12 @@ export const settingsSchema = z.object({
    * (and so in safe-to-spend) until the plan pays the debts off. 0: not counted.
    */
   debtExtraInForecastMinor: z.number().int().min(0).max(100_000_000_000),
+  /** Whether monthly goal savings targets are projected as upcoming allocations in the cash forecast. */
+  goalsInForecast: z.boolean(),
+  /** Whether remaining variable budget allowances are projected as daily cash burn in the cash forecast. */
+  budgetInForecast: z.boolean(),
+  /** Optional Gemini API key for natural language assistance (if unset, local semantic planner runs). */
+  geminiApiKey: z.string().max(200).optional(),
   /** The user said they saved the recovery key somewhere safe (asked until they do). */
   recoveryKeySaved: z.boolean(),
   /** The user closed the first-run welcome. */
@@ -76,6 +82,9 @@ export const DEFAULT_SETTINGS: Settings = {
   navHidden: [],
   ownNames: [],
   debtExtraInForecastMinor: 0,
+  goalsInForecast: false,
+  budgetInForecast: false,
+  geminiApiKey: undefined,
   recoveryKeySaved: false,
   welcomeDismissed: false,
   reminders: { bills: false, signIn: false, budgets: false },

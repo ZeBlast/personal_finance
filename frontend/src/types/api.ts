@@ -22,6 +22,12 @@ export interface Settings {
   ownNames: string[];
   /** The debt plan's extra monthly payment counted in the cash forecast (0: not counted). */
   debtExtraInForecastMinor: number;
+  /** Whether savings goals are projected as monthly allocations in the cash forecast. */
+  goalsInForecast: boolean;
+  /** Whether remaining variable budget allowances are projected in the cash forecast. */
+  budgetInForecast: boolean;
+  /** Optional Gemini API key for natural language queries and financial assistant. */
+  geminiApiKey?: string;
   /** The user said they saved the recovery key somewhere safe. */
   recoveryKeySaved: boolean;
   /** The user closed the first-run welcome. */

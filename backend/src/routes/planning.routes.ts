@@ -108,6 +108,14 @@ export function planningRoutes(db: AppDb): Router {
     const q = z
       .object({
         today: day.optional(),
+        includeGoals: z
+          .enum(["true", "false"])
+          .transform((v) => v === "true")
+          .optional(),
+        includeBudget: z
+          .enum(["true", "false"])
+          .transform((v) => v === "true")
+          .optional(),
         bufferMinor: z.coerce.number().int().min(0).max(100_000_000_000).optional(),
       })
       .parse(req.query);
@@ -145,6 +153,14 @@ export function planningRoutes(db: AppDb): Router {
       .object({
         days: z.coerce.number().int().min(7).max(MAX_FORECAST_DAYS).optional(),
         today: day.optional(),
+        includeGoals: z
+          .enum(["true", "false"])
+          .transform((v) => v === "true")
+          .optional(),
+        includeBudget: z
+          .enum(["true", "false"])
+          .transform((v) => v === "true")
+          .optional(),
       })
       .parse(req.query);
     res.json(cashForecast(db, q));

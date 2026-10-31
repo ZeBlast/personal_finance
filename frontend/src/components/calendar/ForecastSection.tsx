@@ -13,6 +13,8 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   card_bill: "Card bill (estimated)",
   recurring: "Found recurring",
   debt_plan: "Debt payoff plan",
+  goal_plan: "Savings goal",
+  budget_allowance: "Budget allowance",
 };
 
 const smallButton =

@@ -27,6 +27,7 @@ import { syncRoutes } from "./routes/sync.routes.js";
 import { transactionsRoutes } from "./routes/transactions.routes.js";
 import type { ClientOptions as CardPriceClientOptions } from "./services/card-price.service.js";
 import { collectionPricesRoutes } from "./routes/collection-prices.routes.js";
+import { aiRoutes } from "./routes/ai.routes.js";
 import type { TokenCipher } from "./services/crypto.js";
 import { createPlaidService } from "./services/plaid.service.js";
 import { createSyncService, type SyncService } from "./services/sync.service.js";
@@ -112,6 +113,7 @@ export function createApp({
   app.use("/api", sandboxRoutes(db));
   app.use("/api", tspRoutes(db));
   app.use("/api", taxesRoutes(db));
+  app.use("/api", aiRoutes(db));
   if (dataDir) {
     app.use(
       "/api",

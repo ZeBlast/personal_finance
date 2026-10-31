@@ -10,7 +10,8 @@ import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { CADENCE_LABEL } from "../lib/insights";
-import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning";
+import type { BillStatus, CardBill, Forecast, ForecastEvent, Paycheck } from "../types/planning";
+import type { Settings } from "../types/api";
 import { Select } from "../components/common/Select";
 import { Loading } from "../components/common/Loading";
 
@@ -77,17 +78,40 @@ export function PlanningPage() {
 
 // ---- Forecast ----------------------------------------------------------------------------------
 
-const SOURCE_LABEL = {
+const SOURCE_LABEL: Record<ForecastEvent["source"], string> = {
   expected: "Expected",
   recurring: "Recurring",
   card_bill: "Card bill",
   pending: "Pending",
   debt_plan: "Debt plan",
+  goal_plan: "Savings goal",
+  budget_allowance: "Budget allowance",
 };
 
 function ForecastTab() {
   const [days, setDays] = useState(60);
-  const { data, error, loading } = useApi<Forecast>(`/forecast?days=${days}`);
+  const { data: settings } = useApi<Settings>("/settings");
+  const [includeGoals, setIncludeGoals] = useState<boolean | null>(null);
+  const [includeBudget, setIncludeBudget] = useState<boolean | null>(null);
+
+  const activeGoals = includeGoals ?? settings?.goalsInForecast ?? false;
+  const activeBudget = includeBudget ?? settings?.budgetInForecast ?? false;
+
+  const { data, error, loading } = useApi<Forecast>(
+    `/forecast?days=${days}&includeGoals=${activeGoals}&includeBudget=${activeBudget}`,
+  );
+
+  async function toggleGoals(checked: boolean): Promise<void> {
+    setIncludeGoals(checked);
+    await api("/settings", { method: "PATCH", body: JSON.stringify({ goalsInForecast: checked }) });
+    announceDataChanged();
+  }
+
+  async function toggleBudget(checked: boolean): Promise<void> {
+    setIncludeBudget(checked);
+    await api("/settings", { method: "PATCH", body: JSON.stringify({ budgetInForecast: checked }) });
+    announceDataChanged();
+  }
   if (error)
     return (
       <p role="alert" className="text-sm text-red-600">
@@ -110,20 +134,42 @@ function ForecastTab() {
           />
           <Stat label={`In ${days} days`} value={money(data.endBalanceMinor)} />
         </dl>
-        <label className="text-sm">
-          Look ahead{" "}
-          <Select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
-          >
-            {[30, 60, 90, 180].map((n) => (
-              <option key={n} value={n}>
-                {n} days
-              </option>
-            ))}
-          </Select>
-        </label>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={activeGoals}
+                onChange={(e) => void toggleGoals(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700"
+              />
+              <span>Goal funding</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={activeBudget}
+                onChange={(e) => void toggleBudget(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700"
+              />
+              <span>Budget burn</span>
+            </label>
+          </div>
+          <label className="text-sm">
+            Look ahead{" "}
+            <Select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
+            >
+              {[30, 60, 90, 180].map((n) => (
+                <option key={n} value={n}>
+                  {n} days
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
       </div>
       {data.lowest.balanceMinor < 0 && (
         <p

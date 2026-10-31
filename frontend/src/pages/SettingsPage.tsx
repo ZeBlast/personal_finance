@@ -380,6 +380,37 @@ export function SettingsPage() {
       )}
 
       {settings && (
+        <div className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">Financial Assistant (Gemini)</h2>
+            <span className="inline-flex items-center gap-1 rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
+              🔒 Zero Financial Data Transmitted
+            </span>
+          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Ask natural-language questions like &quot;show me my top spending category in the past 2 weeks&quot; or &quot;cash forecast for 60 days&quot;.
+          </p>
+          <div className="rounded bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+            <strong>Privacy Guarantee:</strong> Your actual financial records, transaction amounts, account numbers, and merchant logs are <em>never</em> sent to Gemini or any external server. The AI model only receives abstract query templates, and all computations happen locally inside your encrypted SQLite database.
+          </div>
+          <label className="block text-sm">
+            <span className="font-medium">Google Gemini API Key (optional)</span>
+            <input
+              type="password"
+              value={settings.geminiApiKey ?? ""}
+              placeholder="AIzaSy... (leave blank to use built-in offline query planner)"
+              disabled={saving}
+              onChange={(e) => void save({ geminiApiKey: e.target.value.trim() || undefined })}
+              className={`${inputClass} w-full max-w-md font-mono text-xs`}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Get an API key at <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline">Google AI Studio</a>. If left blank, the app uses its offline local query planner.
+            </span>
+          </label>
+        </div>
+      )}
+
+      {settings && (
         <details className="space-y-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
           <summary className="cursor-pointer text-lg font-medium">
             Advanced: when to sync, and how much history

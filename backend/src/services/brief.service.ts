@@ -67,13 +67,23 @@ const STALE_MS = 24 * 60 * 60 * 1000;
 
 export function dailyBrief(
   db: AppDb,
-  options: { today?: string | undefined; bufferMinor?: number | undefined } = {},
+  options: {
+    today?: string | undefined;
+    bufferMinor?: number | undefined;
+    includeGoals?: boolean | undefined;
+    includeBudget?: boolean | undefined;
+  } = {},
 ): DailyBrief {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   if (!isRealDate(today)) throw new AppError(400, "invalid_date", "Use a real day.");
   const buffer = Math.max(0, options.bufferMinor ?? 0);
   const settings = getSettings(db);
-  const forecast = cashForecast(db, { today, days: 60 });
+  const forecast = cashForecast(db, {
+    today,
+    days: 60,
+    includeGoals: options.includeGoals,
+    includeBudget: options.includeBudget,
+  });
 
   // The window runs to the day before the next money coming in.
   let nextIncome: DailyBrief["nextIncome"] = null;

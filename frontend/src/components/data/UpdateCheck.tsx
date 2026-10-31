@@ -48,7 +48,7 @@ export function UpdateCheck({ version }: { version: string | null }) {
     let done = 0;
     setState({ kind: "installing", percent: null });
     try {
-      await update.downloadAndInstall((event) => {
+      await update.downloadAndInstall((event: any) => {
         if (event.event === "Started") total = event.data.contentLength ?? 0;
         if (event.event === "Progress") {
           done += event.data.chunkLength;

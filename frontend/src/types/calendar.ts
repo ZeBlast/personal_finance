@@ -148,7 +148,7 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "goal_plan" | "budget_allowance";
   seriesKey?: string;
   cadence?: "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
   accountId?: number;

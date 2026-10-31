@@ -1,5 +1,7 @@
 import type { AppDb } from "../db/client.js";
-import { addDays, addMonths, isRealDate } from "../utils/dates.js";
+import { addDays, addMonths, firstOfMonth, isRealDate, lastOfMonth } from "../utils/dates.js";
+import { listGoals } from "./goal.service.js";
+import { budgetMonth } from "./budget.service.js";
 import { debtOverview } from "./debt.service.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
@@ -33,7 +35,7 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "goal_plan" | "budget_allowance";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
@@ -62,7 +64,12 @@ const norm = (s: string): string => s.trim().toLowerCase();
 
 export function cashForecast(
   db: AppDb,
-  options: { days?: number | undefined; today?: string | undefined } = {},
+  options: {
+    days?: number | undefined;
+    today?: string | undefined;
+    includeGoals?: boolean | undefined;
+    includeBudget?: boolean | undefined;
+  } = {},
 ): Forecast {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   if (!isRealDate(today)) throw new AppError(400, "invalid_date", "Use a real day.");
@@ -179,6 +186,76 @@ export function cashForecast(
       const day = `${addMonths(today.slice(0, 7), k)}-01`;
       if (day > end) break;
       add(day, { label: "Extra debt payment (plan)", amountMinor: -extra, source: "debt_plan" });
+    }
+  }
+
+  // 5. Goal funding monthly pace, when counted in forecast
+  const countGoals = options.includeGoals ?? settings.goalsInForecast;
+  if (countGoals) {
+    const allGoals = listGoals(db, today);
+    for (const g of allGoals) {
+      if (g.reached || !g.perMonthMinor || !g.monthsLeft || g.perMonthMinor <= 0) continue;
+      for (let k = 1; k <= g.monthsLeft; k += 1) {
+        const day = `${addMonths(today.slice(0, 7), k)}-01`;
+        if (day > end) break;
+        add(day, {
+          label: `${g.name} (goal)`,
+          amountMinor: -g.perMonthMinor,
+          source: "goal_plan",
+        });
+      }
+    }
+  }
+
+  // 6. Variable budget allowances, when counted in forecast
+  const countBudget = options.includeBudget ?? settings.budgetInForecast;
+  if (countBudget) {
+    const currentMonth = today.slice(0, 7);
+    const currentBudgets = budgetMonth(db, currentMonth, settings.plaidEnvironment);
+    const currentRemaining = currentBudgets.budgets.reduce(
+      (n, b) => n + Math.max(0, b.remainingMinor),
+      0,
+    );
+    const lastDay = lastOfMonth(today);
+    const tomorrow = addDays(today, 1);
+    if (currentRemaining > 0 && tomorrow <= lastDay) {
+      const daysLeft = Math.max(
+        1,
+        Math.round((Date.parse(lastDay) - Date.parse(today)) / 86_400_000),
+      );
+      const dailyBurn = Math.floor(currentRemaining / daysLeft);
+      if (dailyBurn > 0) {
+        for (let d = tomorrow; d <= lastDay && d <= end; d = addDays(d, 1)) {
+          add(d, {
+            label: "Budget allowance",
+            amountMinor: -dailyBurn,
+            source: "budget_allowance",
+          });
+        }
+      }
+    }
+
+    const monthlyBudgeted = currentBudgets.totals.budgetedMinor;
+    if (monthlyBudgeted > 0) {
+      for (let k = 1; k <= 6; k += 1) {
+        const nextMonth = addMonths(currentMonth, k);
+        const first = firstOfMonth(`${nextMonth}-01`);
+        const last = lastOfMonth(first);
+        if (first > end) break;
+        const daysInMonth =
+          Math.round((Date.parse(last) - Date.parse(first)) / 86_400_000) + 1;
+        const dailyBurn = Math.floor(monthlyBudgeted / daysInMonth);
+        if (dailyBurn > 0) {
+          for (let d = first; d <= last && d <= end; d = addDays(d, 1)) {
+            if (d <= today) continue;
+            add(d, {
+              label: "Budget allowance",
+              amountMinor: -dailyBurn,
+              source: "budget_allowance",
+            });
+          }
+        }
+      }
     }
   }
 

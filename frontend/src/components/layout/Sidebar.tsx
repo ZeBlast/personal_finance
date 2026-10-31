@@ -14,6 +14,7 @@ import {
   ReceiptText,
   Search,
   Settings as SettingsIcon,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -24,6 +25,7 @@ import type { Settings } from "../../types/api";
 import { areaBadge, NavBadge, useBadges } from "./NavBadge";
 import { SearchPalette } from "./SearchPalette";
 import { SyncControl } from "./SyncControl";
+import { AssistantModal } from "../ai/AssistantModal";
 
 /**
  * The pages in the user's order: the ones they placed first, in that order, then any others (new
@@ -77,6 +79,7 @@ const smallButton =
 
 export function Sidebar() {
   const [searching, setSearching] = useState(false);
+  const [askingAi, setAskingAi] = useState(false);
   const settings = useApi<Settings>("/settings");
   const badges = useBadges();
   const [order, setOrder] = useState<string[] | null>(null);
@@ -160,6 +163,19 @@ export function Sidebar() {
         </span>
         <kbd className="rounded border border-slate-300 px-1 text-[10px] dark:border-slate-600">
           Ctrl K
+        </kbd>
+      </button>
+      <button
+        type="button"
+        onClick={() => setAskingAi(true)}
+        className="mb-1.5 flex items-center justify-between rounded-md border border-indigo-200 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:border-indigo-300 hover:from-indigo-100 hover:to-blue-100 dark:border-indigo-900/60 dark:from-indigo-950/40 dark:to-blue-950/40 dark:text-indigo-300"
+      >
+        <span className="flex items-center gap-2">
+          <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+          Ask Assistant
+        </span>
+        <kbd className="rounded border border-indigo-200 bg-white/60 px-1 text-[10px] text-indigo-600 dark:border-indigo-800 dark:bg-slate-800 dark:text-indigo-400">
+          Ctrl J
         </kbd>
       </button>
 
@@ -303,6 +319,7 @@ export function Sidebar() {
       )}
       <SyncControl />
       {searching && <SearchPalette onClose={() => setSearching(false)} />}
+      <AssistantModal open={askingAi} onClose={() => setAskingAi(false)} />
     </nav>
   );
 }
