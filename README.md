@@ -54,32 +54,12 @@ own:
 The app has no server of its own. Everything runs on your computer as three parts: a small native
 shell, a local backend, and the user interface.
 
-```mermaid
-flowchart TB
-    subgraph pc["Your computer"]
-        vault["Windows Credential Manager<br/>(encryption key)"]
-        shell["Tauri shell (Rust)<br/>window, single instance"]
-        ui["React UI<br/>app window or browser tab"]
-        api["Backend (Node + Express)<br/>local-only API, all the logic"]
-        db[("SQLite database<br/>encrypted with SQLCipher")]
-    end
-    gh["GitHub Releases<br/>signed updates"]:::online
-    plaid["Plaid<br/>bank connections"]:::online
-    prices["Price data<br/>TSP funds, trading cards"]:::online
-    vault -- "key" --> shell
-    shell -- "opens" --> ui
-    shell -- "starts with key and token" --> api
-    shell -. "updates" .-> gh
-    ui <-- "HTTP on 127.0.0.1" --> api
-    ui -. "Plaid Link sign-in" .-> plaid
-    api <--> db
-    api -- "HTTPS" --> plaid
-    api -- "HTTPS" --> prices
-    classDef online stroke-dasharray: 5 5
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
+  <img alt="On your computer, the Windows Credential Manager gives the encryption key to the Tauri shell, which opens the React UI and starts the backend. The UI talks to the backend over local HTTP; the backend uses the encrypted SQLite database and writes backups and exports. Online, the shell gets signed updates from GitHub Releases, and the backend talks to Plaid for bank connections and to price data services." src="docs/images/architecture-light.svg">
+</picture>
 
-Dashed boxes are online services. Without internet the app still works and shows your last synced
-data.
+Without internet the app still works and shows your last synced data.
 
 **How it fits together**
 

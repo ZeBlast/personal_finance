@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="968" height="540" viewBox="0 0 968 540" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title>Personal Finance architecture</title>
+  <defs>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1.5 9 5 1 8.5z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .title { font-size: 15px; font-weight: 600; fill: #0f172a; }
+      .sub { font-size: 12.5px; fill: #64748b; }
+      .pill { font-size: 11px; font-weight: 500; fill: #475569; }
+      .heading { font-size: 11.5px; font-weight: 700; letter-spacing: 1.2px; fill: #64748b; }
+    </style>
+  </defs>
+  <rect width="968" height="540" fill="#ffffff"/>
+
+  <rect x="16" y="16" width="672" height="508" rx="22" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="48" y="52" class="heading">YOUR COMPUTER</text>
+  <rect x="712" y="16" width="240" height="508" rx="22" fill="none" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="732" y="52" class="heading">ONLINE SERVICES</text>
+
+  <path d="M296 122 H414" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M456 164 V200 H172 V234" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M586 164 V234" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M298 278 H414" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <path d="M540 322 V390" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <path d="M416 302 H344 V434 H298" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M664 122 H726" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M664 266 H726" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M664 290 H700 V434 H726" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#arrow)"/>
+
+  <g><rect x="338.4" y="112" width="35.2" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="356" y="126" class="pill" text-anchor="middle">key</text></g>
+  <g><rect x="290" y="190" width="48" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="314" y="204" class="pill" text-anchor="middle">opens</text></g>
+  <g><rect x="491.6" y="190" width="188.8" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="586" y="204" class="pill" text-anchor="middle">starts it, with key + token</text></g>
+  <g><rect x="316" y="246" width="80" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="356" y="260" class="pill" text-anchor="middle">local HTTP</text></g>
+  <g><rect x="522.4" y="346" width="35.2" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="540" y="360" class="pill" text-anchor="middle">SQL</text></g>
+  <g><rect x="669.6" y="92" width="60.800000000000004" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="700" y="106" class="pill" text-anchor="middle">updates</text></g>
+  <g><rect x="676" y="236" width="48" height="20" rx="10" fill="#ffffff" stroke="#e2e8f0"/><text x="700" y="250" class="pill" text-anchor="middle">HTTPS</text></g>
+
+  
+  <g>
+    <rect x="48" y="80" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="64" y="102" width="40" height="40" rx="11" fill="#64748b" fill-opacity="0.12"/>
+    <g transform="translate(74 112)" fill="none" stroke="#64748b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="10" r="4"/><path d="M10 10h9M16 10v3.5M19 10v2.5"/></g>
+    <text x="120" y="113" class="title">Credential Manager</text><text x="120" y="132" class="sub">Windows · keeps the</text><text x="120" y="148" class="sub">encryption key</text>
+  </g>
+  
+  <g>
+    <rect x="416" y="80" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="432" y="102" width="40" height="40" rx="11" fill="#8b5cf6" fill-opacity="0.12"/>
+    <g transform="translate(442 112)" fill="none" stroke="#8b5cf6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="17" height="14" rx="2.5"/><path d="M1.5 7h17"/><circle cx="4.5" cy="5" r=".6"/><circle cx="6.8" cy="5" r=".6"/></g>
+    <text x="488" y="113" class="title">Tauri shell</text><text x="488" y="132" class="sub">Rust · opens the window,</text><text x="488" y="148" class="sub">starts and stops the backend</text>
+  </g>
+  
+  <g>
+    <rect x="48" y="236" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="64" y="258" width="40" height="40" rx="11" fill="#3b82f6" fill-opacity="0.12"/>
+    <g transform="translate(74 268)" fill="none" stroke="#3b82f6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="17" height="14" rx="2.5"/><path d="M1.5 7h17M7 7v10M9.5 10.5h6M9.5 13.5h4"/></g>
+    <text x="120" y="269" class="title">React UI</text><text x="120" y="288" class="sub">In the app window</text><text x="120" y="304" class="sub">or a browser tab</text>
+  </g>
+  
+  <g>
+    <rect x="416" y="236" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="432" y="258" width="40" height="40" rx="11" fill="#10b981" fill-opacity="0.12"/>
+    <g transform="translate(442 268)" fill="none" stroke="#10b981" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="16" height="6.5" rx="2"/><rect x="2" y="11" width="16" height="6.5" rx="2"/><path d="M5.5 5.75h.01M5.5 14.25h.01M9 5.75h5M9 14.25h5"/></g>
+    <text x="488" y="269" class="title">Backend</text><text x="488" y="288" class="sub">Node + Express · local-only</text><text x="488" y="304" class="sub">API with all the logic</text>
+  </g>
+  
+  <g>
+    <rect x="48" y="392" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="64" y="414" width="40" height="40" rx="11" fill="#14b8a6" fill-opacity="0.12"/>
+    <g transform="translate(74 424)" fill="none" stroke="#14b8a6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2h7l4 4v11.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5z"/><path d="M12 2v4h4M7.5 11h5M7.5 14h5"/></g>
+    <text x="120" y="425" class="title">Backups and exports</text><text x="120" y="444" class="sub">Encrypted backups,</text><text x="120" y="460" class="sub">CSV and JSON exports</text>
+  </g>
+  
+  <g>
+    <rect x="416" y="392" width="248" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="432" y="414" width="40" height="40" rx="11" fill="#f59e0b" fill-opacity="0.12"/>
+    <g transform="translate(442 424)" fill="none" stroke="#f59e0b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="10" cy="4.5" rx="7" ry="2.5"/><path d="M3 4.5v11c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-11M3 10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></g>
+    <text x="488" y="425" class="title">SQLite database</text><text x="488" y="444" class="sub">Encrypted with SQLCipher</text><text x="488" y="460" class="sub">(AES-256)</text>
+  </g>
+  
+  <g>
+    <rect x="728" y="80" width="196" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="744" y="102" width="40" height="40" rx="11" fill="#64748b" fill-opacity="0.12"/>
+    <g transform="translate(754 112)" fill="none" stroke="#64748b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5v10M6 8.5l4 4 4-4M3 14.5v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2"/></g>
+    <text x="800" y="113" class="title">GitHub Releases</text><text x="800" y="132" class="sub">Signed updates</text>
+  </g>
+  
+  <g>
+    <rect x="728" y="236" width="196" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="744" y="258" width="40" height="40" rx="11" fill="#64748b" fill-opacity="0.12"/>
+    <g transform="translate(754 268)" fill="none" stroke="#64748b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5 10 3l8 4.5zM4 9.5v6M8 9.5v6M12 9.5v6M16 9.5v6M2.5 17.5h15"/></g>
+    <text x="800" y="269" class="title">Plaid</text><text x="800" y="288" class="sub">Bank connections</text><text x="800" y="304" class="sub">and sign-in</text>
+  </g>
+  
+  <g>
+    <rect x="728" y="392" width="196" height="84" rx="14" fill="#ffffff" stroke="#e2e8f0" filter="url(#shadow)"/>
+    <rect x="744" y="414" width="40" height="40" rx="11" fill="#64748b" fill-opacity="0.12"/>
+    <g transform="translate(754 424)" fill="none" stroke="#64748b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 16.5h15M3.5 13l4-4.5 3.5 3 5.5-6.5"/><path d="M13.5 5h3v3"/></g>
+    <text x="800" y="425" class="title">Price data</text><text x="800" y="444" class="sub">TSP funds and</text><text x="800" y="460" class="sub">trading cards</text>
+  </g>
+</svg>
