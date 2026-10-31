@@ -12,7 +12,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::NewWindowResponse;
+use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -170,6 +171,15 @@ fn start_backend(
     Ok(child)
 }
 
+/// Whether the page may open a pop-up window (`window.open`) to this address.
+///
+/// Without a rule the desktop window silently blocks every pop-up, unlike a browser. Plaid needs
+/// them: most large banks sign you in through a Plaid pop-up, which may start out blank. Opening
+/// an attached file uses a `blob:` address. Anything else (local files, other schemes) stays shut.
+fn popup_allowed(url: &Url) -> bool {
+    matches!(url.scheme(), "https" | "blob") || url.as_str() == "about:blank"
+}
+
 /// Decide how the backend is provided and what the UI should be told.
 fn launch(app: &AppHandle) -> Bootstrap {
     // Developer shortcut (debug builds only): run the backend yourself with `npm run dev:backend`
@@ -258,6 +268,15 @@ pub fn run() {
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(900.0, 600.0)
                 .initialization_script(&script)
+                // "Allow" opens the pop-up the way a browser would, still linked to this page so
+                // Plaid hears back when the bank sign-in finishes.
+                .on_new_window(|url, _features| {
+                    if popup_allowed(&url) {
+                        NewWindowResponse::Allow
+                    } else {
+                        NewWindowResponse::Deny
+                    }
+                })
                 .build()?;
             Ok(())
         })
@@ -271,4 +290,21 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn popups_for_bank_sign_in_and_attachments_only() {
+        let allowed = |s: &str| popup_allowed(&Url::parse(s).unwrap());
+        assert!(allowed("https://cdn.plaid.com/link/v2/stable/link.html"));
+        assert!(allowed("https://secure.chase.com/oauth"));
+        assert!(allowed("about:blank"));
+        assert!(allowed("blob:http://tauri.localhost/1234"));
+        assert!(!allowed("http://example.com/"));
+        assert!(!allowed("file:///C:/Windows/notepad.exe"));
+        assert!(!allowed("about:srcdoc"));
+    }
 }
