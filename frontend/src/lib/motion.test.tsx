@@ -116,7 +116,8 @@ describe("the bucket", () => {
     reduceMotion();
     expect(prefersReducedMotion()).toBe(true);
     const { container, rerender } = render(bucket(500));
-    const level = container.querySelector<SVGGElement>(".pf-bucket-level")!;
+    // The front wave, which sits at the level itself; a paler one rides just above it.
+    const level = container.querySelectorAll<SVGGElement>(".pf-bucket-level")[1]!;
     expect(level.style.transform).toContain(`${waterY(0.5)}px`);
     rerender(bucket(700));
     expect(screen.queryByTestId("bucket-drop")).toBeNull();

@@ -148,7 +148,7 @@ export default defineWidget({
                   of {money(reading.availableMinor)}
                   {config.month === "previous" && ` in ${monthLabel(month)}`}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 @min-[17rem]:justify-start">
+                <div className="mt-1 flex min-h-8 flex-wrap content-start items-center justify-center gap-x-2 @min-[17rem]:justify-start">
                   <CapStatusLabel status={reading.status} />
                   <span className="text-xs text-slate-500 dark:text-slate-400">
                     {capDetail(reading, daysLeft, money)}

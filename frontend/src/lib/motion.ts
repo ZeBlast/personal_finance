@@ -34,7 +34,7 @@ export const BUCKET = {
   rimHalfWidth: 70,
   bottomHalfWidth: 52,
   /** Water at these heights is out of sight below the base, and just under the rim. */
-  emptyY: 212,
+  emptyY: 202,
   fullY: 62,
 } as const;
 

@@ -290,11 +290,11 @@ details[open] > :not(summary) {
 @keyframes pf-bucket-ripple {
   from {
     opacity: 0.9;
-    transform: scale(0.2);
+    transform: scaleX(0.2);
   }
   to {
     opacity: 0;
-    transform: scale(2.6);
+    transform: scaleX(2.4);
   }
 }
 @keyframes pf-bucket-sway {

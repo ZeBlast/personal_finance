@@ -9,11 +9,12 @@ import {
 } from "../../lib/motion";
 import type { CapStatus } from "../../types/analytics";
 
-const STATUS_WATER: Record<CapStatus, [string, string]> = {
-  ok: ["#60a5fa", "#2563eb"],
-  full: ["#60a5fa", "#2563eb"],
-  risk: ["#fbbf24", "#d97706"],
-  over: ["#f87171", "#dc2626"],
+/** The app's own colours for how a cap stands, flat like its other charts. */
+const STATUS_WATER: Record<CapStatus, { fill: string; stroke: string }> = {
+  ok: { fill: "fill-blue-600", stroke: "stroke-blue-600" },
+  full: { fill: "fill-blue-600", stroke: "stroke-blue-600" },
+  risk: { fill: "fill-amber-500", stroke: "stroke-amber-500" },
+  over: { fill: "fill-red-600", stroke: "stroke-red-600" },
 };
 
 /** One wave repeated for wider than the bucket, with room to slide sideways forever. */
@@ -26,11 +27,10 @@ const wavePath = (height: number): string => {
 const { rimY, bottomY, rimHalfWidth, bottomHalfWidth } = BUCKET;
 const LEFT = 100 - rimHalfWidth;
 const RIGHT = 100 + rimHalfWidth;
-const BODY = `M${LEFT},${rimY}A${rimHalfWidth},12 0 0 1 ${RIGHT},${rimY}L${100 + bottomHalfWidth},${bottomY}A${bottomHalfWidth},12 0 0 1 ${100 - bottomHalfWidth},${bottomY}Z`;
-const ribAt = (y: number): string => {
-  const half = bucketHalfWidth(y);
-  return `M${100 - half},${y}A${half},11 0 0 0 ${100 + half},${y}`;
-};
+const BASE_LEFT = 100 - bottomHalfWidth;
+const BASE_RIGHT = 100 + bottomHalfWidth;
+/** A straight-sided pail with rounded bottom corners. */
+const BODY = `M${LEFT},${rimY}L${BASE_LEFT - 1},${bottomY - 7}Q${BASE_LEFT},${bottomY} ${BASE_LEFT + 7},${bottomY}H${BASE_RIGHT - 7}Q${BASE_RIGHT},${bottomY} ${BASE_RIGHT + 1},${bottomY - 7}L${RIGHT},${rimY}Z`;
 
 /**
  * Spending as water in a bucket: the rim is the cap. The water rises to its level when shown, moves
@@ -80,11 +80,14 @@ export function SpendingBucket({
   }, [spentMinor]);
 
   const y = waterY(shown);
-  const [light, deep] = color ? [color, color] : STATUS_WATER[status];
-  const surfaceScale = bucketHalfWidth(y) / rimHalfWidth;
+  // A chosen colour is set directly; otherwise the class follows how the cap stands.
+  const water = color
+    ? { fill: undefined, stroke: undefined, paint: color }
+    : { ...STATUS_WATER[status], paint: undefined };
   const paceFill = expectedMinor === null ? null : bucketFill(expectedMinor, capMinor);
   const paceY = paceFill === null ? null : waterY(paceFill);
   const over = overflow > 0;
+  const puddleWidth = 110 + overflow * 70;
 
   return (
     <svg
@@ -94,7 +97,7 @@ export function SpendingBucket({
       aria-valuemax={Math.max(capMinor, spentMinor, 1)}
       aria-valuenow={Math.max(0, spentMinor)}
       aria-valuetext={description}
-      viewBox="0 -6 200 232"
+      viewBox="0 0 200 220"
       className="pf-bucket h-full max-h-full w-full"
     >
       <title>{description}</title>
@@ -102,89 +105,50 @@ export function SpendingBucket({
         <clipPath id={`${id}-inside`}>
           <path d={BODY} />
         </clipPath>
-        <linearGradient id={`${id}-water`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor={light} />
-          <stop offset="1" stopColor={deep} />
-        </linearGradient>
-        <linearGradient id={`${id}-shine`} x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0" stopColor="#fff" stopOpacity="0.22" />
-          <stop offset="0.28" stopColor="#fff" stopOpacity="0.04" />
-          <stop offset="0.72" stopColor="#000" stopOpacity="0" />
-          <stop offset="1" stopColor="#000" stopOpacity="0.16" />
-        </linearGradient>
       </defs>
 
-      {/* The puddle, growing with how far past the cap spending is. */}
-      {over && (
-        <ellipse
-          data-testid="bucket-puddle"
-          cx="100"
-          cy="214"
-          rx={60 + overflow * 36}
-          ry={6 + overflow * 4}
-          fill={deep}
-          fillOpacity="0.4"
-          className="pf-bucket-puddle"
-        />
-      )}
-
-      {/* The handle, hanging behind the rim, and the inside of the far wall. */}
+      {/* The handle, then the empty pail. */}
       <path
         key={`handle-${drop}`}
-        d={`M${LEFT},${rimY}C${LEFT},-20 ${RIGHT},-20 ${RIGHT},${rimY}`}
+        d={`M${LEFT + 6},${rimY - 4}C${LEFT + 6},-12 ${RIGHT - 6},-12 ${RIGHT - 6},${rimY - 4}`}
         fill="none"
         strokeWidth="4"
         strokeLinecap="round"
-        className={`stroke-slate-400 dark:stroke-slate-500 ${drop > 0 ? "pf-bucket-sway" : ""}`}
+        className={`stroke-slate-300 dark:stroke-slate-600 ${drop > 0 ? "pf-bucket-sway" : ""}`}
       />
-      <ellipse
-        cx="100"
-        cy={rimY}
-        rx={rimHalfWidth}
-        ry="12"
-        className="fill-slate-300 dark:fill-slate-700"
-      />
-      <path d={BODY} className="fill-slate-100 dark:fill-slate-800" />
+      <path d={BODY} className="fill-slate-200 dark:fill-slate-700" />
 
-      {/* The water. */}
+      {/* The water: a paler wave behind a solid one. */}
       <g clipPath={`url(#${id}-inside)`}>
-        <g className="pf-bucket-level" style={{ transform: `translateY(${y}px)` }}>
+        <g className="pf-bucket-level" style={{ transform: `translateY(${y - 3}px)` }}>
           <path
             d={wavePath(5)}
-            fill={deep}
-            fillOpacity="0.55"
-            className="pf-bucket-wave pf-bucket-wave-back"
+            fill={water.paint}
+            fillOpacity="0.4"
+            className={`pf-bucket-wave pf-bucket-wave-back ${water.fill ?? ""}`}
           />
         </g>
-        <g
-          className="pf-bucket-level"
-          style={{
-            transform: `translate(100px, ${y}px) scaleX(${surfaceScale})`,
-            opacity: shown > 0 ? 1 : 0,
-          }}
-        >
-          <ellipse rx={rimHalfWidth} ry="7" fill={light} fillOpacity="0.85" />
-          {drop > 0 && (
-            <ellipse
-              key={`ripple-${drop}`}
-              data-testid="bucket-ripple"
-              rx="22"
-              ry="3.5"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="1.5"
-              className="pf-bucket-ripple"
-            />
-          )}
-        </g>
-        <g className="pf-bucket-level" style={{ transform: `translateY(${y + 4}px)` }}>
+        <g className="pf-bucket-level" style={{ transform: `translateY(${y}px)` }}>
           <path
             d={wavePath(4)}
-            fill={`url(#${id}-water)`}
-            fillOpacity="0.9"
-            className="pf-bucket-wave"
+            fill={water.paint}
+            className={`pf-bucket-wave ${water.fill ?? ""}`}
           />
         </g>
+        {drop > 0 && (
+          <g className="pf-bucket-level" style={{ transform: `translate(100px, ${y - 2}px)` }}>
+            <line
+              key={`ripple-${drop}`}
+              data-testid="bucket-ripple"
+              x1="-20"
+              x2="20"
+              stroke="#fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="pf-bucket-ripple"
+            />
+          </g>
+        )}
       </g>
 
       {/* A new purchase, falling in. */}
@@ -192,86 +156,78 @@ export function SpendingBucket({
         <path
           key={`drop-${drop}`}
           data-testid="bucket-drop"
-          d="M100,-9C104,-3 106,0 106,3A6,6 0 0 1 94,3C94,0 96,-3 100,-9Z"
-          fill={light}
-          className="pf-bucket-drop"
-          style={{ "--pf-drop-to": `${y - 2}px` } as CSSProperties}
+          d="M100,-4C104,2 106,5 106,8A6,6 0 0 1 94,8C94,5 96,2 100,-4Z"
+          fill={water.paint}
+          className={`pf-bucket-drop ${water.fill ?? ""}`}
+          style={{ "--pf-drop-to": `${y - 8}px` } as CSSProperties}
         />
       )}
 
-      {/* The bucket's outside: metal shine, ribs, and how full it is at a glance. */}
-      <path d={BODY} fill={`url(#${id}-shine)`} />
-      <path d={ribAt(92)} fill="none" className="stroke-slate-400/60 dark:stroke-slate-500/60" />
-      <path d={ribAt(168)} fill="none" className="stroke-slate-400/60 dark:stroke-slate-500/60" />
+      {/* Quarter marks, and an even pace for today. */}
       {[0.25, 0.5, 0.75].map((f) => {
         const at = waterY(f);
         const right = 100 + bucketHalfWidth(at);
         return (
           <line
             key={f}
-            x1={right - 12}
+            x1={right - 11}
             x2={right - 2}
             y1={at}
             y2={at}
-            strokeWidth="1.5"
-            className="stroke-slate-500/70 dark:stroke-slate-300/70"
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="stroke-slate-400 dark:stroke-slate-500"
           />
         );
       })}
       {paceY !== null && (
         <path
           data-testid="bucket-pace"
-          d={`M${100 - bucketHalfWidth(paceY) - 9},${paceY - 5}l9,5l-9,5Z`}
-          className="pf-bucket-level fill-slate-600 dark:fill-slate-300"
+          d={`M${100 - bucketHalfWidth(paceY) - 9},${paceY - 5}l8,5l-8,5Z`}
+          className="pf-bucket-level fill-slate-500 dark:fill-slate-400"
         />
       )}
-      <path
-        d={`M${LEFT},${rimY}L${100 - bottomHalfWidth},${bottomY}A${bottomHalfWidth},12 0 0 0 ${100 + bottomHalfWidth},${bottomY}L${RIGHT},${rimY}`}
-        fill="none"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-        className="stroke-slate-500 dark:stroke-slate-400"
+
+      {/* The rim. */}
+      <rect
+        x={LEFT - 6}
+        y={rimY - 5}
+        width={rimHalfWidth * 2 + 12}
+        height="9"
+        rx="4.5"
+        className="fill-slate-400 dark:fill-slate-500"
       />
 
-      {/* Past the cap, it runs over the sides. */}
+      {/* Past the cap, it runs over the sides and collects underneath. */}
       {over && (
-        <g
-          data-testid="bucket-spill"
-          fill="none"
-          strokeWidth="4"
-          strokeLinecap="round"
-          stroke={deep}
-        >
-          <path
-            className="pf-bucket-spill"
-            d={`M${LEFT - 3},${rimY + 3}L${100 - bottomHalfWidth - 4},214`}
+        <>
+          <g
+            data-testid="bucket-spill"
+            fill="none"
+            strokeWidth="4"
+            strokeLinecap="round"
+            stroke={water.paint}
+            className={water.stroke}
+          >
+            <path className="pf-bucket-spill" d={`M${LEFT - 4},${rimY + 5}L${BASE_LEFT - 5},206`} />
+            <path
+              className="pf-bucket-spill pf-bucket-spill-late"
+              d={`M${RIGHT + 4},${rimY + 5}L${BASE_RIGHT + 5},206`}
+            />
+          </g>
+          <rect
+            data-testid="bucket-puddle"
+            x={100 - puddleWidth / 2}
+            y="208"
+            width={puddleWidth}
+            height="7"
+            rx="3.5"
+            fill={water.paint}
+            fillOpacity="0.45"
+            className={`pf-bucket-puddle ${water.fill ?? ""}`}
           />
-          <path
-            className="pf-bucket-spill pf-bucket-spill-late"
-            d={`M${RIGHT + 3},${rimY + 3}L${100 + bottomHalfWidth + 4},214`}
-          />
-        </g>
+        </>
       )}
-
-      {/* The rim, in front of everything, with the handle's fixings. */}
-      <path
-        d={`M${LEFT},${rimY}A${rimHalfWidth},12 0 0 0 ${RIGHT},${rimY}`}
-        fill="none"
-        strokeWidth="5"
-        strokeLinecap="round"
-        className="stroke-slate-500 dark:stroke-slate-400"
-      />
-      <ellipse
-        cx="100"
-        cy={rimY}
-        rx={rimHalfWidth}
-        ry="12"
-        fill="none"
-        strokeWidth="1.5"
-        className="stroke-slate-500 dark:stroke-slate-400"
-      />
-      <circle cx={LEFT} cy={rimY} r="4" className="fill-slate-500 dark:fill-slate-400" />
-      <circle cx={RIGHT} cy={rimY} r="4" className="fill-slate-500 dark:fill-slate-400" />
     </svg>
   );
 }
