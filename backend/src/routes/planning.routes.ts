@@ -8,6 +8,7 @@ import {
   listAttachments,
   MAX_ATTACHMENT_BYTES,
 } from "../services/attachment.service.js";
+import { merchantTrends, yearReport } from "../services/trends.service.js";
 import { clearBillSettings, listBills, setBillSettings } from "../services/bills.service.js";
 import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthReport } from "../services/report.service.js";
@@ -179,6 +180,24 @@ export function planningRoutes(db: AppDb): Router {
   router.get("/reports/month", (req, res) => {
     const q = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(req.query);
     res.json(monthReport(db, q.month));
+  });
+
+  router.get("/reports/year", (req, res) => {
+    const q = z
+      .object({ year: z.coerce.number().int().min(1970).max(9999), today: day.optional() })
+      .parse(req.query);
+    res.json(yearReport(db, q.year, q.today));
+  });
+
+  router.get("/reports/merchants", (req, res) => {
+    const q = z
+      .object({
+        months: z.coerce.number().int().min(2).max(24).optional(),
+        category: z.coerce.number().int().positive().optional(),
+        today: day.optional(),
+      })
+      .parse(req.query);
+    res.json(merchantTrends(db, q));
   });
 
   // ---- Files attached to transactions ----------------------------------------------------------

@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
-import { LineChart } from "../components/charts/LineChart";
 import { AccountName } from "../components/common/AccountName";
 import { Modal } from "../components/common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../components/investments/styles";
+import { AnnotatedForecast } from "../components/views/AnnotatedForecast";
 import { useApi } from "../hooks/useApi";
-import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
+import { formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { CADENCE_LABEL } from "../lib/insights";
@@ -133,21 +133,7 @@ function ForecastTab() {
           Your bank accounts are expected to go below zero on {formatDay(data.lowest.date)}.
         </p>
       )}
-      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-        <LineChart
-          series={[
-            {
-              key: "cash",
-              label: "Cash in the bank",
-              color: "#2563eb",
-              points: data.days.map((d) => ({ date: d.date, value: d.balanceMinor })),
-            },
-          ]}
-          dots={false}
-          format={money}
-          formatAxis={formatAxisMoney}
-        />
-      </div>
+      <AnnotatedForecast forecast={data} />
       <p className="text-xs text-slate-500">
         From the balances of {data.accountsCounted} bank account
         {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,
@@ -172,7 +158,10 @@ function ForecastTab() {
               >
                 <td className="py-1 whitespace-nowrap">{i === 0 ? formatDay(d.date) : ""}</td>
                 <td className="py-1">
-                  {e.label} <span className="text-xs text-slate-400">{SOURCE_LABEL[e.source]}</span>
+                  {e.label}{" "}
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {SOURCE_LABEL[e.source]}
+                  </span>
                 </td>
                 <td
                   className={`py-1 text-right tabular-nums ${e.amountMinor > 0 ? "text-green-700 dark:text-green-400" : ""}`}

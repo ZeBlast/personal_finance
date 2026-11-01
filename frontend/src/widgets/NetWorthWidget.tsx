@@ -30,7 +30,7 @@ export default defineWidget({
         emptyText="No account balances yet. Connect an account on the Accounts page."
       >
         {o && coverage && (
-          <div className={compact ? "flex h-full flex-col justify-center gap-1" : "space-y-3"}>
+          <div className={compact ? "flex h-full flex-col gap-1" : "space-y-3"}>
             <Stat
               label="Net worth"
               value={formatMinor(o.netWorthMinor, o.currency)}

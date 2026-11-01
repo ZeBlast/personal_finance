@@ -1,7 +1,8 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Copy, EyeOff, Settings2, X } from "lucide-react";
 import { resolveConfig } from "./config";
 import { getWidget } from "./registry";
-import { readAppearance } from "./appearance";
+import { hasFrame, readAppearance } from "./appearance";
 import { fromGrid } from "./layout";
 import type { PlacedWidget } from "./types";
 
@@ -37,31 +38,64 @@ interface Props {
   onConfigure?: () => void;
   onHide?: () => void;
   onRemove?: () => void;
+  /** Adds another copy, for widgets that allow more than one. */
+  onDuplicate?: () => void;
 }
 
-const smallButton =
-  "rounded border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700";
+const iconButton =
+  "flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-600 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100";
 
-/** One widget on the dashboard: its title bar (the drag handle), its content, and edit controls. */
-export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: Props) {
+/** A ref and whether its element has more to scroll, so only then can the keyboard reach it. */
+function useScrollable() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const check = () => setScrollable(element.scrollHeight > element.clientHeight + 1);
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, scrollable };
+}
+
+/**
+ * One widget on the dashboard: its title (the drag handle), its content, and edit controls. Most
+ * widgets sit directly on the page with nothing around them; a border is for those busy enough to
+ * need one. While editing, every widget shows its edge, so its size and place on the grid are clear.
+ */
+export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove, onDuplicate }: Props) {
   const definition = getWidget(widget.widgetType);
   const look = readAppearance(widget.config);
   const title = look.title || (definition?.title ?? "Unavailable widget");
   // The title bar always shows while editing: it is what the widget is dragged by.
   const showHeader = editing || !look.hideHeader;
+  const framed = hasFrame(look.frame, definition?.framed);
+  const size = fromGrid({ w: widget.w, h: widget.h });
+  const body = useScrollable();
 
   return (
     <article
       aria-label={title}
-      style={look.accent ? { borderLeft: `5px solid ${look.accent}` } : undefined}
-      className={`pf-rise-in flex h-full flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow hover:shadow-md dark:bg-slate-800 ${
-        editing ? "border-dashed border-blue-400" : "border-slate-200 dark:border-slate-700"
-      }`}
+      style={look.accent ? { borderLeft: `3px solid ${look.accent}` } : undefined}
+      className={`flex h-full flex-col overflow-hidden ${
+        editing
+          ? "rounded-lg border border-dashed border-blue-400 bg-white dark:bg-slate-900"
+          : framed
+            ? "rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"
+            : ""
+      } ${look.accent && !framed && !editing ? "pl-3" : ""}`}
     >
       <header
         hidden={!showHeader}
-        className={`widget-drag-handle flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-700 ${
-          editing ? "cursor-move bg-blue-50 dark:bg-slate-900" : ""
+        className={`widget-drag-handle flex items-center justify-between gap-2 ${
+          editing
+            ? "cursor-move border-b border-slate-200 bg-blue-50 px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800"
+            : framed
+              ? "border-b border-slate-200 px-3 py-2 dark:border-slate-700"
+              : "pb-1.5"
         }`}
         title={editing ? "Drag to move this widget" : undefined}
       >
@@ -72,47 +106,72 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove }: P
             </span>
           )}
           <span className="truncate">{title}</span>
+          {editing && (
+            <span
+              title="Width and height, in the grid's half steps"
+              className="shrink-0 text-xs font-normal text-slate-500 tabular-nums dark:text-slate-400"
+            >
+              {size.w} × {size.h}
+            </span>
+          )}
         </h2>
         {editing && (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center">
             {/* Every widget has settings now: at least its title and look. */}
             {definition && (
               <button
                 type="button"
-                className={smallButton}
+                className={iconButton}
                 onClick={onConfigure}
                 aria-label={`Settings for ${title}`}
+                title="Settings"
               >
-                Settings
+                <Settings2 aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onDuplicate && (
+              <button
+                type="button"
+                className={iconButton}
+                onClick={onDuplicate}
+                aria-label={`Copy ${title}`}
+                title="Add another copy"
+              >
+                <Copy aria-hidden="true" className="h-3.5 w-3.5" />
               </button>
             )}
             <button
               type="button"
-              className={smallButton}
+              className={iconButton}
               onClick={onHide}
               aria-label={`Hide ${title}`}
+              title="Hide (it stays listed below the dashboard)"
             >
-              Hide
+              <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-sm leading-none text-slate-600 hover:border-red-400 hover:bg-red-50 hover:text-red-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-red-950"
+              className={`${iconButton} hover:text-red-700 dark:hover:text-red-400`}
               onClick={onRemove}
               aria-label={`Remove ${title}`}
               title="Remove this widget"
             >
-              ✕
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div
+        ref={body.ref}
+        {...(body.scrollable ? { tabIndex: 0 } : {})}
+        className={`min-h-0 flex-1 overflow-auto ${framed || editing ? "p-3" : ""}`}
+      >
         {definition ? (
           <WidgetErrorBoundary>
             <definition.Component
               config={resolveConfig(definition, widget.config)}
               instanceId={widget.key}
-              size={fromGrid({ w: widget.w, h: widget.h })}
+              size={size}
             />
           </WidgetErrorBoundary>
         ) : (

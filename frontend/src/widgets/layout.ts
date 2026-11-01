@@ -47,7 +47,7 @@ interface PlannedWidget extends Rect {
 const tile = (widgetType: string, x: number, config: PlannedWidget["config"] = {}) => ({
   widgetType,
   x,
-  y: 0,
+  y: 2,
   w: 3,
   h: 2,
   config: { ...config, _hideHeader: true },
@@ -55,20 +55,24 @@ const tile = (widgetType: string, x: number, config: PlannedWidget["config"] = {
 
 /**
  * The dashboard a first-time user gets, laid out by hand (12 columns, 60px rows) so every row is
- * full and evenly tall: headline figures first, then net worth, then this month's spending, then
- * what happened and what is coming. Everything else is in "Add widget".
+ * full and evenly tall: where things stand first, then the headline figures, the days ahead, this
+ * month's spending, what happened and what is coming, and net worth. Everything else is in "Add
+ * widget".
  */
 export const DEFAULT_PLAN: readonly PlannedWidget[] = [
+  { widgetType: "home-summary", x: 0, y: 0, w: 12, h: 2, config: { _hideHeader: true } },
   tile("net-worth", 0),
   tile("summary-number", 3, { metric: "spending" }),
   tile("summary-number", 6, { metric: "income" }),
   tile("summary-number", 9, { metric: "net" }),
-  { widgetType: "net-worth-history", x: 0, y: 2, w: 8, h: 6 },
-  { widgetType: "account-balances", x: 8, y: 2, w: 4, h: 6 },
-  { widgetType: "spending-by-category", x: 0, y: 8, w: 6, h: 5 },
-  { widgetType: "budget-progress", x: 6, y: 8, w: 6, h: 5 },
-  { widgetType: "recent-transactions", x: 0, y: 13, w: 6, h: 6, config: { count: 6 } },
-  { widgetType: "recurring-charges", x: 6, y: 13, w: 6, h: 6 },
+  { widgetType: "cash-forecast", x: 0, y: 4, w: 8, h: 5 },
+  { widgetType: "account-balances", x: 8, y: 4, w: 4, h: 5 },
+  { widgetType: "spending-by-category", x: 0, y: 9, w: 6, h: 4 },
+  { widgetType: "budget-progress", x: 6, y: 9, w: 6, h: 4 },
+  { widgetType: "recent-transactions", x: 0, y: 13, w: 6, h: 5, config: { count: 6 } },
+  { widgetType: "recurring-charges", x: 6, y: 13, w: 6, h: 5 },
+  { widgetType: "net-worth-history", x: 0, y: 18, w: 6, h: 5 },
+  { widgetType: "spending-heatmap", x: 6, y: 18, w: 6, h: 5 },
 ];
 
 /**

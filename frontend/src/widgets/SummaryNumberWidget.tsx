@@ -119,7 +119,7 @@ export default defineWidget({
 
     return (
       <WidgetState loading={now.loading} error={now.error}>
-        <div className="flex h-full flex-col justify-center">
+        <div className="flex h-full flex-col">
           <div className="text-xs text-slate-500 dark:text-slate-400">
             {label}, {period.label}
           </div>

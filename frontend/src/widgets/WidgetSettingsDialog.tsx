@@ -6,7 +6,13 @@ import type { Account } from "../types/api";
 import { resolveConfig } from "./config";
 import type { AnyWidget, ConfigField, ConfigValue, PlacedWidget } from "./types";
 import { Select } from "../components/common/Select";
-import { appearanceConfig, MAX_TITLE, readAppearance, type Appearance } from "./appearance";
+import {
+  appearanceConfig,
+  MAX_TITLE,
+  readAppearance,
+  type Appearance,
+  type FrameChoice,
+} from "./appearance";
 
 /** Accent colours offered for a widget's left edge. */
 const ACCENTS = [
@@ -248,6 +254,20 @@ export function WidgetSettingsDialog({
               onChange={(e) => setLook((l) => ({ ...l, hideHeader: e.target.checked }))}
             />
             Hide the title bar (it still shows while editing the dashboard)
+          </label>
+          <label className="block text-sm">
+            Border
+            <Select
+              value={look.frame}
+              onChange={(e) => setLook((l) => ({ ...l, frame: e.target.value as FrameChoice }))}
+              className={inputClass}
+            >
+              <option value="auto">
+                {definition.framed ? "Automatic (this widget has one)" : "Automatic (blends in)"}
+              </option>
+              <option value="always">Always show a border</option>
+              <option value="never">Never show a border</option>
+            </Select>
           </label>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             Accent

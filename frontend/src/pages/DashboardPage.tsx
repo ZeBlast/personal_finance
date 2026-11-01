@@ -1,7 +1,7 @@
 import ReactGridLayout, { useContainerWidth, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { ConfirmDialog } from "../components/common/Modal";
 import { DashboardSwitcher } from "../components/dashboard/DashboardSwitcher";
 import { Welcome } from "../components/onboarding/Welcome";
@@ -18,13 +18,29 @@ import type { PlacedWidget } from "../widgets/types";
 import { LoadingDashboard } from "../components/common/Loading";
 
 /** A classic row (60px) split into GRID_SCALE steps, with the gaps between them. */
-const MARGIN: [number, number] = [10, 10];
+const MARGIN: [number, number] = [28, 18];
 const ROW_HEIGHT = (60 + MARGIN[1]) / GRID_SCALE - MARGIN[1];
 
 const buttonClass =
   "rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-700";
 const primaryClass =
   "rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60";
+
+/**
+ * The grid drawn behind the widgets while editing: one line where each column and row starts, so
+ * what a widget will snap to is plain to see. Pure.
+ */
+export function gridLines(width: number): CSSProperties {
+  const column = (width - MARGIN[0] * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+  const stepX = column + MARGIN[0];
+  const stepY = ROW_HEIGHT + MARGIN[1];
+  const line = "var(--pf-grid-line)";
+  return {
+    backgroundImage: `linear-gradient(to right, ${line} 1px, transparent 1px), linear-gradient(to bottom, ${line} 1px, transparent 1px)`,
+    backgroundSize: `${stepX}px ${stepY}px`,
+    minHeight: stepY * 40,
+  };
+}
 
 /**
  * The draggable grid. It lives in its own component so that the width measurement starts when its
@@ -44,7 +60,11 @@ function WidgetGrid({
 }) {
   const { width, containerRef, mounted } = useContainerWidth();
   return (
-    <div ref={containerRef}>
+    <div
+      ref={containerRef}
+      className={editing ? "pf-dash-edit" : undefined}
+      style={editing ? gridLines(width) : undefined}
+    >
       {mounted && (
         <ReactGridLayout
           width={width}
@@ -74,6 +94,9 @@ function WidgetGrid({
     </div>
   );
 }
+
+/** A new copy's identity and place, leaving out any saved ID. */
+const withoutId = ({ key, x, y }: PlacedWidget) => ({ id: undefined, key, x, y });
 
 /** One dashboard's widgets and the edit-mode controls. `switcher` is drawn beside the title. */
 function DashboardView({
@@ -188,10 +211,9 @@ function DashboardView({
           role="status"
           className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100"
         >
-          <strong>Editing your dashboard.</strong> Drag a widget by its title bar to move it, pull
-          its bottom-right corner to resize it, press <span aria-hidden="true">✕</span> to remove
-          it, or use <em>+ Add widget</em>. Press <strong>Done</strong> to save, or{" "}
-          <strong>Cancel</strong> to throw the changes away.
+          <strong>Editing your dashboard.</strong> Drag a widget by its title to move it, and drag
+          any edge or corner to resize it. Everything snaps to the grid. Press <strong>Done</strong>{" "}
+          to save, or <strong>Cancel</strong> to throw the changes away.
         </div>
       )}
 
@@ -211,6 +233,21 @@ function DashboardView({
                 onConfigure={() => setConfiguring(w)}
                 onHide={() => patch(w.key, { enabled: false })}
                 onRemove={() => update((current) => current.filter((x) => x.key !== w.key))}
+                {...(getWidget(w.widgetType)?.singleton
+                  ? {}
+                  : {
+                      onDuplicate: () =>
+                        update((current) => [
+                          ...current,
+                          {
+                            ...w,
+                            ...withoutId(placeNew(getWidget(w.widgetType)!, current)),
+                            w: w.w,
+                            h: w.h,
+                            config: w.config,
+                          },
+                        ]),
+                    })}
               />
             </div>
           ))}
