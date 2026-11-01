@@ -38,13 +38,13 @@ export type ConfigField = { key: string; label: string; help?: string } & (
   | { type: "institution" }
 );
 
-export type WidgetGroup = "Accounts" | "Spending" | "Budgets" | "Activity" | "Tools";
+export type WidgetGroup = "Accounts" | "Spending" | "Spending caps" | "Activity" | "Tools";
 
 /** Groups in the order the picker shows them. */
 export const WIDGET_GROUPS: readonly WidgetGroup[] = [
   "Accounts",
   "Spending",
-  "Budgets",
+  "Spending caps",
   "Activity",
   "Tools",
 ];

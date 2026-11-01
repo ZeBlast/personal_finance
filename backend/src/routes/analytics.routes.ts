@@ -19,6 +19,7 @@ import {
   createBudget,
   deleteBudget,
   ROLLOVERS,
+  stopBudget,
   updateBudget,
 } from "../services/budget.service.js";
 import { spendingMonitor } from "../services/monitor.service.js";
@@ -65,11 +66,14 @@ const budgetOptions = {
   rollover: z.enum(ROLLOVERS).optional(),
   fundTargetMinor: z.number().int().min(1).max(100_000_000_000).nullable().optional(),
   fundTargetDate: z.iso.date().nullable().optional(),
+  repeats: z.boolean().optional(),
 };
 const budgetCreate = z
   .object({ categoryId: z.number().int().positive(), month, amountMinor, ...budgetOptions })
   .strict();
-const budgetUpdate = z.object({ amountMinor: amountMinor.optional(), ...budgetOptions }).strict();
+const budgetUpdate = z
+  .object({ amountMinor: amountMinor.optional(), month: month.optional(), ...budgetOptions })
+  .strict();
 const budgetCopy = z.object({ fromMonth: month, toMonth: month }).strict();
 
 export function analyticsRoutes(db: AppDb): Router {
@@ -192,7 +196,8 @@ export function analyticsRoutes(db: AppDb): Router {
   // ---- Budgets ----
 
   router.get("/budgets", (req, res) => {
-    res.json(budgetMonth(db, month.parse(req.query["month"]), environment()));
+    const q = z.object({ month, today: date.optional() }).parse(req.query);
+    res.json(budgetMonth(db, q.month, environment(), { today: q.today, detail: true }));
   });
 
   router.post("/budgets", (req, res) => {
@@ -210,7 +215,11 @@ export function analyticsRoutes(db: AppDb): Router {
   });
 
   router.delete("/budgets/:id", (req, res) => {
-    deleteBudget(db, idParam.parse(req.params["id"]));
+    const id = idParam.parse(req.params["id"]);
+    // With a month: stop it from that month on, keeping earlier months.
+    const q = z.object({ month: month.optional() }).parse(req.query);
+    if (q.month) stopBudget(db, id, q.month);
+    else deleteBudget(db, id);
     res.status(204).end();
   });
 

@@ -25,7 +25,7 @@ const PAGE_WORDS: Record<string, string> = {
   "/transactions/categories": "rules merchants",
   "/planning": "forecast bills paychecks planning",
   "/planning/subscriptions": "recurring charges deposits memberships streaming netflix renewals",
-  "/planning/budgets": "limits",
+  "/planning/budgets": "budgets limits",
   "/planning/goals": "savings target",
   "/planning/debt": "loans payoff interest apr",
   "/accounts": "credit utilization reconcile banks",

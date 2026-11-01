@@ -89,7 +89,7 @@ export const areas: AppArea[] = [
     sections: [
       { path: "/planning", label: "Forecast & bills", Page: PlanningPage },
       { path: "/planning/subscriptions", label: "Subscriptions", Page: SubscriptionsPage },
-      { path: "/planning/budgets", label: "Budgets", Page: BudgetsPage },
+      { path: "/planning/budgets", label: "Spending caps", Page: BudgetsPage },
       { path: "/planning/goals", label: "Goals", Page: GoalsPage },
       { path: "/planning/debt", label: "Debt payoff", Page: DebtPage },
     ],

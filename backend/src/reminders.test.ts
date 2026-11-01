@@ -77,12 +77,12 @@ describe("reminders for desktop notifications", () => {
     expect(await reminders(t)).toEqual([]);
     await spend(4_500);
     const [near] = await reminders(t);
-    expect(near).toMatchObject({ kind: "budget", title: "Treats budget is nearly used up" });
+    expect(near).toMatchObject({ kind: "budget", title: "Treats spending cap is nearly used up" });
     expect(near!.id).toMatch(/:near$/);
     expect(near!.body).toContain("95%");
     await spend(1_000);
     const [over] = await reminders(t);
-    expect(over!.title).toBe("Treats budget is over");
+    expect(over!.title).toBe("Treats spending cap is over");
     expect(over!.id).toMatch(/:over$/);
   });
 

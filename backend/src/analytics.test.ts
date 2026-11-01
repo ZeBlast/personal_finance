@@ -7,6 +7,7 @@ import {
   dashboardWidgets,
   transactions,
 } from "../../drizzle/schema.js";
+import { capOutlook } from "./services/budget.service.js";
 import { seedDefaults } from "./services/category.service.js";
 import { linkDemoBank, makeSyncHarness, makeTestApp } from "./test-helpers.js";
 
@@ -1165,5 +1166,204 @@ describe("dashboard layout", () => {
     ] as const) {
       await request(ctx.app)[method](url).set("Host", host).expect(401);
     }
+  });
+});
+
+describe("spending caps", () => {
+  let ctx: Ctx;
+  beforeEach(() => {
+    ctx = makeTestApp();
+  });
+  afterEach(() => ctx.cleanup());
+
+  const month = async (m: string, today = "2026-12-31") =>
+    (await ctx.call("get", `/api/budgets?month=${m}&today=${today}`).expect(200)).body;
+  const cap = (categoryId: number, m: string, amountMinor: number, repeats = true) =>
+    ctx
+      .call("post", "/api/budgets")
+      .send({ categoryId, month: m, amountMinor, repeats })
+      .expect(201);
+  const amounts = (b: { budgets: Array<{ amountMinor: number }> }) =>
+    b.budgets.map((x) => x.amountMinor);
+
+  it("repeats into later months without copying, and not into earlier ones", async () => {
+    const food = await makeCategory(ctx, "Food");
+    await cap(food.id, "2026-09", 40000);
+    expect(amounts(await month("2026-08"))).toEqual([]);
+    const sep = await month("2026-09");
+    expect(sep.budgets[0]).toMatchObject({ inherited: false, repeats: true });
+    const dec = await month("2026-12");
+    expect(dec.budgets[0]).toMatchObject({ amountMinor: 40000, inherited: true, repeats: true });
+  });
+
+  it("leaves a one-month budget in its month, as budgets always were", async () => {
+    const food = await makeCategory(ctx, "Food");
+    await cap(food.id, "2026-09", 40000, false);
+    expect(amounts(await month("2026-09"))).toEqual([40000]);
+    expect(amounts(await month("2026-10"))).toEqual([]);
+  });
+
+  it("a change from a later month starts there, and earlier months keep their cap", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const { id } = (await cap(food.id, "2026-09", 40000)).body as { id: number };
+    await ctx
+      .call("patch", `/api/budgets/${id}`)
+      .send({ amountMinor: 50000, month: "2026-11" })
+      .expect(200);
+    expect(amounts(await month("2026-10"))).toEqual([40000]);
+    expect(amounts(await month("2026-11"))).toEqual([50000]);
+    expect(amounts(await month("2027-02"))).toEqual([50000]);
+  });
+
+  it("stopping from a month keeps the months before, even after a later change", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const { id } = (await cap(food.id, "2026-09", 40000)).body as { id: number };
+    const edited = await ctx
+      .call("patch", `/api/budgets/${id}`)
+      .send({ amountMinor: 50000, month: "2026-11" })
+      .expect(200);
+    await ctx.call("delete", `/api/budgets/${edited.body.id}?month=2026-11`).expect(204);
+    expect(amounts(await month("2026-10"))).toEqual([40000]);
+    expect(amounts(await month("2026-11"))).toEqual([]);
+    expect(amounts(await month("2027-01"))).toEqual([]);
+    // It can be set again from a later month.
+    await cap(food.id, "2027-01", 30000);
+    expect(amounts(await month("2027-03"))).toEqual([30000]);
+    expect(amounts(await month("2026-12"))).toEqual([]);
+  });
+
+  it("removing a one-month cap brings back the repeating cap it replaced", async () => {
+    const food = await makeCategory(ctx, "Food");
+    await cap(food.id, "2026-09", 40000);
+    const once = await cap(food.id, "2026-10", 10000, false);
+    expect(amounts(await month("2026-10"))).toEqual([10000]);
+    await ctx.call("delete", `/api/budgets/${once.body.id}?month=2026-10`).expect(204);
+    expect(amounts(await month("2026-10"))).toEqual([40000]);
+  });
+
+  it("does not count a subcategory's spending twice when its parent has a cap too", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const dining = await makeCategory(ctx, "Dining", food.id);
+    const account = addAccount(ctx);
+    addTx(ctx, account, { date: "2026-09-05", amount: 3000, categoryId: dining.id });
+    addTx(ctx, account, { date: "2026-09-06", amount: 2000, categoryId: food.id });
+    await cap(food.id, "2026-09", 10000);
+    await cap(dining.id, "2026-09", 4000);
+    const sep = await month("2026-09");
+    expect(sep.budgets.map((b: { spentMinor: number }) => b.spentMinor).sort()).toEqual([
+      3000, 5000,
+    ]);
+    expect(sep.totals).toEqual({ budgetedMinor: 10000, spentMinor: 5000, remainingMinor: 5000 });
+  });
+
+  it("carries leftovers through months that only inherit the cap", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const account = addAccount(ctx);
+    addTx(ctx, account, { date: "2026-09-05", amount: 3000, categoryId: food.id });
+    const { id } = (await cap(food.id, "2026-09", 10000)).body as { id: number };
+    await ctx.call("patch", `/api/budgets/${id}`).send({ rollover: "leftover" }).expect(200);
+    expect((await month("2026-10")).budgets[0]).toMatchObject({
+      carryInMinor: 7000,
+      availableMinor: 17000,
+    });
+  });
+
+  it("gives each cap its recent months, and lists categories with no cap", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const gas = await makeCategory(ctx, "Gas");
+    const account = addAccount(ctx);
+    addTx(ctx, account, { date: "2026-08-05", amount: 3000, categoryId: food.id });
+    addTx(ctx, account, { date: "2026-09-05", amount: 4000, categoryId: food.id });
+    addTx(ctx, account, { date: "2026-08-07", amount: 6000, categoryId: gas.id });
+    await cap(food.id, "2026-09", 5000);
+    const sep = await month("2026-09");
+    expect(sep.budgets[0].history.slice(-2)).toEqual([
+      { month: "2026-08", spentMinor: 3000, capMinor: null },
+      { month: "2026-09", spentMinor: 4000, capMinor: 5000 },
+    ]);
+    expect(sep.uncapped).toMatchObject([
+      { categoryId: gas.id, label: "Gas", spentMinor: 0, averageMinor: 2000 },
+    ]);
+  });
+
+  it("feeds the month report, closest to the cap first", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const gas = await makeCategory(ctx, "Gas");
+    const account = addAccount(ctx);
+    addTx(ctx, account, { date: "2026-09-05", amount: 6000, categoryId: food.id });
+    addTx(ctx, account, { date: "2026-09-07", amount: 1000, categoryId: gas.id });
+    await cap(food.id, "2026-08", 5000);
+    await cap(gas.id, "2026-08", 4000);
+    const report = (await ctx.call("get", "/api/reports/month?month=2026-09").expect(200)).body;
+    expect(report.budgets).toMatchObject({ count: 2, overspent: 1 });
+    expect(
+      report.budgets.items.map((i: { label: string; status: string }) => [i.label, i.status]),
+    ).toEqual([
+      ["Food", "over"],
+      ["Gas", "ok"],
+    ]);
+  });
+
+  it("updates as soon as a transaction moves into the category", async () => {
+    const food = await makeCategory(ctx, "Food");
+    const account = addAccount(ctx);
+    const tx = addTx(ctx, account, { date: "2026-09-05", amount: 6000 });
+    await cap(food.id, "2026-09", 5000);
+    expect((await month("2026-09")).budgets[0].spentMinor).toBe(0);
+    await ctx.call("patch", `/api/transactions/${tx}`).send({ categoryId: food.id }).expect(200);
+    expect((await month("2026-09")).budgets[0]).toMatchObject({ spentMinor: 6000, status: "over" });
+  });
+});
+
+describe("how a cap stands", () => {
+  const outlook = (over: Partial<Parameters<typeof capOutlook>[0]>) =>
+    capOutlook({
+      availableMinor: 30000,
+      spentMinor: 0,
+      biggestDayMinor: 0,
+      month: "2026-09",
+      today: "2026-09-15",
+      ...over,
+    });
+
+  it("calls a past month by how it ended, with no pace", () => {
+    expect(outlook({ today: "2026-10-02", spentMinor: 31000 })).toEqual({
+      status: "over",
+      expectedMinor: null,
+      projectedMinor: null,
+    });
+    expect(outlook({ today: "2026-10-02", spentMinor: 30000 }).status).toBe("full");
+    expect(outlook({ today: "2026-10-02", spentMinor: 29000 }).status).toBe("ok");
+  });
+
+  it("shows the even pace for today", () => {
+    expect(outlook({}).expectedMinor).toBe(15000);
+  });
+
+  it("warns when the month is on course to pass the cap", () => {
+    const o = outlook({ spentMinor: 20000, biggestDayMinor: 2000 });
+    expect(o.projectedMinor).toBe(38000);
+    expect(o.status).toBe("risk");
+  });
+
+  it("does not extend one big payment across the month", () => {
+    const rent = outlook({ availableMinor: 145000, spentMinor: 145000, biggestDayMinor: 145000 });
+    expect(rent.projectedMinor).toBe(145000);
+    expect(rent.status).toBe("full");
+  });
+
+  it("says nothing about the end of the month in its first days", () => {
+    const o = outlook({ today: "2026-09-03", spentMinor: 29000, biggestDayMinor: 100 });
+    expect(o.projectedMinor).toBeNull();
+    expect(o.status).toBe("ok");
+    expect(o.expectedMinor).toBe(3000);
+  });
+
+  it("leaves a month not yet begun alone", () => {
+    expect(outlook({ month: "2026-11" })).toEqual({
+      status: "ok",
+      expectedMinor: null,
+      projectedMinor: null,
+    });
   });
 });

@@ -18,7 +18,7 @@ export function WidgetState({
   error?: string | null;
   empty?: boolean;
   emptyText?: string;
-  /** One link that fixes the empty state, such as "Set up a budget". */
+  /** One link that fixes the empty state, such as "Set a cap". */
   emptyAction?: { to: string; label: string };
   children: ReactNode;
 }) {

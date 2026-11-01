@@ -357,6 +357,10 @@ export const budgets = sqliteTable(
     /** A fund saved up month by month for an irregular expense: how much, and by when. */
     fundTargetMinor: integer("fund_target_minor"),
     fundTargetDate: text("fund_target_date"),
+    /** Applies to later months too, until another row for the category or `repeat_end`. */
+    repeats: integer("repeats", { mode: "boolean" }).notNull().default(false),
+    /** The last month a repeating cap applies, `YYYY-MM`, once stopped. */
+    repeatEnd: text("repeat_end"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

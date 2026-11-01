@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte } from "drizzle-orm";
 import { budgets, categories } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addMonths, firstOfMonth, isRealDate, isRealMonth, lastOfMonth } from "../utils/dates.js";
@@ -34,6 +34,37 @@ export interface BudgetDto {
     suggestedMinor: number;
     reached: boolean;
   } | null;
+  /** Applies to later months too. */
+  repeats: boolean;
+  /** Comes from an earlier month's repeating cap, with no row of its own for this month. */
+  inherited: boolean;
+  status: CapStatus;
+  /** Where spending would be today at an even pace (null outside the current month). */
+  expectedMinor: number | null;
+  /** Where the month looks set to end (null outside the current month, or too early to say). */
+  projectedMinor: number | null;
+  /** The months up to this one, oldest first, when asked for. */
+  history?: CapHistoryPoint[];
+}
+
+/** `over` is past the cap, `full` exactly at it, `risk` on course to pass it, `ok` otherwise. */
+export type CapStatus = "over" | "full" | "risk" | "ok";
+
+export interface CapHistoryPoint {
+  month: string;
+  spentMinor: number;
+  /** The cap that month, or null if there was none. */
+  capMinor: number | null;
+}
+
+/** A category with spending and no cap, and what a cap might be. */
+export interface UncappedCategory {
+  categoryId: number;
+  label: string;
+  color: string | null;
+  spentMinor: number;
+  /** Average a month over the three months before. */
+  averageMinor: number;
 }
 
 export const ROLLOVERS = ["off", "all", "leftover"] as const;
@@ -43,6 +74,7 @@ export interface BudgetOptions {
   rollover?: Rollover | undefined;
   fundTargetMinor?: number | null | undefined;
   fundTargetDate?: string | null | undefined;
+  repeats?: boolean | undefined;
 }
 
 export interface BudgetMonth {
@@ -51,7 +83,14 @@ export interface BudgetMonth {
   totals: { budgetedMinor: number; spentMinor: number; remainingMinor: number };
   /** Spending in the month that no budget covers, for a sense of what is unplanned. */
   unbudgetedSpendingMinor: number;
+  /** Categories with spending and no cap, biggest first, when asked for. */
+  uncapped?: UncappedCategory[];
 }
+
+/** Before this many days a month's pace says too little to call anything at risk. */
+const MIN_DAYS_FOR_PROJECTION = 5;
+const HISTORY_MONTHS = 6;
+const UNCAPPED_SHOWN = 12;
 
 const periodOf = (month: string): string => `${month}-01`;
 
@@ -73,6 +112,145 @@ function requireActiveCategory(db: AppDb, id: number): void {
 }
 
 type BudgetRow = typeof budgets.$inferSelect;
+type EffectiveRow = BudgetRow & { inherited: boolean };
+
+/**
+ * The row that applies to a month given a category's rows up to it, oldest first: the month's own,
+ * or the latest one if that repeats and has not been stopped before this month. Pure.
+ */
+export function effectiveOf(rows: BudgetRow[], month: string): EffectiveRow | null {
+  const latest = rows[rows.length - 1];
+  if (!latest) return null;
+  if (latest.periodStart === periodOf(month)) return { ...latest, inherited: false };
+  if (!latest.repeats || (latest.repeatEnd !== null && month > latest.repeatEnd)) return null;
+  return { ...latest, periodStart: periodOf(month), inherited: true };
+}
+
+function effectiveRow(db: AppDb, categoryId: number, month: string): EffectiveRow | null {
+  const rows = db
+    .select()
+    .from(budgets)
+    .where(and(eq(budgets.categoryId, categoryId), lte(budgets.periodStart, periodOf(month))))
+    .orderBy(asc(budgets.periodStart))
+    .all();
+  return effectiveOf(rows, month);
+}
+
+/** Every row that applies to a month, whichever month it was set in. */
+function effectiveRows(db: AppDb, month: string): EffectiveRow[] {
+  const byCategory = new Map<number, BudgetRow[]>();
+  for (const row of db
+    .select()
+    .from(budgets)
+    .where(lte(budgets.periodStart, periodOf(month)))
+    .orderBy(asc(budgets.periodStart))
+    .all()) {
+    byCategory.set(row.categoryId, [...(byCategory.get(row.categoryId) ?? []), row]);
+  }
+  return [...byCategory.values()]
+    .map((rows) => effectiveOf(rows, month))
+    .filter((r): r is EffectiveRow => r !== null);
+}
+
+/**
+ * How a cap stands. In the current month, where spending would be at an even pace, and where the
+ * month looks set to end: the biggest single day counts once, since rent paid on the 1st does not
+ * happen again tomorrow, and only the rest is extended to the end of the month. Pure.
+ */
+export function capOutlook(input: {
+  availableMinor: number;
+  spentMinor: number;
+  /** The most spent in the category on one day this month. */
+  biggestDayMinor: number;
+  month: string;
+  today: string;
+}): { status: CapStatus; expectedMinor: number | null; projectedMinor: number | null } {
+  const { availableMinor, spentMinor, biggestDayMinor, month, today } = input;
+  const over = spentMinor > availableMinor;
+  const full = spentMinor === availableMinor && availableMinor > 0;
+  const settled: CapStatus = over ? "over" : full ? "full" : "ok";
+  if (today.slice(0, 7) !== month) {
+    return { status: settled, expectedMinor: null, projectedMinor: null };
+  }
+  const day = Number(today.slice(8, 10));
+  const days = Number(lastOfMonth(month).slice(8, 10));
+  const expectedMinor = Math.round((Math.max(0, availableMinor) * day) / days);
+  if (day < MIN_DAYS_FOR_PROJECTION) {
+    return { status: settled, expectedMinor, projectedMinor: null };
+  }
+  const biggest = Math.max(0, Math.min(biggestDayMinor, spentMinor));
+  const projectedMinor = Math.round(biggest + ((spentMinor - biggest) * days) / day);
+  const status = settled === "ok" && projectedMinor > availableMinor ? "risk" : settled;
+  return { status, expectedMinor, projectedMinor };
+}
+
+function biggestDay(db: AppDb, categoryId: number, month: string, environment: string): number {
+  const { rows } = summarize(db, {
+    from: firstOfMonth(month),
+    to: lastOfMonth(month),
+    groupBy: "day",
+    category: categoryId,
+    includeTransfers: false,
+    includePending: true,
+    fill: false,
+    environment,
+  });
+  return rows.reduce((most, r) => Math.max(most, r.spendingMinor), 0);
+}
+
+function capHistory(
+  db: AppDb,
+  categoryId: number,
+  month: string,
+  environment: string,
+): CapHistoryPoint[] {
+  return Array.from({ length: HISTORY_MONTHS }, (_, i) => {
+    const m = addMonths(month, i - HISTORY_MONTHS + 1);
+    return {
+      month: m,
+      spentMinor: categorySpending(db, categoryId, m, environment),
+      capMinor: effectiveRow(db, categoryId, m)?.amountMinor ?? null,
+    };
+  });
+}
+
+/** Spending with no cap, with what the three months before averaged, as a starting point. */
+function uncappedCategories(
+  db: AppDb,
+  month: string,
+  environment: string,
+  covered: (id: number) => boolean,
+): UncappedCategory[] {
+  const base = {
+    groupBy: "category" as const,
+    includeTransfers: false,
+    includePending: true,
+    fill: false,
+    environment,
+  };
+  const now = summarize(db, { ...base, from: firstOfMonth(month), to: lastOfMonth(month) }).rows;
+  const before = summarize(db, {
+    ...base,
+    from: firstOfMonth(addMonths(month, -3)),
+    to: lastOfMonth(addMonths(month, -1)),
+  }).rows;
+  const found = new Map<number, UncappedCategory>();
+  for (const row of [...now, ...before]) {
+    const id = Number(row.key);
+    if (id === 0 || covered(id) || found.has(id)) continue;
+    found.set(id, {
+      categoryId: id,
+      label: row.label,
+      color: row.color ?? null,
+      spentMinor: now.find((r) => r.key === row.key)?.spendingMinor ?? 0,
+      averageMinor: Math.round((before.find((r) => r.key === row.key)?.spendingMinor ?? 0) / 3),
+    });
+  }
+  return [...found.values()]
+    .filter((c) => c.spentMinor > 0 || c.averageMinor > 0)
+    .sort((a, b) => Math.max(b.spentMinor, b.averageMinor) - Math.max(a.spentMinor, a.averageMinor))
+    .slice(0, UNCAPPED_SHOWN);
+}
 
 /** Whole months from one month through another, counting both, at least 1. */
 export function monthsThrough(from: string, to: string): number {
@@ -92,11 +270,7 @@ function carryInto(
   // Five years back is far more than any carried amount needs.
   if (depth >= 60) return 0;
   const prevMonth = addMonths(month, -1);
-  const prev = db
-    .select()
-    .from(budgets)
-    .where(and(eq(budgets.categoryId, categoryId), eq(budgets.periodStart, periodOf(prevMonth))))
-    .get();
+  const prev = effectiveRow(db, categoryId, prevMonth);
   if (!prev || prev.rollover === "off") return 0;
   const end =
     prev.amountMinor +
@@ -105,7 +279,12 @@ function carryInto(
   return prev.rollover === "leftover" ? Math.max(0, end) : end;
 }
 
-function toDto(db: AppDb, row: BudgetRow, environment: string): BudgetDto {
+function toDto(
+  db: AppDb,
+  row: BudgetRow & { inherited?: boolean },
+  environment: string,
+  today: string = new Date().toISOString().slice(0, 10),
+): BudgetDto {
   const month = row.periodStart.slice(0, 7);
   const category = db.select().from(categories).where(eq(categories.id, row.categoryId)).get()!;
   const spentMinor = categorySpending(db, row.categoryId, month, environment);
@@ -141,6 +320,16 @@ function toDto(db: AppDb, row: BudgetRow, environment: string): BudgetDto {
     percentUsed: availableMinor > 0 ? Math.round((spentMinor / availableMinor) * 100) : 0,
     overspent: spentMinor > availableMinor,
     fund,
+    repeats: row.repeats,
+    inherited: row.inherited ?? false,
+    ...capOutlook({
+      availableMinor,
+      spentMinor,
+      biggestDayMinor:
+        today.slice(0, 7) === month ? biggestDay(db, row.categoryId, month, environment) : 0,
+      month,
+      today,
+    }),
   };
 }
 
@@ -159,21 +348,37 @@ function byId(db: AppDb, id: number): BudgetRow {
   return row;
 }
 
-/** The budgets of one month with what has been spent against each. Archived categories are hidden. */
-export function budgetMonth(db: AppDb, month: string, environment: string): BudgetMonth {
+/**
+ * The caps of one month with what has been spent against each. Archived categories are hidden.
+ * `detail` adds each cap's recent months and the categories with no cap.
+ */
+export function budgetMonth(
+  db: AppDb,
+  month: string,
+  environment: string,
+  options: { today?: string | undefined; detail?: boolean } = {},
+): BudgetMonth {
   requireMonth(month);
-  const rows = db
-    .select({ budget: budgets })
-    .from(budgets)
-    .innerJoin(categories, eq(budgets.categoryId, categories.id))
-    .where(and(eq(budgets.periodStart, periodOf(month)), eq(categories.active, true)))
-    .orderBy(asc(categories.name))
-    .all();
-
-  const list = rows.map((row) => toDto(db, row.budget, environment));
+  const names = new Map(
+    db
+      .select({ id: categories.id, name: categories.name, active: categories.active })
+      .from(categories)
+      .all()
+      .map((c) => [c.id, c] as const),
+  );
+  const list = effectiveRows(db, month)
+    .filter((row) => names.get(row.categoryId)?.active)
+    .sort((a, b) => names.get(a.categoryId)!.name.localeCompare(names.get(b.categoryId)!.name))
+    .map((row) => ({
+      ...toDto(db, row, environment, options.today),
+      ...(options.detail ? { history: capHistory(db, row.categoryId, month, environment) } : {}),
+    }));
+  // A subcategory's spending is already inside its parent's: capped too, it must not count twice.
+  const capped = new Set(list.map((b) => b.categoryId));
+  const counted = list.filter((b) => b.parentId === null || !capped.has(b.parentId));
   // What there is to spend, carried amounts included, so "left" adds up across the page.
-  const budgetedMinor = list.reduce((sum, b) => sum + b.availableMinor, 0);
-  const spentMinor = list.reduce((sum, b) => sum + b.spentMinor, 0);
+  const budgetedMinor = counted.reduce((sum, b) => sum + b.availableMinor, 0);
+  const spentMinor = counted.reduce((sum, b) => sum + b.spentMinor, 0);
 
   // Spending not covered by any budgeted category (or the subcategories of one).
   const covered = new Set<number>();
@@ -207,6 +412,14 @@ export function budgetMonth(db: AppDb, month: string, environment: string): Budg
     budgets: list,
     totals: { budgetedMinor, spentMinor, remainingMinor: budgetedMinor - spentMinor },
     unbudgetedSpendingMinor: unbudgeted,
+    ...(options.detail
+      ? {
+          uncapped: uncappedCategories(db, month, environment, (id) => {
+            const parent = parentOf.get(id) ?? null;
+            return covered.has(id) || (parent !== null && covered.has(parent));
+          }),
+        }
+      : {}),
   };
 }
 
@@ -242,6 +455,7 @@ export function createBudget(
       rollover: input.rollover ?? "off",
       fundTargetMinor: input.fundTargetMinor ?? null,
       fundTargetDate: input.fundTargetDate ?? null,
+      repeats: input.repeats ?? false,
       createdAt: now,
       updatedAt: now,
     })
@@ -253,7 +467,7 @@ export function createBudget(
 export function updateBudget(
   db: AppDb,
   id: number,
-  patch: { amountMinor?: number | undefined } & BudgetOptions,
+  patch: { amountMinor?: number | undefined; month?: string | undefined } & BudgetOptions,
   environment: string,
 ): BudgetDto {
   const row = byId(db, id);
@@ -263,10 +477,38 @@ export function updateBudget(
     fundTargetMinor:
       patch.fundTargetMinor !== undefined ? patch.fundTargetMinor : row.fundTargetMinor,
     fundTargetDate: patch.fundTargetDate !== undefined ? patch.fundTargetDate : row.fundTargetDate,
+    repeats: patch.repeats ?? row.repeats,
   };
   checkOptions(next);
+  const now = new Date().toISOString();
+  if (patch.month !== undefined) requireMonth(patch.month);
+  // Changing a month that only inherits this cap starts from there: earlier months keep theirs.
+  if (patch.month !== undefined && periodOf(patch.month) !== row.periodStart) {
+    const existing = db
+      .select({ id: budgets.id })
+      .from(budgets)
+      .where(
+        and(eq(budgets.categoryId, row.categoryId), eq(budgets.periodStart, periodOf(patch.month))),
+      )
+      .get();
+    if (existing) {
+      throw new AppError(409, "duplicate_budget", "That category has its own cap for that month.");
+    }
+    const created = db
+      .insert(budgets)
+      .values({
+        ...next,
+        categoryId: row.categoryId,
+        periodStart: periodOf(patch.month),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    return toDto(db, created, environment);
+  }
   db.update(budgets)
-    .set({ ...next, updatedAt: new Date().toISOString() })
+    .set({ ...next, repeatEnd: next.repeats ? null : row.repeatEnd, updatedAt: now })
     .where(eq(budgets.id, id))
     .run();
   return toDto(db, byId(db, id), environment);
@@ -277,6 +519,45 @@ export function deleteBudget(db: AppDb, id: number): void {
     throw notFound("That budget");
   }
   db.delete(budgets).where(eq(budgets.id, id)).run();
+}
+
+/**
+ * Takes a cap away from a month on. A cap set for that month alone just goes, and whatever repeating
+ * cap it replaced applies again. Anything repeating stops there: earlier months keep their caps.
+ */
+export function stopBudget(db: AppDb, id: number, month: string): void {
+  requireMonth(month);
+  const row = byId(db, id);
+  const period = periodOf(month);
+  if (row.periodStart === period && !row.repeats) {
+    db.delete(budgets).where(eq(budgets.id, id)).run();
+    return;
+  }
+  db.transaction((tx) => {
+    const fromHere = tx
+      .select()
+      .from(budgets)
+      .where(and(eq(budgets.categoryId, row.categoryId), gte(budgets.periodStart, period)))
+      .all();
+    for (const later of fromHere) {
+      if (later.repeats || later.periodStart === period) {
+        tx.delete(budgets).where(eq(budgets.id, later.id)).run();
+      }
+    }
+    const earlier = tx
+      .select()
+      .from(budgets)
+      .where(and(eq(budgets.categoryId, row.categoryId), lt(budgets.periodStart, period)))
+      .orderBy(asc(budgets.periodStart))
+      .all()
+      .at(-1);
+    if (earlier?.repeats && (earlier.repeatEnd === null || earlier.repeatEnd >= month)) {
+      tx.update(budgets)
+        .set({ repeatEnd: addMonths(month, -1), updatedAt: new Date().toISOString() })
+        .where(eq(budgets.id, earlier.id))
+        .run();
+    }
+  });
 }
 
 /**
@@ -293,32 +574,21 @@ export function copyBudgets(
   if (fromMonth === toMonth) {
     throw new AppError(400, "invalid_copy", "Choose a different month to copy from.");
   }
-  const source = db
-    .select({
-      categoryId: budgets.categoryId,
-      amountMinor: budgets.amountMinor,
-      rollover: budgets.rollover,
-      fundTargetMinor: budgets.fundTargetMinor,
-      fundTargetDate: budgets.fundTargetDate,
-      active: categories.active,
-    })
-    .from(budgets)
-    .innerJoin(categories, eq(budgets.categoryId, categories.id))
-    .where(eq(budgets.periodStart, periodOf(fromMonth)))
-    .all();
+  const active = new Map(
+    db
+      .select({ id: categories.id, active: categories.active })
+      .from(categories)
+      .all()
+      .map((c) => [c.id, c.active] as const),
+  );
+  const source = effectiveRows(db, fromMonth);
+  const already = new Set(effectiveRows(db, toMonth).map((r) => r.categoryId));
   const now = new Date().toISOString();
   let created = 0;
   let skipped = 0;
   db.transaction((tx) => {
     for (const row of source) {
-      const exists = tx
-        .select({ id: budgets.id })
-        .from(budgets)
-        .where(
-          and(eq(budgets.categoryId, row.categoryId), eq(budgets.periodStart, periodOf(toMonth))),
-        )
-        .get();
-      if (exists || !row.active) {
+      if (already.has(row.categoryId) || !active.get(row.categoryId)) {
         skipped += 1;
         continue;
       }
