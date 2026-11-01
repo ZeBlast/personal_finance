@@ -58,11 +58,11 @@ export function YearMonthsTable({
             >
               <div className="space-y-0.5" aria-hidden="true">
                 <div
-                  className="h-1.5 rounded-sm bg-green-600 dark:bg-green-400"
+                  className="pf-grow-x h-1.5 rounded-sm bg-green-600 transition-[width] duration-500 dark:bg-green-400"
                   style={{ width: `${(m.incomeMinor / top) * 100}%` }}
                 />
                 <div
-                  className="h-1.5 rounded-sm bg-red-500 dark:bg-red-400"
+                  className="pf-grow-x h-1.5 rounded-sm bg-red-500 transition-[width] duration-500 dark:bg-red-400"
                   style={{ width: `${(m.spendingMinor / top) * 100}%` }}
                 />
               </div>

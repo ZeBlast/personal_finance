@@ -44,26 +44,28 @@ export function App() {
         <DemoBanner />
         <main id="main" tabIndex={-1} className="flex-1 overflow-auto p-6 outline-none">
           <PageErrorBoundary resetKey={pathname}>
-            <Routes>
-              {areas.flatMap((area) =>
-                area.sections.map(({ path, Page }) => (
-                  <Route
-                    key={path}
-                    path={path}
-                    element={
-                      <>
-                        <SectionTabs area={area} />
-                        <Page />
-                      </>
-                    }
-                  />
-                )),
-              )}
-              {Object.entries(LEGACY_PATHS).map(([from, to]) => (
-                <Route key={from} path={from} element={<MovedTo to={to} />} />
-              ))}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <div key={pathname} className="pf-fade-in">
+              <Routes>
+                {areas.flatMap((area) =>
+                  area.sections.map(({ path, Page }) => (
+                    <Route
+                      key={path}
+                      path={path}
+                      element={
+                        <>
+                          <SectionTabs area={area} />
+                          <Page />
+                        </>
+                      }
+                    />
+                  )),
+                )}
+                {Object.entries(LEGACY_PATHS).map(([from, to]) => (
+                  <Route key={from} path={from} element={<MovedTo to={to} />} />
+                ))}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </div>
           </PageErrorBoundary>
         </main>
       </div>

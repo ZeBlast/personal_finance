@@ -209,7 +209,7 @@ function DashboardView({
       {editing && (
         <div
           role="status"
-          className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100"
+          className="pf-fade-in rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100"
         >
           <strong>Editing your dashboard.</strong> Drag a widget by its title to move it, and drag
           any edge or corner to resize it. Everything snaps to the grid. Press <strong>Done</strong>{" "}

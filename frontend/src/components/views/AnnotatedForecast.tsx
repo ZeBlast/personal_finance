@@ -119,9 +119,10 @@ export function AnnotatedForecast({
           )}
           <path
             d={line}
+            pathLength={1}
             fill="none"
             strokeWidth={2}
-            className="stroke-blue-600 dark:stroke-blue-400"
+            className="pf-draw stroke-blue-600 dark:stroke-blue-400"
           />
           {days.map((d, i) =>
             d.events.length === 0 ? null : (
@@ -132,7 +133,7 @@ export function AnnotatedForecast({
                 cy={y(d.balanceMinor)}
                 r={4}
                 strokeWidth={2}
-                className={`stroke-white dark:stroke-slate-900 ${d.changeMinor < 0 ? "fill-red-600 dark:fill-red-400" : "fill-green-600 dark:fill-green-400"}`}
+                className={`pf-fade-late stroke-white dark:stroke-slate-900 ${d.changeMinor < 0 ? "fill-red-600 dark:fill-red-400" : "fill-green-600 dark:fill-green-400"}`}
               />
             ),
           )}
@@ -143,7 +144,7 @@ export function AnnotatedForecast({
               textAnchor={lowOnRight ? "end" : "start"}
               strokeWidth={3}
               style={{ paintOrder: "stroke" }}
-              className="fill-slate-900 stroke-white text-xs font-semibold tabular-nums dark:fill-slate-100 dark:stroke-slate-900"
+              className="pf-fade-late fill-slate-900 stroke-white text-xs font-semibold tabular-nums dark:fill-slate-100 dark:stroke-slate-900"
             >
               Lowest {money(forecast.lowest.balanceMinor)}, {formatDay(forecast.lowest.date)}
             </text>

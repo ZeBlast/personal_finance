@@ -133,15 +133,33 @@ export function nextFreeY(widgets: PlacedWidget[]): number {
   return widgets.filter((w) => w.enabled).reduce((bottom, w) => Math.max(bottom, w.y + w.h), 0);
 }
 
-/** Puts a widget at the bottom of the dashboard with its default size and settings. */
+/**
+ * Where a new widget goes: beside the last row if it fits there, so small ones line up instead of
+ * stacking in a column, otherwise on a new row below everything. Pure.
+ */
+export function nextFreeSpot(size: { w: number; h: number }, existing: PlacedWidget[]): Rect {
+  const placed = existing.filter((w) => w.enabled);
+  const bottom = nextFreeY(placed);
+  if (placed.length > 0) {
+    const y = Math.max(...placed.map((w) => w.y));
+    for (let x = 0; x + size.w <= GRID_COLUMNS; x += 1) {
+      const spot = { x, y, ...size };
+      if (!placed.some((w) => overlaps(spot, w))) return spot;
+    }
+  }
+  return { x: 0, y: bottom, ...size };
+}
+
+/** Puts a widget in the next free spot with its default size and settings. */
 export function placeNew(widget: AnyWidget, existing: PlacedWidget[]): PlacedWidget {
   return {
     key: newKey(),
     widgetType: widget.id,
     enabled: true,
-    x: 0,
-    y: nextFreeY(existing),
-    ...toGrid(widget.defaultSize),
-    config: { ...(widget.defaultConfig ?? {}) },
+    ...nextFreeSpot(toGrid(widget.defaultSize), existing),
+    config: {
+      ...(widget.defaultConfig ?? {}),
+      ...(widget.headerless ? { _hideHeader: true } : {}),
+    },
   };
 }

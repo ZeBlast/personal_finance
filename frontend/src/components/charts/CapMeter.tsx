@@ -46,7 +46,7 @@ export function CapMeter({
       <div className="absolute inset-x-0 top-1 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         {projectedMinor !== null && projectedMinor > spent && (
           <div
-            className="absolute inset-y-0 left-0 opacity-30"
+            className="absolute inset-y-0 left-0 opacity-30 transition-[width] duration-500"
             style={{ width: at(projectedMinor), backgroundColor: fill }}
           />
         )}
@@ -56,7 +56,7 @@ export function CapMeter({
         />
         {spent > cap && (
           <div
-            className="absolute inset-y-0"
+            className="absolute inset-y-0 transition-[left,width] duration-500"
             style={{ left: at(cap), width: at(spent - cap), backgroundImage: OVER_STRIPES }}
           />
         )}
@@ -65,7 +65,7 @@ export function CapMeter({
       {domain > cap && (
         <div
           aria-hidden="true"
-          className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-slate-800 dark:bg-slate-100"
+          className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-slate-800 transition-[left] duration-500 dark:bg-slate-100"
           style={{ left: at(cap) }}
         />
       )}
@@ -73,7 +73,7 @@ export function CapMeter({
         <div
           aria-hidden="true"
           data-testid="pace-mark"
-          className="absolute top-0 h-1.5 w-0.5 -translate-x-1/2 bg-slate-500 dark:bg-slate-300"
+          className="absolute top-0 h-1.5 w-0.5 -translate-x-1/2 bg-slate-500 transition-[left] duration-500 dark:bg-slate-300"
           style={{ left: at(expectedMinor) }}
         />
       )}
@@ -127,7 +127,7 @@ export function CapHistoryChart({ history }: { history: NonNullable<Budget["hist
               width={barWidth}
               height={height - y(h.spentMinor)}
               rx={1.5}
-              className={over ? "fill-red-500" : "fill-slate-300 dark:fill-slate-600"}
+              className={`pf-grow-up ${over ? "fill-red-500" : "fill-slate-300 dark:fill-slate-600"}`}
             />
             {h.capMinor !== null && (
               <line

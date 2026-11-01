@@ -88,6 +88,8 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
    * need its own edge. Anyone can override it for a placed copy, in its settings.
    */
   framed?: boolean;
+  /** Starts with its title hidden, for a widget whose content already says what it is. */
+  headerless?: boolean;
   /** Allow only one copy on the dashboard. */
   singleton?: boolean;
   /** Values for every field in `configFields`. */

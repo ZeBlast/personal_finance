@@ -1,4 +1,5 @@
 import { AlertTriangle, Check, CircleDot } from "lucide-react";
+import { AnimatedNumber } from "../components/common/AnimatedNumber";
 import { Link } from "react-router-dom";
 import { useBadges } from "../components/layout/NavBadge";
 import { useApi } from "../hooks/useApi";
@@ -73,7 +74,7 @@ export default defineWidget({
                 <p
                   className={`text-4xl font-semibold tracking-tight tabular-nums ${b.shortMinor > 0 ? "text-red-700 dark:text-red-400" : ""}`}
                 >
-                  {money(b.safeToSpendMinor)}
+                  <AnimatedNumber value={b.safeToSpendMinor} format={money} />
                 </p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                   safe to spend until {formatDay(b.until)}

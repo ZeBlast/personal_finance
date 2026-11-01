@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { CapHistoryChart, CapMeter, CapStatusLabel } from "../components/charts/CapMeter";
+import { AnimatedNumber } from "../components/common/AnimatedNumber";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { useApi } from "../hooks/useApi";
@@ -420,7 +421,7 @@ export function BudgetsPage() {
                 <>
                   <p className="text-sm text-slate-600 dark:text-slate-300">
                     <span className="text-lg font-semibold text-slate-900 tabular-nums dark:text-slate-100">
-                      {money(data.totals.spentMinor)}
+                      <AnimatedNumber value={data.totals.spentMinor} format={money} />
                     </span>{" "}
                     of <span className="tabular-nums">{money(data.totals.budgetedMinor)}</span> in
                     caps,{" "}

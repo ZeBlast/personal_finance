@@ -1,3 +1,4 @@
+import { AnimatedNumber } from "../components/common/AnimatedNumber";
 import { useApi } from "../hooks/useApi";
 import { formatMinor } from "../lib/money";
 import { timeAgo } from "../lib/time";
@@ -33,7 +34,12 @@ export default defineWidget({
           <div className={compact ? "flex h-full flex-col gap-1" : "space-y-3"}>
             <Stat
               label="Net worth"
-              value={formatMinor(o.netWorthMinor, o.currency)}
+              value={
+                <AnimatedNumber
+                  value={o.netWorthMinor}
+                  format={(n) => formatMinor(n, o.currency)}
+                />
+              }
               tone={o.netWorthMinor < 0 ? "bad" : undefined}
             />
             <div>
@@ -42,11 +48,11 @@ export default defineWidget({
                 aria-hidden="true"
               >
                 <div
-                  className="bg-green-600"
+                  className="bg-green-600 transition-[width] duration-500"
                   style={{ width: `${total > 0 ? (o.assetsMinor / total) * 100 : 0}%` }}
                 />
                 <div
-                  className="bg-red-600"
+                  className="bg-red-600 transition-[width] duration-500"
                   style={{ width: `${total > 0 ? (o.liabilitiesMinor / total) * 100 : 0}%` }}
                 />
               </div>

@@ -48,11 +48,11 @@ function MonthBars({
             width={Math.max(1, w - 2)}
             height={h}
             rx={1}
-            className={
+            className={`pf-grow-up ${
               i === values.length - 1
                 ? "fill-blue-600 dark:fill-blue-400"
                 : "fill-slate-300 dark:fill-slate-600"
-            }
+            }`}
           >
             <title>{`${monthLabel(months[i]!)}: ${money(v)}`}</title>
           </rect>

@@ -83,8 +83,12 @@ export function SpendingHeatmap({
             ))}
           </div>
           <div className="flex gap-[3px]" onMouseLeave={() => setHover(null)}>
-            {grid.map((week) => (
-              <div key={week[0]!.date} className="flex flex-col gap-[3px]">
+            {grid.map((week, i) => (
+              <div
+                key={week[0]!.date}
+                className="pf-fade-stagger flex flex-col gap-[3px]"
+                style={{ animationDelay: `${(i / grid.length) * 450}ms` }}
+              >
                 {week.map((day) =>
                   day.future ? (
                     <span key={day.date} className="h-3 w-3" />
@@ -137,7 +141,7 @@ export function SpendingHeatmap({
                 </span>
                 <span className="h-2 flex-1 overflow-hidden rounded-sm bg-slate-100 dark:bg-slate-800">
                   <span
-                    className="block h-full rounded-sm bg-blue-600 dark:bg-blue-400"
+                    className="pf-grow-x block h-full rounded-sm bg-blue-600 transition-[width] duration-500 dark:bg-blue-400"
                     style={{ width: `${(a.averageMinor / topAverage) * 100}%` }}
                   />
                 </span>

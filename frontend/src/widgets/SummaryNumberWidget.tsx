@@ -1,3 +1,4 @@
+import { AnimatedNumber } from "../components/common/AnimatedNumber";
 import { useMemo } from "react";
 import { useApi } from "../hooks/useApi";
 import { summaryPath } from "../lib/analytics";
@@ -124,7 +125,11 @@ export default defineWidget({
             {label}, {period.label}
           </div>
           <div className="text-2xl font-semibold tabular-nums">
-            {formatMetric(config.metric, value)}
+            {value === null ? (
+              formatMetric(config.metric, value)
+            ) : (
+              <AnimatedNumber value={value} format={(n) => formatMetric(config.metric, n)} />
+            )}
           </div>
           {config.compare && change !== null && (
             <div

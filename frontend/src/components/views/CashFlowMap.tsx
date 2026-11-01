@@ -131,7 +131,7 @@ export function CashFlowMap({
         aria-label={`Money in ${money(model.incomeMinor)}, money out ${money(model.spendingMinor)}. ${targets.map((t) => `${t.label} ${money(t.amountMinor)}`).join(", ")}.`}
         width={width}
         height={drawn}
-        className="block"
+        className="pf-reveal-x block"
       >
         {sources.map((s, i) => (
           <g key={s.key}>
