@@ -44,7 +44,8 @@ export function App() {
         <DemoBanner />
         <main id="main" tabIndex={-1} className="flex-1 overflow-auto p-6 outline-none">
           <PageErrorBoundary resetKey={pathname}>
-            <div key={pathname} className="pf-fade-in">
+            {/* Full height, because pages such as the calendar size themselves to fill the window. */}
+            <div key={pathname} className="pf-fade-in h-full">
               <Routes>
                 {areas.flatMap((area) =>
                   area.sections.map(({ path, Page }) => (
