@@ -1,4 +1,5 @@
-import { niceMax, ticks } from "./math";
+import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
+import { drawnSize, niceMax, ticks } from "./math";
 
 export interface ColumnSeries {
   key: string;
@@ -13,8 +14,8 @@ export interface ColumnGroup {
   values: number[];
 }
 
-const WIDTH = 480;
-const HEIGHT = 200;
+const DEFAULT_WIDTH = 480;
+const DEFAULT_HEIGHT = 200;
 const LEFT = 52;
 const RIGHT = 8;
 const TOP = 10;
@@ -32,6 +33,7 @@ export function ColumnChart({
   formatAxis,
   colorFor,
   fit = false,
+  drawToWidth = false,
 }: {
   series: ColumnSeries[];
   groups: ColumnGroup[];
@@ -43,15 +45,25 @@ export function ColumnChart({
    * growing with its width. For a dashboard widget that may be short and wide.
    */
   fit?: boolean;
+  /**
+   * Draw at the real width in pixels rather than scaling one drawing up or down, so its text stays
+   * the same size however wide it is. Its height then follows, within limits.
+   */
+  drawToWidth?: boolean;
 }) {
+  const measured = useMeasuredWidth();
+  const { width, height } = drawToWidth
+    ? drawnSize(measured.width)
+    : { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+  const labelClass = drawToWidth ? "fill-slate-500 text-[11px]" : "fill-slate-500 text-[9px]";
   const all = groups.flatMap((g) => g.values);
   const top = niceMax(Math.max(0, ...all));
   const lowest = Math.min(0, ...all);
   const bottom = lowest < 0 ? -niceMax(-lowest) : 0;
   const span = top - bottom || 1;
 
-  const plotW = WIDTH - LEFT - RIGHT;
-  const plotH = HEIGHT - TOP - BOTTOM;
+  const plotW = width - LEFT - RIGHT;
+  const plotH = height - TOP - BOTTOM;
   const y = (value: number): number => TOP + ((top - value) / span) * plotH;
   const zero = y(0);
 
@@ -68,9 +80,9 @@ export function ColumnChart({
     .join("; ");
 
   return (
-    <div className={fit ? "flex h-full min-h-0 flex-col" : undefined}>
+    <div ref={measured.ref} className={fit ? "flex h-full min-h-0 flex-col" : undefined}>
       <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={summary || "No data"}
         className={fit ? "min-h-0 w-full flex-1" : "h-auto w-full"}
@@ -79,25 +91,20 @@ export function ColumnChart({
           <g key={value}>
             <line
               x1={LEFT}
-              x2={WIDTH - RIGHT}
+              x2={width - RIGHT}
               y1={y(value)}
               y2={y(value)}
               className="stroke-slate-200 dark:stroke-slate-700"
               strokeWidth="1"
             />
-            <text
-              x={LEFT - 6}
-              y={y(value) + 3}
-              textAnchor="end"
-              className="fill-slate-500 text-[9px]"
-            >
+            <text x={LEFT - 6} y={y(value) + 3} textAnchor="end" className={labelClass}>
               {axis(value)}
             </text>
           </g>
         ))}
         <line
           x1={LEFT}
-          x2={WIDTH - RIGHT}
+          x2={width - RIGHT}
           y1={zero}
           y2={zero}
           className="stroke-slate-400"
@@ -130,9 +137,9 @@ export function ColumnChart({
               })}
               <text
                 x={groupX + groupW / 2}
-                y={HEIGHT - 8}
+                y={height - 8}
                 textAnchor="middle"
-                className="fill-slate-500 text-[9px]"
+                className={labelClass}
               >
                 {group.label}
               </text>

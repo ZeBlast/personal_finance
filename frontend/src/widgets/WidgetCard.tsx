@@ -82,8 +82,12 @@ function useContentHeight(report: ((pixels: number) => void) | undefined) {
     const observer = new ResizeObserver(() => {
       const header = outer.querySelector("header");
       const frame = outer.offsetHeight - outer.clientHeight;
+      const body = inner.parentElement ? getComputedStyle(inner.parentElement) : null;
+      const padding = body ? parseFloat(body.paddingTop) + parseFloat(body.paddingBottom) : 0;
       const pixels =
-        Math.ceil(inner.getBoundingClientRect().height) + (header?.offsetHeight ?? 0) + frame;
+        Math.ceil(inner.getBoundingClientRect().height + padding) +
+        (header?.offsetHeight ?? 0) +
+        frame;
       clearTimeout(timer);
       if (pixels >= last) {
         last = pixels;

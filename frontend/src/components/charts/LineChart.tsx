@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, type PointerEvent } from "react";
-import { fraction, paddedRange, segmentsOf } from "./math";
+import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
+import { drawnSize, fraction, paddedRange, segmentsOf } from "./math";
 
 export interface LinePoint {
   /** `YYYY-MM-DD`. */
@@ -20,8 +21,6 @@ const LEFT = 52;
 const RIGHT = 12;
 const TOP = 10;
 const BOTTOM = 24;
-const PLOT_W = WIDTH - LEFT - RIGHT;
-const PLOT_H = HEIGHT - TOP - BOTTOM;
 
 const dayMs = (date: string): number => Date.parse(`${date}T12:00:00Z`);
 
@@ -60,6 +59,8 @@ export function pointNear(points: LinePoint[], date: string): LinePoint | undefi
 }
 
 interface Layout {
+  width: number;
+  height: number;
   firstTime: number;
   lastTime: number;
   low: number;
@@ -73,7 +74,7 @@ interface Layout {
   lookup: Map<string, { points: LinePoint[]; times: number[] }>;
 }
 
-function layoutOf(shown: LineSeries[]): Layout | null {
+function layoutOf(shown: LineSeries[], width: number, height: number): Layout | null {
   let firstTime = Infinity;
   let lastTime = -Infinity;
   let min = Infinity;
@@ -96,10 +97,12 @@ function layoutOf(shown: LineSeries[]): Layout | null {
   }
   if (days.size === 0) return null;
   const { low, high } = paddedRange(min, max);
-  const x = (time: number) => LEFT + fraction(time, firstTime, lastTime) * PLOT_W;
-  const y = (value: number) => TOP + (1 - fraction(value, low, high)) * PLOT_H;
+  const x = (time: number) => LEFT + fraction(time, firstTime, lastTime) * (width - LEFT - RIGHT);
+  const y = (value: number) => TOP + (1 - fraction(value, low, high)) * (height - TOP - BOTTOM);
   const dates = [...days].sort();
   return {
+    width,
+    height,
     firstTime,
     lastTime,
     low,
@@ -122,14 +125,16 @@ const ChartBody = memo(function ChartBody({
   axis,
   gapDays,
   showDots,
+  labelClass,
 }: {
+  labelClass: string;
   shown: LineSeries[];
   layout: Layout;
   axis: (value: number) => string;
   gapDays: number | undefined;
   showDots: boolean;
 }) {
-  const { x, y, low, high, firstTime, lastTime } = layout;
+  const { width, height, x, y, low, high, firstTime, lastTime } = layout;
   const gridValues = [0, 1, 2, 3].map((i) => low + ((high - low) * i) / 3);
   return (
     <>
@@ -137,18 +142,13 @@ const ChartBody = memo(function ChartBody({
         <g key={value}>
           <line
             x1={LEFT}
-            x2={WIDTH - RIGHT}
+            x2={width - RIGHT}
             y1={y(value)}
             y2={y(value)}
             className="stroke-slate-200 dark:stroke-slate-700"
             strokeWidth="1"
           />
-          <text
-            x={LEFT - 6}
-            y={y(value) + 3}
-            textAnchor="end"
-            className="fill-slate-500 text-[9px]"
-          >
+          <text x={LEFT - 6} y={y(value) + 3} textAnchor="end" className={labelClass}>
             {axis(value)}
           </text>
         </g>
@@ -202,20 +202,15 @@ const ChartBody = memo(function ChartBody({
         );
       })}
       <text
-        x={firstTime === lastTime ? LEFT + PLOT_W / 2 : LEFT}
-        y={HEIGHT - 8}
+        x={firstTime === lastTime ? (LEFT + width - RIGHT) / 2 : LEFT}
+        y={height - 8}
         textAnchor={firstTime === lastTime ? "middle" : "start"}
-        className="fill-slate-500 text-[9px]"
+        className={labelClass}
       >
         {SHORT_DATE.format(firstTime)}
       </text>
       {firstTime !== lastTime && (
-        <text
-          x={WIDTH - RIGHT}
-          y={HEIGHT - 8}
-          textAnchor="end"
-          className="fill-slate-500 text-[9px]"
-        >
+        <text x={width - RIGHT} y={height - 8} textAnchor="end" className={labelClass}>
           {SHORT_DATE.format(lastTime)}
         </text>
       )}
@@ -239,8 +234,14 @@ export function LineChart({
   gapDays,
   dots,
   maxHeight,
+  drawToWidth = false,
 }: {
   series: LineSeries[];
+  /**
+   * Draw at the real width in pixels rather than scaling one drawing up or down, so its text and
+   * lines stay the same size however wide it is. Its height then follows, within limits.
+   */
+  drawToWidth?: boolean;
   /** Caps the chart's height in pixels (it otherwise grows with its width), e.g. inside a card. */
   maxHeight?: number;
   /** Draw a dot on every point. By default only when there are few enough for that to read well. */
@@ -256,7 +257,11 @@ export function LineChart({
   const frame = useRef(0);
 
   const shown = useMemo(() => series.filter((s) => !hidden.has(s.key)), [series, hidden]);
-  const layout = useMemo(() => layoutOf(shown), [shown]);
+  const measured = useMeasuredWidth();
+  const { width, height } = drawToWidth
+    ? drawnSize(measured.width)
+    : { width: WIDTH, height: HEIGHT };
+  const layout = useMemo(() => layoutOf(shown, width, height), [shown, width, height]);
   const showDots = dots ?? shown.every((s) => s.points.length <= 40);
   const axis = formatAxis ?? format;
 
@@ -280,7 +285,7 @@ export function LineChart({
       if (!layout) return;
       const box = e.currentTarget.getBoundingClientRect();
       if (box.width === 0) return;
-      const vx = ((e.clientX - box.left) / box.width) * WIDTH;
+      const vx = ((e.clientX - box.left) / box.width) * layout.width;
       cancelAnimationFrame(frame.current);
       frame.current = requestAnimationFrame(() => {
         const i = nearestIndex(layout.dateX, vx);
@@ -294,7 +299,13 @@ export function LineChart({
     setHover(null);
   }, []);
 
-  if (!layout) return <p className="text-sm text-slate-500">No data yet.</p>;
+  if (!layout) {
+    return (
+      <div ref={measured.ref}>
+        <p className="text-sm text-slate-500">No data yet.</p>
+      </div>
+    );
+  }
 
   const toggle = (key: string) =>
     setHidden((h) => {
@@ -320,13 +331,13 @@ export function LineChart({
           return [{ s, p: l.points[nearestIndex(l.times, dayMs(hoverDate))]! }];
         });
   const hoverX = hoverDate === null ? 0 : layout.x(dayMs(hoverDate));
-  const share = hoverX / WIDTH;
+  const share = hoverX / width;
 
   return (
-    <div>
+    <div ref={measured.ref}>
       <div className="relative">
         <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={summary}
           tabIndex={0}
@@ -349,6 +360,7 @@ export function LineChart({
             axis={axis}
             gapDays={gapDays}
             showDots={showDots}
+            labelClass={drawToWidth ? "fill-slate-500 text-[11px]" : "fill-slate-500 text-[9px]"}
           />
           {hoverDate !== null && (
             <g pointerEvents="none">
@@ -356,7 +368,7 @@ export function LineChart({
                 x1={hoverX}
                 x2={hoverX}
                 y1={TOP}
-                y2={TOP + PLOT_H}
+                y2={height - BOTTOM}
                 className="stroke-slate-400 dark:stroke-slate-500"
                 strokeWidth="1"
                 strokeDasharray="3 3"

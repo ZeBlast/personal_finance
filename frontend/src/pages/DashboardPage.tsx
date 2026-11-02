@@ -170,47 +170,47 @@ function DashboardView({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <div className="@container">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+          <h1 className="mr-1 text-2xl font-semibold">Dashboard</h1>
           {switcher(editing)}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {editing ? (
-            <>
-              <button type="button" className={primaryClass} onClick={() => setAdding(true)}>
-                + Add widget
+          <div className="ml-auto flex flex-wrap gap-2">
+            {editing ? (
+              <>
+                <button type="button" className={primaryClass} onClick={() => setAdding(true)}>
+                  + Add widget
+                </button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={() => setConfirmReset(true)}
+                  disabled={dashboard.saving}
+                >
+                  Reset to default
+                </button>
+                <button
+                  type="button"
+                  className={buttonClass}
+                  onClick={dashboard.cancelEditing}
+                  disabled={dashboard.saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={primaryClass}
+                  onClick={() => void dashboard.save()}
+                  disabled={dashboard.saving}
+                >
+                  {dashboard.saving ? "Saving..." : "Done"}
+                </button>
+              </>
+            ) : (
+              <button type="button" className={buttonClass} onClick={dashboard.startEditing}>
+                Edit dashboard
               </button>
-              <button
-                type="button"
-                className={buttonClass}
-                onClick={() => setConfirmReset(true)}
-                disabled={dashboard.saving}
-              >
-                Reset to default
-              </button>
-              <button
-                type="button"
-                className={buttonClass}
-                onClick={dashboard.cancelEditing}
-                disabled={dashboard.saving}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={primaryClass}
-                onClick={() => void dashboard.save()}
-                disabled={dashboard.saving}
-              >
-                {dashboard.saving ? "Saving..." : "Done"}
-              </button>
-            </>
-          ) : (
-            <button type="button" className={buttonClass} onClick={dashboard.startEditing}>
-              Edit dashboard
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </div>
 

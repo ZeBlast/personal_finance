@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { summaryPath } from "../../lib/analytics";
 import { toDay } from "../../lib/period";
@@ -44,6 +44,20 @@ export function SpendingHeatmap({
 }) {
   const navigate = useNavigate();
   const [hover, setHover] = useState<HeatDay | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  // When there is not room for every week, show the newest ones.
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const toNewest = (): void => {
+      element.scrollLeft = element.scrollWidth;
+    };
+    toNewest();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(toNewest);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [weeks]);
   const grid = heatmapWeeks(rows, end, weeks);
   const averages = weekdayAverages(grid);
   const topAverage = Math.max(1, ...averages.map((a) => a.averageMinor));
@@ -59,57 +73,59 @@ export function SpendingHeatmap({
 
   return (
     <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-      <div className="min-w-0 max-w-full overflow-x-auto">
-        <div className="inline-grid grid-cols-[auto_1fr] gap-x-1.5">
-          <div />
-          <div className="flex gap-[3px]" aria-hidden="true">
-            {months.map((m, i) => (
-              <span
-                key={i}
-                className="h-4 w-3 overflow-visible text-[10px] whitespace-nowrap text-slate-500 dark:text-slate-400"
-              >
-                {m}
-              </span>
-            ))}
-          </div>
-          <div className="flex flex-col gap-[3px]" aria-hidden="true">
-            {DAY_LABELS.map((d, i) => (
-              <span
-                key={i}
-                className="h-3 text-[10px] leading-3 text-slate-500 dark:text-slate-400"
-              >
-                {d}
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-[3px]" onMouseLeave={() => setHover(null)}>
-            {grid.map((week, i) => (
-              <div
-                key={week[0]!.date}
-                className="pf-fade-stagger flex flex-col gap-[3px]"
-                style={{ animationDelay: `${(i / grid.length) * 450}ms` }}
-              >
-                {week.map((day) =>
-                  day.future ? (
-                    <span key={day.date} className="h-3 w-3" />
-                  ) : (
-                    <button
-                      key={day.date}
-                      type="button"
-                      data-level={day.level}
-                      aria-label={`${formatDay(day.date)}: ${money(day.spendingMinor)}`}
-                      title={`${formatDay(day.date)}: ${money(day.spendingMinor)}`}
-                      onFocus={() => setHover(day)}
-                      onMouseEnter={() => setHover(day)}
-                      onClick={() =>
-                        navigate(`/transactions?from=${day.date}&to=${day.date}&direction=out`)
-                      }
-                      className={`h-3 w-3 rounded-[3px] outline-offset-1 ${LEVELS[day.level]}`}
-                    />
-                  ),
-                )}
-              </div>
-            ))}
+      <div className="min-w-0 max-w-full">
+        <div ref={scroller} data-heatmap-weeks className="overflow-x-auto">
+          <div className="inline-grid grid-cols-[auto_1fr] gap-x-1.5">
+            <div />
+            <div className="flex gap-[3px]" aria-hidden="true">
+              {months.map((m, i) => (
+                <span
+                  key={i}
+                  className="h-4 w-3 overflow-visible text-[10px] whitespace-nowrap text-slate-500 dark:text-slate-400"
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-col gap-[3px]" aria-hidden="true">
+              {DAY_LABELS.map((d, i) => (
+                <span
+                  key={i}
+                  className="h-3 text-[10px] leading-3 text-slate-500 dark:text-slate-400"
+                >
+                  {d}
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-[3px]" onMouseLeave={() => setHover(null)}>
+              {grid.map((week, i) => (
+                <div
+                  key={week[0]!.date}
+                  className="pf-fade-stagger flex flex-col gap-[3px]"
+                  style={{ animationDelay: `${(i / grid.length) * 450}ms` }}
+                >
+                  {week.map((day) =>
+                    day.future ? (
+                      <span key={day.date} className="h-3 w-3" />
+                    ) : (
+                      <button
+                        key={day.date}
+                        type="button"
+                        data-level={day.level}
+                        aria-label={`${formatDay(day.date)}: ${money(day.spendingMinor)}`}
+                        title={`${formatDay(day.date)}: ${money(day.spendingMinor)}`}
+                        onFocus={() => setHover(day)}
+                        onMouseEnter={() => setHover(day)}
+                        onClick={() =>
+                          navigate(`/transactions?from=${day.date}&to=${day.date}&direction=out`)
+                        }
+                        className={`h-3 w-3 rounded-[3px] outline-offset-1 ${LEVELS[day.level]}`}
+                      />
+                    ),
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">

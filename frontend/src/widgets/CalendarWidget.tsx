@@ -9,7 +9,6 @@ export default defineWidget({
     "A month calendar showing what happened each day and on which account. Click a day for its transactions.",
   group: "Activity",
   framed: true,
-  fixedHeight: true,
   defaultSize: { w: 6, h: 9 },
   minSize: { w: 4, h: 6 },
   order: 90,

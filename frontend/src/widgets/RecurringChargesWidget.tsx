@@ -56,7 +56,7 @@ export default defineWidget({
         <div className="space-y-3">
           {monthly !== undefined && (
             <Stat
-              label={config.show === "in" ? "Regular deposits" : "Recurring charges"}
+              label={config.show === "in" ? "Coming in" : "Going out"}
               value={`${money(monthly)} / month`}
               note={`${active.length} active ${active.length === 1 ? "item" : "items"}`}
             />

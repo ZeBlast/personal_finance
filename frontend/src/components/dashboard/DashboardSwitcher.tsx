@@ -92,8 +92,12 @@ export function DashboardSwitcher({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2" aria-label="Dashboards">
-      <div role="tablist" aria-label="Choose a dashboard" className="flex flex-wrap gap-1">
+    <div className="contents">
+      <div
+        role="tablist"
+        aria-label="Choose a dashboard"
+        className="flex flex-wrap gap-1 @max-6xl:order-last @max-6xl:w-full"
+      >
         {list.dashboards.map((d) => (
           <button
             key={d.id}

@@ -55,7 +55,7 @@ export default defineWidget({
             series={data}
             breakdown={config.breakdown}
             // Rows are at least 60px; leave room for the title bar and the notes toggle.
-            {...(fitting ? {} : { maxHeight: Math.max(120, size.h * 60 - 60) })}
+            {...(fitting ? { drawToWidth: true } : { maxHeight: Math.max(120, size.h * 60 - 60) })}
           />
         )}
       </WidgetState>
