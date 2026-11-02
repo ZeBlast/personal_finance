@@ -261,6 +261,7 @@ On the Transactions page, tags (Pending, Paid / Paid from, Moved to / from, Ente
 - **Planning → Card bills:** set each card's statement closing day and due day (plus an optional minimum and autopay). The app works out the latest statement balance, what has been paid toward it, what is left, and the status (paid, partly paid, due, overdue). An estimate: interest, fees and pending charges can make the bank's figure differ.
 - **Planning → Subscriptions:** recurring charges with their yearly cost, price increases, and ones that seem to have stopped; mark each keep / cancel / cancelled (flags a charge that continues after you cancelled).
 - **Month report:** income, spending, savings rate, net worth change, debt paid, cashback, how each spending cap went, spending by category against the month before, and the largest purchases.
+- **Card statements:** every credit card's latest statement side by side (balance, what is left to pay, when it is due, and whether it is paid), and one card's statements in full below. The same statements open from Accounts.
 - **Year in review:** each month side by side, how often caps held, and the year's biggest categories and merchants.
 - **Cash flow:** where a month's money came from and went, as one picture.
 - **Patterns:** a calendar shaded by each day's spending, averages by weekday, and which merchants take the most and are growing.
