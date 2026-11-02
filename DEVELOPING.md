@@ -138,8 +138,10 @@ or add one with **+ Add widget**. Press **Done** to save (or **Cancel** to throw
 layout is kept between launches.
 
 Several dashboards can be kept as tabs. The app adds ready-made ones once: **Everyday**, **Budget**,
-**Cash & bills**, **Big picture** and **Spending**. They are ordinary dashboards: change them or delete
-them, and **New dashboard** can make any of them again. **Reset to default** restores a ready-made
+**Cash & bills**, **Big picture** and **Spending**. They fit the window: their rows follow what their widgets hold, and what no
+longer fits side by side stacks. Changing one's layout makes it your own, and it then stays exactly
+where you put things, like any other dashboard. Change them or delete them, and **New dashboard** can
+make any of them again. **Reset to default** restores a ready-made
 dashboard to itself, and any other to Everyday.
 
 The **Calendar** page fills the window (the month grid grows and shrinks with it) and shows each

@@ -19,6 +19,7 @@ export default defineWidget({
     "The Network tab's graph of banks, accounts, spending, income and transfers, to explore right on the dashboard.",
   group: "Activity",
   framed: true,
+  fixedHeight: true,
   defaultSize: { w: 8, h: 8 },
   minSize: { w: 4, h: 4 },
   order: 450,

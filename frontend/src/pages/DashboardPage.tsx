@@ -11,6 +11,7 @@ import type { DashboardList } from "../types/analytics";
 import { useDashboard } from "../hooks/useDashboard";
 import { GRID_COLUMNS, GRID_SCALE, nextFreeY, placeNew, toGrid } from "../widgets/layout";
 import { AddWidgetDialog } from "../widgets/AddWidgetDialog";
+import { fitLayout, isReadyMade, rowsFor } from "../widgets/fit";
 import { addDefaultViews } from "../widgets/presets";
 import { getWidget } from "../widgets/registry";
 import { WidgetCard } from "../widgets/WidgetCard";
@@ -50,11 +51,14 @@ export function gridLines(width: number): CSSProperties {
  */
 function WidgetGrid({
   layout,
+  fit,
   editing,
   onLayoutChange,
   children,
 }: {
   layout: Layout;
+  /** For a dashboard that fits the window: where things go at this width. */
+  fit?: ((width: number) => Layout) | undefined;
   editing: boolean;
   onLayoutChange: (next: Layout) => void;
   children: ReactNode;
@@ -69,7 +73,7 @@ function WidgetGrid({
       {mounted && (
         <ReactGridLayout
           width={width}
-          layout={layout}
+          layout={fit ? fit(width) : layout}
           gridConfig={{
             cols: GRID_COLUMNS,
             rowHeight: ROW_HEIGHT,
@@ -114,6 +118,7 @@ function DashboardView({
   const [adding, setAdding] = useState(false);
   const [configuring, setConfiguring] = useState<PlacedWidget | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [contentRows, setContentRows] = useState<Record<string, number>>({});
 
   if (widgets === null) {
     return (
@@ -133,6 +138,14 @@ function DashboardView({
     const minGrid = min ? toGrid(min) : { w: 2, h: 2 };
     return { i: w.key, x: w.x, y: w.y, w: w.w, h: w.h, minW: minGrid.w, minH: minGrid.h };
   });
+
+  // A ready-made dashboard fits the window until its layout is changed. Nothing here is saved, and
+  // editing shows the plan, which is what gets saved.
+  const fits = !editing && isReadyMade(widgets);
+  const noteHeight = (key: string, pixels: number): void => {
+    const rows = rowsFor(pixels, ROW_HEIGHT, MARGIN[1]);
+    setContentRows((current) => (current[key] === rows ? current : { ...current, [key]: rows }));
+  };
 
   /** Moving or resizing in edit mode updates the draft; ignored otherwise and when nothing changed. */
   function onLayoutChange(next: Layout): void {
@@ -227,12 +240,20 @@ function DashboardView({
       )}
 
       {visible.length > 0 && (
-        <WidgetGrid layout={layout} editing={editing} onLayoutChange={onLayoutChange}>
+        <WidgetGrid
+          layout={layout}
+          fit={fits ? (width) => fitLayout(visible, width, MARGIN[0], contentRows) : undefined}
+          editing={editing}
+          onLayoutChange={onLayoutChange}
+        >
           {visible.map((w) => (
             <div key={w.key}>
               <WidgetCard
                 widget={w}
                 editing={editing}
+                {...(fits
+                  ? { onContentHeight: (pixels: number) => noteHeight(w.key, pixels) }
+                  : {})}
                 onConfigure={() => setConfiguring(w)}
                 onHide={() => patch(w.key, { enabled: false })}
                 onRemove={() => update((current) => current.filter((x) => x.key !== w.key))}

@@ -10,6 +10,7 @@ export default defineWidget({
   description:
     "Your cash over the coming days, with the lowest point and every bill and paycheck marked.",
   group: "Planning",
+  fixedHeight: true,
   defaultSize: { w: 8, h: 6 },
   minSize: { w: 4, h: 4 },
   order: 8,

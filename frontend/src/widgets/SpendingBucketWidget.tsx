@@ -56,6 +56,7 @@ export default defineWidget({
   description:
     "A bucket that fills with a category's spending this month. The rim is your spending cap.",
   group: "Spending caps",
+  fixedHeight: true,
   defaultSize: { w: 3, h: 4 },
   minSize: { w: 2, h: 3 },
   order: 46,

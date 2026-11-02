@@ -40,6 +40,8 @@ interface Props {
   onRemove?: () => void;
   /** Adds another copy, for widgets that allow more than one. */
   onDuplicate?: () => void;
+  /** Asks for the height its title and content take, in pixels, for a dashboard that fits the window. */
+  onContentHeight?: (pixels: number) => void;
 }
 
 const iconButton =
@@ -62,11 +64,60 @@ function useScrollable() {
 }
 
 /**
+ * Reports how tall the content is. Growing is reported at once, so nothing is cut off. Shrinking waits
+ * a moment, so a brief loading placeholder does not close the page up only for it to open again.
+ */
+function useContentHeight(report: ((pixels: number) => void) | undefined) {
+  const article = useRef<HTMLElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const latest = useRef(report);
+  latest.current = report;
+  const active = report !== undefined;
+  useEffect(() => {
+    const inner = content.current;
+    const outer = article.current;
+    if (!active || !inner || !outer || typeof ResizeObserver === "undefined") return;
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      const header = outer.querySelector("header");
+      const frame = outer.offsetHeight - outer.clientHeight;
+      const pixels =
+        Math.ceil(inner.getBoundingClientRect().height) + (header?.offsetHeight ?? 0) + frame;
+      clearTimeout(timer);
+      if (pixels >= last) {
+        last = pixels;
+        latest.current?.(pixels);
+      } else {
+        timer = setTimeout(() => {
+          last = pixels;
+          latest.current?.(pixels);
+        }, 500);
+      }
+    });
+    observer.observe(inner);
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [active]);
+  return { article, content };
+}
+
+/**
  * One widget on the dashboard: its title (the drag handle), its content, and edit controls. Most
  * widgets sit directly on the page with nothing around them; a border is for those busy enough to
  * need one. While editing, every widget shows its edge, so its size and place on the grid are clear.
  */
-export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove, onDuplicate }: Props) {
+export function WidgetCard({
+  widget,
+  editing,
+  onConfigure,
+  onHide,
+  onRemove,
+  onDuplicate,
+  onContentHeight,
+}: Props) {
   const definition = getWidget(widget.widgetType);
   const look = readAppearance(widget.config);
   const title = look.title || (definition?.title ?? "Unavailable widget");
@@ -75,9 +126,12 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove, onD
   const framed = hasFrame(look.frame, definition?.framed);
   const size = fromGrid({ w: widget.w, h: widget.h });
   const body = useScrollable();
+  const fitting = onContentHeight !== undefined;
+  const measure = useContentHeight(onContentHeight);
 
   return (
     <article
+      ref={measure.article}
       aria-label={title}
       style={look.accent ? { borderLeft: `3px solid ${look.accent}` } : undefined}
       className={`flex h-full flex-col overflow-hidden ${
@@ -166,20 +220,24 @@ export function WidgetCard({ widget, editing, onConfigure, onHide, onRemove, onD
         {...(body.scrollable ? { tabIndex: 0 } : {})}
         className={`min-h-0 flex-1 overflow-auto ${framed || editing ? "p-3" : ""}`}
       >
-        {definition ? (
-          <WidgetErrorBoundary>
-            <definition.Component
-              config={resolveConfig(definition, widget.config)}
-              instanceId={widget.key}
-              size={size}
-            />
-          </WidgetErrorBoundary>
-        ) : (
-          <p className="text-sm text-slate-500">
-            This widget (“{widget.widgetType}”) is not available in this version of the app. Your
-            settings for it are kept.
-          </p>
-        )}
+        {/* Measuring needs a box as tall as the content; otherwise the content fills the slot. */}
+        <div ref={measure.content} className={fitting && !definition?.fixedHeight ? "" : "h-full"}>
+          {definition ? (
+            <WidgetErrorBoundary>
+              <definition.Component
+                config={resolveConfig(definition, widget.config)}
+                instanceId={widget.key}
+                size={size}
+                fitting={fitting}
+              />
+            </WidgetErrorBoundary>
+          ) : (
+            <p className="text-sm text-slate-500">
+              This widget (“{widget.widgetType}”) is not available in this version of the app. Your
+              settings for it are kept.
+            </p>
+          )}
+        </div>
       </div>
     </article>
   );
