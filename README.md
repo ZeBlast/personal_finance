@@ -4,7 +4,7 @@ A personal finance app for Windows that keeps everything on your own computer. Y
 encrypted on disk and never goes to anyone else's server.
 
 - **Accounts and transactions** from your banks (through Plaid), CSV imports, or typed in by hand
-- **Budgets, bills and a calendar** of what is coming up
+- **Spending caps, bills and a calendar** of what is coming up
 - **Goals, debts, investments** (including the TSP) and net worth over time
 - **Reports and insights**: where the money goes, subscriptions, taxes, refunds and transfers
 

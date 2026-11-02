@@ -28,8 +28,12 @@ describe("a widget's appearance", () => {
   });
 
   it("saves only what differs from the default", () => {
-    expect(appearanceConfig({ title: "", hideHeader: false, accent: "", frame: "auto" })).toEqual({});
-    expect(appearanceConfig({ title: " Bills ", hideHeader: true, accent: "#2563eb", frame: "auto" })).toEqual({
+    expect(appearanceConfig({ title: "", hideHeader: false, accent: "", frame: "auto" })).toEqual(
+      {},
+    );
+    expect(
+      appearanceConfig({ title: " Bills ", hideHeader: true, accent: "#2563eb", frame: "auto" }),
+    ).toEqual({
       _title: "Bills",
       _hideHeader: true,
       _accent: "#2563eb",

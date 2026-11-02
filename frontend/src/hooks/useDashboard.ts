@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import type { DashboardLayout, SavedWidget } from "../types/analytics";
-import { buildDefaultLayout } from "../widgets/layout";
-import { allWidgets } from "../widgets/registry";
+import { defaultLayoutFor } from "../widgets/presets";
 import type { PlacedWidget } from "../widgets/types";
 
 const toPlaced = (saved: SavedWidget): PlacedWidget => ({ ...saved, key: String(saved.id) });
@@ -24,7 +23,7 @@ const toSaved = (w: PlacedWidget): Omit<PlacedWidget, "key"> => ({
  * the draft away. The very first time (nothing saved yet), the default layout is built from the
  * widget registry and saved.
  */
-export function useDashboard(dashboardId: number) {
+export function useDashboard(dashboardId: number, name = "") {
   const query = `?dashboardId=${dashboardId}`;
   const [saved, setSaved] = useState<PlacedWidget[] | null>(null);
   const [draft, setDraft] = useState<PlacedWidget[] | null>(null);
@@ -52,7 +51,8 @@ export function useDashboard(dashboardId: number) {
           setSaved(layout.widgets.map(toPlaced));
           return;
         }
-        const defaults = buildDefaultLayout(allWidgets());
+        const defaults = await defaultLayoutFor(name);
+        if (cancelled) return;
         try {
           const stored = await put(defaults);
           if (!cancelled) setSaved(stored);
@@ -73,7 +73,7 @@ export function useDashboard(dashboardId: number) {
     return () => {
       cancelled = true;
     };
-  }, [put, query]);
+  }, [name, put, query]);
 
   const startEditing = useCallback(() => {
     setDraft((current) => current ?? (saved ? saved.map((w) => ({ ...w })) : null));
@@ -101,20 +101,20 @@ export function useDashboard(dashboardId: number) {
     }
   }, [draft, put]);
 
-  /** Replaces the dashboard with the default layout and saves it. */
+  /** Replaces the dashboard with its default layout (its preset's, if named for one) and saves it. */
   const resetToDefault = useCallback(async (): Promise<void> => {
     setSaving(true);
     setError(null);
     try {
       await api<DashboardLayout>(`/dashboard/reset${query}`, { method: "POST", body: "{}" });
-      setSaved(await put(buildDefaultLayout(allWidgets())));
+      setSaved(await put(await defaultLayoutFor(name)));
       setDraft(null);
     } catch (e) {
       setError(errorMessage(e, "Could not reset the dashboard."));
     } finally {
       setSaving(false);
     }
-  }, [put, query]);
+  }, [name, put, query]);
 
   /** Change the draft (only while editing). */
   const update = useCallback((change: (widgets: PlacedWidget[]) => PlacedWidget[]) => {

@@ -38,13 +38,13 @@ export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-interface PlannedWidget extends Rect {
+export interface PlannedWidget extends Rect {
   widgetType: string;
   config?: Record<string, string | number | boolean>;
 }
 
 /** Four headline figures, without title bars: each shows its own label. */
-const tile = (widgetType: string, x: number, config: PlannedWidget["config"] = {}) => ({
+export const tile = (widgetType: string, x: number, config: PlannedWidget["config"] = {}) => ({
   widgetType,
   x,
   y: 2,
@@ -75,27 +75,33 @@ export const DEFAULT_PLAN: readonly PlannedWidget[] = [
   { widgetType: "spending-heatmap", x: 6, y: 18, w: 6, h: 5 },
 ];
 
+/** A plan as widgets ready to place, skipping any that are not installed. Pure. */
+export function planToPlaced(plan: readonly PlannedWidget[], widgets: AnyWidget[]): PlacedWidget[] {
+  const byId = new Map(widgets.map((w) => [w.id, w]));
+  const placed: PlacedWidget[] = [];
+  for (const item of plan) {
+    const widget = byId.get(item.widgetType);
+    if (!widget) continue;
+    placed.push({
+      key: newKey(),
+      widgetType: widget.id,
+      enabled: true,
+      ...toGrid(item),
+      x: item.x * GRID_SCALE,
+      y: item.y * GRID_SCALE,
+      config: { ...(widget.defaultConfig ?? {}), ...(item.config ?? {}) },
+    });
+  }
+  return placed;
+}
+
 /**
  * The dashboard a first-time user gets: DEFAULT_PLAN (skipping any widget that is not installed),
  * then any other widget that asks for it (`defaultEnabled`), in `order`, packed left to right into
  * rows of 12 columns below it with no overlaps.
  */
 export function buildDefaultLayout(widgets: AnyWidget[]): PlacedWidget[] {
-  const byId = new Map(widgets.map((w) => [w.id, w]));
-  const placed: PlacedWidget[] = [];
-  for (const plan of DEFAULT_PLAN) {
-    const widget = byId.get(plan.widgetType);
-    if (!widget) continue;
-    placed.push({
-      key: newKey(),
-      widgetType: widget.id,
-      enabled: true,
-      ...toGrid(plan),
-      x: plan.x * GRID_SCALE,
-      y: plan.y * GRID_SCALE,
-      config: { ...(widget.defaultConfig ?? {}), ...(plan.config ?? {}) },
-    });
-  }
+  const placed = planToPlaced(DEFAULT_PLAN, widgets);
 
   const planned = new Set(DEFAULT_PLAN.map((p) => p.widgetType));
   const chosen = widgets

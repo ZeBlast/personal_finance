@@ -113,8 +113,8 @@ export default defineWidget({
       >
         {reading && (
           <div className="@container h-full">
-            <div className="flex h-full flex-col items-center gap-2 @min-[17rem]:flex-row @min-[17rem]:gap-4">
-              <div className="min-h-0 w-full flex-1 @min-[17rem]:h-full @min-[17rem]:w-auto @min-[17rem]:basis-1/2">
+            <div className="flex h-full flex-col items-center gap-2 @min-[28rem]:flex-row @min-[28rem]:gap-4">
+              <div className="min-h-0 w-full flex-1 @min-[28rem]:h-full @min-[28rem]:w-auto @min-[28rem]:basis-1/2">
                 <SpendingBucket
                   spentMinor={reading.spentMinor}
                   capMinor={reading.availableMinor}
@@ -125,7 +125,7 @@ export default defineWidget({
                   description={capReading(reading, daysLeft, money)}
                 />
               </div>
-              <div className="w-full min-w-0 shrink-0 text-center @min-[17rem]:w-auto @min-[17rem]:flex-1 @min-[17rem]:text-left">
+              <div className="w-full min-w-0 shrink-0 text-center @min-[28rem]:w-auto @min-[28rem]:flex-1 @min-[28rem]:text-left">
                 {categoryId === null ? (
                   <div className="truncate text-sm font-semibold">{reading.name}</div>
                 ) : (
@@ -148,7 +148,7 @@ export default defineWidget({
                   of {money(reading.availableMinor)}
                   {config.month === "previous" && ` in ${monthLabel(month)}`}
                 </div>
-                <div className="mt-1 flex min-h-8 flex-wrap content-start items-center justify-center gap-x-2 @min-[17rem]:justify-start">
+                <div className="mt-1 flex min-h-8 flex-wrap content-start items-center justify-center gap-x-2 @min-[28rem]:justify-start">
                   <CapStatusLabel status={reading.status} />
                   <span className="text-xs text-slate-500 dark:text-slate-400">
                     {capDetail(reading, daysLeft, money)}

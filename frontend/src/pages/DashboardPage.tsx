@@ -1,7 +1,7 @@
 import ReactGridLayout, { useContainerWidth, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ConfirmDialog } from "../components/common/Modal";
 import { DashboardSwitcher } from "../components/dashboard/DashboardSwitcher";
 import { Welcome } from "../components/onboarding/Welcome";
@@ -11,6 +11,7 @@ import type { DashboardList } from "../types/analytics";
 import { useDashboard } from "../hooks/useDashboard";
 import { GRID_COLUMNS, GRID_SCALE, nextFreeY, placeNew, toGrid } from "../widgets/layout";
 import { AddWidgetDialog } from "../widgets/AddWidgetDialog";
+import { addDefaultViews } from "../widgets/presets";
 import { getWidget } from "../widgets/registry";
 import { WidgetCard } from "../widgets/WidgetCard";
 import { WidgetSettingsDialog } from "../widgets/WidgetSettingsDialog";
@@ -101,12 +102,14 @@ const withoutId = ({ key, x, y }: PlacedWidget) => ({ id: undefined, key, x, y }
 /** One dashboard's widgets and the edit-mode controls. `switcher` is drawn beside the title. */
 function DashboardView({
   dashboardId,
+  name,
   switcher,
 }: {
   dashboardId: number;
+  name: string;
   switcher: (editing: boolean) => ReactNode;
 }) {
-  const dashboard = useDashboard(dashboardId);
+  const dashboard = useDashboard(dashboardId, name);
   const { widgets, editing, update } = dashboard;
   const [adding, setAdding] = useState(false);
   const [configuring, setConfiguring] = useState<PlacedWidget | null>(null);
@@ -336,6 +339,9 @@ function DashboardView({
   );
 }
 
+/** Only one attempt at a time, however many times the page draws while it runs. */
+let addingViews: Promise<void> | null = null;
+
 export function DashboardPage() {
   const boards = useApi<DashboardList>("/dashboards");
   const [problem, setProblem] = useState<string | null>(null);
@@ -343,6 +349,25 @@ export function DashboardPage() {
   const accounts = useApi<Account[]>("/accounts");
   const [showEmpty, setShowEmpty] = useState(false);
   const welcoming = settings.data !== null && !settings.data.welcomeDismissed;
+  const reloadBoards = boards.reload;
+  const reloadSettings = settings.reload;
+
+  // The ready-made dashboards become tabs, once. A failure tries again next time the page opens.
+  const viewsDue = settings.data !== null && !settings.data.dashboardViewsAdded;
+  const boardNames = boards.data?.dashboards.map((d) => d.name).join("\n") ?? null;
+  const accountCount = accounts.data?.length ?? null;
+  useEffect(() => {
+    if (!viewsDue || boardNames === null || accountCount === null || addingViews) return;
+    addingViews = addDefaultViews(boardNames.split("\n"), accountCount === 0)
+      .then(() => {
+        reloadBoards();
+        reloadSettings();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        addingViews = null;
+      });
+  }, [viewsDue, boardNames, accountCount, reloadBoards, reloadSettings]);
 
   // Before any account, a page of empty widgets says nothing: the welcome stands alone.
   if (welcoming && accounts.data?.length === 0 && !showEmpty) {
@@ -388,6 +413,7 @@ export function DashboardPage() {
       <DashboardView
         key={list.active}
         dashboardId={list.active}
+        name={list.dashboards.find((d) => d.id === list.active)?.name ?? ""}
         switcher={(editing) => (
           <DashboardSwitcher
             list={list}
