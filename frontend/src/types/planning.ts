@@ -1,3 +1,5 @@
+import type { CapStatus } from "./analytics";
+
 import type { Transaction } from "./api";
 
 /** Shapes returned by backend/src/routes/planning.routes.ts. */
@@ -125,7 +127,24 @@ export interface MonthReport {
     amountMinor: number;
     accountName: string;
   }>;
-  budgets: { count: number; overspent: number; budgetedMinor: number; spentMinor: number };
+  budgets: {
+    count: number;
+    overspent: number;
+    budgetedMinor: number;
+    spentMinor: number;
+    /** Each cap that month, the fullest first. */
+    items: Array<{
+      categoryId: number;
+      label: string;
+      color: string | null;
+      capMinor: number;
+      spentMinor: number;
+      remainingMinor: number;
+      percentUsed: number;
+      status: CapStatus;
+      history: Array<{ month: string; spentMinor: number; capMinor: number | null }>;
+    }>;
+  };
   debtPaidMinor: number;
   cashbackMinor: number;
   netWorth: { startMinor: number | null; endMinor: number | null; changeMinor: number | null };

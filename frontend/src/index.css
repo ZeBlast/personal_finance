@@ -226,7 +226,160 @@ body {
   }
 }
 
+/* Colour changes answer the pointer rather than snapping. */
+@layer base {
+  a,
+  button,
+  summary,
+  [role="combobox"] {
+    transition:
+      color 120ms ease,
+      background-color 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease,
+      opacity 120ms ease;
+  }
+}
+
+/* What a disclosure reveals fades in instead of appearing at once. */
+details[open] > :not(summary) {
+  animation: pf-fade-in 180ms ease-out;
+}
+
+/* A chart that appears in one sweep from left to right. */
+@keyframes pf-reveal-x {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.pf-reveal-x {
+  animation: pf-reveal-x 650ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+/* Items that fade in one after another: each sets its own animation-delay. */
+.pf-fade-stagger {
+  animation: pf-fade-in 260ms ease-out backwards;
+}
+/* What follows a chart's line once it has drawn. */
+.pf-fade-late {
+  animation: pf-fade-in 260ms ease-out 500ms backwards;
+}
+
+/* ---- The spending bucket ---- */
+@keyframes pf-bucket-wave {
+  to {
+    transform: translateX(80px);
+  }
+}
+@keyframes pf-bucket-drop {
+  from {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  12%,
+  92% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--pf-drop-to));
+  }
+}
+@keyframes pf-bucket-ripple {
+  from {
+    opacity: 0.9;
+    transform: scaleX(0.2);
+  }
+  to {
+    opacity: 0;
+    transform: scaleX(2.4);
+  }
+}
+@keyframes pf-bucket-sway {
+  25% {
+    transform: rotate(2deg);
+  }
+  60% {
+    transform: rotate(-1.2deg);
+  }
+}
+@keyframes pf-bucket-spill {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+@keyframes pf-bucket-puddle {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+.pf-bucket {
+  overflow: visible;
+}
+/* A little past its level and back, like water settling. */
+.pf-bucket-level {
+  transition:
+    transform 1300ms cubic-bezier(0.3, 1.35, 0.5, 1),
+    opacity 300ms ease;
+}
+.pf-bucket-wave {
+  animation: pf-bucket-wave 3.4s linear infinite;
+}
+.pf-bucket-wave-back {
+  animation-duration: 5.2s;
+  animation-direction: reverse;
+}
+.pf-bucket-drop {
+  animation: pf-bucket-drop 520ms cubic-bezier(0.5, 0, 1, 0.7) forwards;
+  animation-fill-mode: forwards;
+}
+.pf-bucket-ripple {
+  opacity: 0;
+  animation: pf-bucket-ripple 750ms ease-out 480ms;
+}
+.pf-bucket-sway {
+  transform-origin: 100px 54px;
+  animation: pf-bucket-sway 800ms ease-in-out 480ms;
+}
+.pf-bucket-spill {
+  stroke-dasharray: 16 12;
+  animation: pf-bucket-spill 900ms linear infinite;
+}
+.pf-bucket-spill-late {
+  animation-duration: 1250ms;
+}
+.pf-bucket-puddle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pf-bucket-puddle 700ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  a,
+  button,
+  summary,
+  [role="combobox"],
+  .pf-bucket-level {
+    transition: none;
+  }
+  details[open] > :not(summary),
+  .pf-reveal-x,
+  .pf-fade-stagger,
+  .pf-fade-late,
+  .pf-bucket-wave,
+  .pf-bucket-sway,
+  .pf-bucket-spill,
+  .pf-bucket-puddle {
+    animation: none;
+  }
+  /* Nothing is falling or rippling: these only ever appear in motion. */
+  .pf-bucket-drop,
+  .pf-bucket-ripple {
+    display: none;
+  }
   .pf-fade-in,
   .pf-pop-in,
   .pf-slide-in-right,
@@ -242,4 +395,87 @@ body {
   .pf-draw {
     stroke-dasharray: none;
   }
+}
+
+/* Editing the dashboard: the grid widgets snap to, where a moved widget will land, and its handles. */
+:root {
+  --pf-grid-line: rgb(148 163 184 / 0.22);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pf-grid-line: rgb(148 163 184 / 0.14);
+  }
+}
+.pf-dash-edit .react-grid-item.react-grid-placeholder {
+  background: #3b82f6;
+  opacity: 0.2;
+  border-radius: 0.5rem;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle {
+  z-index: 5;
+  background-image: none;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle::after {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 2px;
+  background: #3b82f6;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.pf-dash-edit .react-grid-item:hover > .react-resizable-handle::after,
+.pf-dash-edit .react-grid-item > .react-resizable-handle:focus-visible::after {
+  opacity: 0.85;
+}
+/* Edges resize along a thin strip, so a handle never sits over the buttons in a widget's title. */
+.pf-dash-edit .react-grid-item > .react-resizable-handle-n,
+.pf-dash-edit .react-grid-item > .react-resizable-handle-s {
+  left: 14px;
+  width: calc(100% - 28px);
+  height: 8px;
+  margin: 0;
+  transform: none;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-n {
+  top: -5px;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-s {
+  bottom: -5px;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-e,
+.pf-dash-edit .react-grid-item > .react-resizable-handle-w {
+  top: 14px;
+  width: 8px;
+  height: calc(100% - 28px);
+  margin: 0;
+  transform: none;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-e {
+  right: -5px;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-w {
+  left: -5px;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-n::after,
+.pf-dash-edit .react-grid-item > .react-resizable-handle-s::after {
+  top: 2px;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  width: 22px;
+  height: 4px;
+  margin-left: -11px;
+  transform: none;
+}
+.pf-dash-edit .react-grid-item > .react-resizable-handle-e::after,
+.pf-dash-edit .react-grid-item > .react-resizable-handle-w::after {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 2px;
+  width: 4px;
+  height: 22px;
+  margin-top: -11px;
+  transform: none;
 }

@@ -128,12 +128,19 @@ On the **Accounts** page, each credit card has a **Credit limit history** where 
 or delete limits by hand, including past changes. Changes the bank reports during a sync are added
 automatically and labelled "observed from bank".
 
-## Dashboard, calendar, and budgets
+## Dashboard, calendar, and spending caps
 
-The **Dashboard** is made of widgets (net worth, balances, spending, budgets, a calendar, and more).
-Press **Edit dashboard** to drag widgets around by their title bar, resize them from the bottom-right
-corner, remove one with its **✕**, change a widget's settings, or add one with **+ Add widget**. Press
-**Done** to save (or **Cancel** to throw the changes away); the layout is kept between launches. **Reset to default** restores the starting dashboard.
+The **Dashboard** is made of widgets (net worth, balances, spending, spending caps, a calendar, and
+more). They sit directly on the page; a widget has a border only if it is busy enough to need one, and
+its settings can change that. Press **Edit dashboard** to drag widgets by their title, resize them from
+any edge or corner (everything snaps to the grid), change a widget's settings, copy, hide or remove one,
+or add one with **+ Add widget**. Press **Done** to save (or **Cancel** to throw the changes away); the
+layout is kept between launches.
+
+Several dashboards can be kept as tabs. The app adds ready-made ones once: **Everyday**, **Budget**,
+**Cash & bills**, **Big picture** and **Spending**. They are ordinary dashboards: change them or delete
+them, and **New dashboard** can make any of them again. **Reset to default** restores a ready-made
+dashboard to itself, and any other to Everyday.
 
 The **Calendar** page fills the window (the month grid grows and shrinks with it) and shows each
 day's spending, income, and which accounts were active.
@@ -157,8 +164,11 @@ day's spending, income, and which accounts were active.
 - The balance is worked out from today's balance and the transactions the app has, for cash accounts
   and cards (investments are not included). It is only as complete as the history the app holds.
 
-The **Budgets** page sets a monthly limit per category (a group's budget also counts its
-subcategories), and "Copy from last month" carries them forward.
+The **Spending caps** page (under Planning) sets the most to spend on any category or subcategory (a
+cap on a category also counts its subcategories). A cap can repeat every month, or be for one month.
+Changing one applies from that month on, and stopping one keeps earlier months' caps. Each shows
+spending against the cap, an even pace for today, and where the month looks set to end, and the
+month report shows how each one went. The **Spending bucket** widget shows a cap as water in a bucket.
 
 "Spending" and "income" are the same everywhere:
 
@@ -250,7 +260,10 @@ On the Transactions page, tags (Pending, Paid / Paid from, Moved to / from, Ente
 - **Planning → Cash-flow forecast:** today's bank balances (checking, savings, cash) projected 30–180 days ahead from expected transactions on the calendar, recurring money in and out of those accounts, and card bills. Shows the lowest point and warns when it goes below zero.
 - **Planning → Card bills:** set each card's statement closing day and due day (plus an optional minimum and autopay). The app works out the latest statement balance, what has been paid toward it, what is left, and the status (paid, partly paid, due, overdue). An estimate: interest, fees and pending charges can make the bank's figure differ.
 - **Planning → Subscriptions:** recurring charges with their yearly cost, price increases, and ones that seem to have stopped; mark each keep / cancel / cancelled (flags a charge that continues after you cancelled).
-- **Month report:** income, spending, savings rate, net worth change, debt paid, cashback, budgets, spending by category against the month before, and the largest purchases.
+- **Month report:** income, spending, savings rate, net worth change, debt paid, cashback, how each spending cap went, spending by category against the month before, and the largest purchases.
+- **Year in review:** each month side by side, how often caps held, and the year's biggest categories and merchants.
+- **Cash flow:** where a month's money came from and went, as one picture.
+- **Patterns:** a calendar shaded by each day's spending, averages by weekday, and which merchants take the most and are growing.
 - **Review:** transactions from the last 60 days worth a look (no category, new merchant, unusual or large amount, possible duplicate) until marked reviewed; and possible duplicates (same account and amount within 3 days, usually one entered by hand and one from the bank) to delete or dismiss.
 - **Receipts and files:** attach pictures, PDFs, or text files (up to 10 MB) to a transaction from its details. They are stored inside the encrypted database and included in backups; the JSON export lists them without their contents.
 

@@ -38,13 +38,15 @@ export type ConfigField = { key: string; label: string; help?: string } & (
   | { type: "institution" }
 );
 
-export type WidgetGroup = "Accounts" | "Spending" | "Budgets" | "Activity" | "Tools";
+export type WidgetGroup =
+  "Planning" | "Accounts" | "Spending" | "Spending caps" | "Activity" | "Tools";
 
 /** Groups in the order the picker shows them. */
 export const WIDGET_GROUPS: readonly WidgetGroup[] = [
+  "Planning",
   "Accounts",
   "Spending",
-  "Budgets",
+  "Spending caps",
   "Activity",
   "Tools",
 ];
@@ -81,6 +83,13 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
   defaultEnabled?: boolean;
   /** Place in that first dashboard (lower comes first). */
   order?: number;
+  /**
+   * Widgets blend into the dashboard with no border. Set this for one busy or interactive enough to
+   * need its own edge. Anyone can override it for a placed copy, in its settings.
+   */
+  framed?: boolean;
+  /** Starts with its title hidden, for a widget whose content already says what it is. */
+  headerless?: boolean;
   /** Allow only one copy on the dashboard. */
   singleton?: boolean;
   /** Values for every field in `configFields`. */

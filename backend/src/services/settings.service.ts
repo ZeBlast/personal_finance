@@ -50,6 +50,8 @@ export const settingsSchema = z.object({
   recoveryKeySaved: z.boolean(),
   /** The user closed the first-run welcome. */
   welcomeDismissed: z.boolean(),
+  /** The ready-made dashboards have been added, once, so deleting one does not bring it back. */
+  dashboardViewsAdded: z.boolean(),
   /**
    * Desktop notifications, each off until the user turns it on: payments due in the next few
    * days, banks that need a fresh sign-in, and budgets nearly or fully used.
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debtExtraInForecastMinor: 0,
   recoveryKeySaved: false,
   welcomeDismissed: false,
+  dashboardViewsAdded: false,
   reminders: { bills: false, signIn: false, budgets: false },
 };
 

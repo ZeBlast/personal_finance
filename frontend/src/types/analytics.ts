@@ -91,6 +91,9 @@ export interface Overview {
   creditCards: CreditCardOverview[];
 }
 
+/** `over` is past the cap, `full` exactly at it, `risk` on course to pass it, `ok` otherwise. */
+export type CapStatus = "over" | "full" | "risk" | "ok";
+
 export interface Budget {
   id: number;
   categoryId: number;
@@ -108,6 +111,17 @@ export interface Budget {
   remainingMinor: number;
   percentUsed: number;
   overspent: boolean;
+  /** Applies to later months too. */
+  repeats: boolean;
+  /** Comes from an earlier month's repeating cap. */
+  inherited: boolean;
+  status: CapStatus;
+  /** Where spending would be today at an even pace (null outside the current month). */
+  expectedMinor: number | null;
+  /** Where the month looks set to end (null outside the current month, or too early to say). */
+  projectedMinor: number | null;
+  /** The months up to this one, oldest first. */
+  history?: Array<{ month: string; spentMinor: number; capMinor: number | null }>;
   /** Saving toward an irregular expense by a date. */
   fund: {
     targetMinor: number;
@@ -118,9 +132,19 @@ export interface Budget {
   } | null;
 }
 
+export interface UncappedCategory {
+  categoryId: number;
+  label: string;
+  color: string | null;
+  spentMinor: number;
+  /** Average a month over the three months before. */
+  averageMinor: number;
+}
+
 export interface BudgetMonth {
   month: string;
   budgets: Budget[];
+  uncapped?: UncappedCategory[];
   totals: { budgetedMinor: number; spentMinor: number; remainingMinor: number };
   unbudgetedSpendingMinor: number;
 }

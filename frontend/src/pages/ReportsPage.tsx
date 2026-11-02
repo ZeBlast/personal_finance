@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { CapHistoryChart, CapMeter, CapStatusLabel } from "../components/charts/CapMeter";
 import { useApi } from "../hooks/useApi";
+import { reportVerdict } from "../lib/caps";
 import { formatMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import { formatDay } from "../lib/time";
@@ -102,11 +105,11 @@ export function ReportsPage() {
             <Card label="Paid toward debt" value={money(data.debtPaidMinor)} />
             <Card label="Cashback earned" value={money(data.cashbackMinor)} />
             <Card
-              label="Budgets"
+              label="Spending caps"
               value={
                 data.budgets.count === 0
                   ? "None set"
-                  : `${data.budgets.count - data.budgets.overspent} of ${data.budgets.count} on track`
+                  : `${data.budgets.count - data.budgets.overspent} of ${data.budgets.count} held`
               }
               sub={
                 data.budgets.count > 0 ? (
@@ -119,6 +122,66 @@ export function ReportsPage() {
             />
             <Card label="Transactions" value={String(data.transactionCount)} />
           </div>
+
+          <section
+            aria-label="Spending caps"
+            className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-semibold">Spending caps</h2>
+              <Link
+                to="/planning/budgets"
+                className="text-xs text-blue-600 underline dark:text-blue-400"
+              >
+                {data.budgets.count === 0 ? "Set a cap" : "Manage caps"}
+              </Link>
+            </div>
+            {data.budgets.count === 0 ? (
+              <p className="mt-1 text-sm text-slate-500">
+                No caps this month. With a cap on a category, this report shows whether the month
+                stayed within it.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {reportVerdict(data.budgets.items, money)}
+                </p>
+                <ul className="mt-3 grid gap-x-6 gap-y-3 @min-[56rem]:grid-cols-2">
+                  {data.budgets.items.map((c) => (
+                    <li key={c.categoryId} className="flex items-center gap-3 text-sm">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate font-medium">{c.label}</span>
+                          <span className="shrink-0 tabular-nums">
+                            {money(c.spentMinor)}
+                            <span className="text-slate-500"> of {money(c.capMinor)}</span>
+                          </span>
+                        </div>
+                        <CapMeter
+                          spentMinor={c.spentMinor}
+                          capMinor={c.capMinor}
+                          color={c.color}
+                          label={`${c.label} cap`}
+                          description={`${money(c.spentMinor)} of ${money(c.capMinor)}`}
+                        />
+                        <div className="flex flex-wrap items-center gap-x-2">
+                          <CapStatusLabel status={c.status === "risk" ? "ok" : c.status} />
+                          <span className="text-xs text-slate-500">
+                            {c.remainingMinor < 0
+                              ? `by ${money(-c.remainingMinor)}`
+                              : c.remainingMinor === 0
+                                ? "Exactly at the cap"
+                                : `${money(c.remainingMinor)} under`}
+                          </span>
+                        </div>
+                      </div>
+                      <CapHistoryChart history={c.history} />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
 
           {/* Categories and the largest purchases side by side when the page has room. */}
           <div className="grid items-start gap-4 @min-[60rem]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">

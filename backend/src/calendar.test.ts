@@ -676,8 +676,9 @@ describe("payments toward debt", () => {
     await add(card, d(1), "Store refund", 700, "in");
     return { checking, card };
   }
-  const month = async (t: T) =>
-    (await t.call("get", `/api/analytics/calendar?month=${d(1).slice(0, 7)}`).expect(200)).body
+  // The month of a given day: the days used here can fall either side of the 1st.
+  const month = async (t: T, day = d(1)) =>
+    (await t.call("get", `/api/analytics/calendar?month=${day.slice(0, 7)}`).expect(200)).body
       .days as Array<{
       date: string;
       outflowMinor: number;
@@ -692,7 +693,7 @@ describe("payments toward debt", () => {
     expect(day.debtPaidMinor).toBe(20000);
     expect(day.outflowMinor).toBe(0); // the paying side is the same payment
     expect(day.inflowMinor).toBe(700); // only the refund
-    const spend = (await month(t)).find((x) => x.date === d(2))!;
+    const spend = (await month(t, d(2))).find((x) => x.date === d(2))!;
     expect(spend).toMatchObject({ outflowMinor: 3000, debtPaidMinor: 0 });
   });
 

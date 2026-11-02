@@ -3,7 +3,7 @@ import type { AppDb } from "../db/client.js";
 import { addMonths, firstOfMonth, isRealMonth, lastOfMonth } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
 import { NOT_TRANSFER, summarize } from "./analytics.service.js";
-import { budgetMonth } from "./budget.service.js";
+import { budgetMonth, type CapHistoryPoint, type CapStatus } from "./budget.service.js";
 import { periodSummary } from "./calendar.service.js";
 import { cashbackSummary } from "./cashback.service.js";
 import { netWorthHistory } from "./networth-history.service.js";
@@ -41,7 +41,24 @@ export interface MonthReport {
     amountMinor: number;
     accountName: string;
   }>;
-  budgets: { count: number; overspent: number; budgetedMinor: number; spentMinor: number };
+  budgets: {
+    count: number;
+    overspent: number;
+    budgetedMinor: number;
+    spentMinor: number;
+    /** Each cap that month: over first, then the closest to it. */
+    items: Array<{
+      categoryId: number;
+      label: string;
+      color: string | null;
+      capMinor: number;
+      spentMinor: number;
+      remainingMinor: number;
+      percentUsed: number;
+      status: CapStatus;
+      history: CapHistoryPoint[];
+    }>;
+  };
   debtPaidMinor: number;
   cashbackMinor: number;
   netWorth: { startMinor: number | null; endMinor: number | null; changeMinor: number | null };
@@ -108,7 +125,7 @@ export function monthReport(db: AppDb, month: string): MonthReport {
       and ${NOT_TRANSFER}
     order by t.amount_minor desc limit 5`);
 
-  const budgets = budgetMonth(db, month, environment);
+  const budgets = budgetMonth(db, month, environment, { detail: true });
   const period = periodSummary(db, from, to, undefined, environment, undefined, "posted");
   const cashback = cashbackSummary(db, { from, to });
 
@@ -141,6 +158,19 @@ export function monthReport(db: AppDb, month: string): MonthReport {
       overspent: budgets.budgets.filter((b) => b.overspent).length,
       budgetedMinor: budgets.totals.budgetedMinor,
       spentMinor: budgets.totals.spentMinor,
+      items: budgets.budgets
+        .map((b) => ({
+          categoryId: b.categoryId,
+          label: b.categoryName,
+          color: b.categoryColor,
+          capMinor: b.availableMinor,
+          spentMinor: b.spentMinor,
+          remainingMinor: b.remainingMinor,
+          percentUsed: b.percentUsed,
+          status: b.status,
+          history: b.history ?? [],
+        }))
+        .sort((a, b) => b.percentUsed - a.percentUsed),
     },
     debtPaidMinor: period.debtPaidMinor,
     cashbackMinor: cashback.totalCashbackMinor,

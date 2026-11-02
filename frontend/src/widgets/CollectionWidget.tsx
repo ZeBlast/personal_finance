@@ -13,6 +13,7 @@ export default defineWidget({
   description:
     "A collection's showcase from the Accounts tab: its most valuable items (Pokémon cards with pictures) and a browser for all of them.",
   group: "Accounts",
+  framed: true,
   defaultSize: { w: 6, h: 6 },
   minSize: { w: 3, h: 4 },
   order: 470,

@@ -26,6 +26,7 @@ export interface Settings {
   recoveryKeySaved: boolean;
   /** The user closed the first-run welcome. */
   welcomeDismissed: boolean;
+  dashboardViewsAdded: boolean;
   /** Desktop notifications the user turned on. */
   reminders: { bills: boolean; signIn: boolean; budgets: boolean };
 }

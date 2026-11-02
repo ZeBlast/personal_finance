@@ -337,6 +337,13 @@
       "when": 1793336026009,
       "tag": "0047_accounts_no_longer_shared",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1793546169919,
+      "tag": "0048_spending_caps",
+      "breakpoints": true
     }
   ]
 }

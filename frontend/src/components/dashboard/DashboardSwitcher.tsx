@@ -1,4 +1,6 @@
 import { useId, useState, type FormEvent } from "react";
+import { Select } from "../common/Select";
+import { applyPreset, presetNamed, PRESETS } from "../../widgets/presets";
 import { api, errorMessage } from "../../api/client";
 import type { DashboardList } from "../../types/analytics";
 import { ConfirmDialog, Modal } from "../common/Modal";
@@ -10,6 +12,9 @@ type Dialog = "new" | "rename" | "delete" | null;
  * Tabs for the named dashboards, plus New, Rename and Delete. Switching is disabled while a
  * dashboard is being edited, so a half-finished edit is never carried (or lost) by accident.
  */
+/** The "Start from" choice meaning a copy of the dashboard on show. */
+const COPY = "copy";
+
 export function DashboardSwitcher({
   list,
   disabled,
@@ -26,7 +31,7 @@ export function DashboardSwitcher({
   const id = useId();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [name, setName] = useState("");
-  const [copy, setCopy] = useState(true);
+  const [start, setStart] = useState(COPY);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const active = list.dashboards.find((d) => d.id === list.active);
@@ -50,7 +55,7 @@ export function DashboardSwitcher({
 
   function open(next: Dialog): void {
     setName(next === "rename" ? (active?.name ?? "") : "");
-    setCopy(true);
+    setStart(COPY);
     setProblem(null);
     setDialog(next);
   }
@@ -66,8 +71,13 @@ export function DashboardSwitcher({
         ? await run(async () => {
             const created = await api<{ id: number }>("/dashboards", {
               method: "POST",
-              body: JSON.stringify({ name, ...(copy && active ? { copyFrom: active.id } : {}) }),
+              body: JSON.stringify({
+                name,
+                ...(start === COPY && active ? { copyFrom: active.id } : {}),
+              }),
             });
+            const preset = presetNamed(start);
+            if (preset) await applyPreset(created.id, preset);
             await api(`/dashboards/${created.id}/activate`, { method: "POST", body: "{}" });
           }, "Could not create the dashboard.")
         : await run(
@@ -145,10 +155,31 @@ export function DashboardSwitcher({
               />
             </div>
             {dialog === "new" && (
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
-                Start from a copy of {active?.name ?? "this dashboard"}
-              </label>
+              <div>
+                <label htmlFor={`${id}-start`} className="block font-medium">
+                  Start from
+                </label>
+                <Select
+                  id={`${id}-start`}
+                  value={start}
+                  onChange={(e) => {
+                    setStart(e.target.value);
+                    // A ready-made dashboard's name is a good start, unless one has been typed.
+                    if (name === "" && presetNamed(e.target.value)) setName(e.target.value);
+                  }}
+                  className={inputClass}
+                >
+                  <option value={COPY}>A copy of {active?.name ?? "this dashboard"}</option>
+                  {PRESETS.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>
+                {presetNamed(start) && (
+                  <p className="mt-1 text-xs text-slate-500">{presetNamed(start)!.blurb}</p>
+                )}
+              </div>
             )}
             {problem && (
               <p role="alert" className="text-red-600">

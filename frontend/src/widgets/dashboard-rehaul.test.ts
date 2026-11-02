@@ -11,18 +11,29 @@ describe("a widget's appearance", () => {
       title: "Groceries",
       hideHeader: true,
       accent: "#16a34a",
+      frame: "auto",
     });
     expect(readAppearance({ _title: 42, _hideHeader: "yes", _accent: "red" })).toEqual({
       title: "",
       hideHeader: false,
       accent: "",
+      frame: "auto",
     });
-    expect(readAppearance(undefined)).toEqual({ title: "", hideHeader: false, accent: "" });
+    expect(readAppearance(undefined)).toEqual({
+      title: "",
+      hideHeader: false,
+      accent: "",
+      frame: "auto",
+    });
   });
 
   it("saves only what differs from the default", () => {
-    expect(appearanceConfig({ title: "", hideHeader: false, accent: "" })).toEqual({});
-    expect(appearanceConfig({ title: " Bills ", hideHeader: true, accent: "#2563eb" })).toEqual({
+    expect(appearanceConfig({ title: "", hideHeader: false, accent: "", frame: "auto" })).toEqual(
+      {},
+    );
+    expect(
+      appearanceConfig({ title: " Bills ", hideHeader: true, accent: "#2563eb", frame: "auto" }),
+    ).toEqual({
       _title: "Bills",
       _hideHeader: true,
       _accent: "#2563eb",

@@ -45,6 +45,7 @@ export default defineWidget({
   description:
     "Follow one thing: a category, account, merchant or tag. This month so far against usual, and where it is heading.",
   group: "Spending",
+  framed: true,
   defaultSize: { w: 4, h: 5 },
   minSize: { w: 3, h: 4 },
   order: 140,

@@ -17,6 +17,11 @@ const base: Budget = {
   percentUsed: 40,
   overspent: false,
   fund: null,
+  repeats: false,
+  inherited: false,
+  status: "ok",
+  expectedMinor: null,
+  projectedMinor: null,
 };
 
 describe("budget notes", () => {

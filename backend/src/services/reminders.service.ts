@@ -98,7 +98,7 @@ export function dueReminders(db: AppDb, today = new Date().toISOString().slice(0
       out.push({
         id: `budget:${month}:${b.categoryId}:${over ? "over" : "near"}`,
         kind: "budget",
-        title: `${b.categoryName} budget is ${over ? (b.percentUsed > 100 ? "over" : "used up") : "nearly used up"}`,
+        title: `${b.categoryName} spending cap is ${over ? (b.percentUsed > 100 ? "over" : "used up") : "nearly used up"}`,
         body: `${formatMinorPlain(b.spentMinor, settings.currency)} of ${formatMinorPlain(b.availableMinor, settings.currency)} spent this month (${b.percentUsed}%).`,
       });
     }

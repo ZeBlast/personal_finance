@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { ProgressBar } from "../components/charts/ProgressBar";
+import { CapMeter, CapStatusLabel } from "../components/charts/CapMeter";
 import { useApi } from "../hooks/useApi";
+import { capDetail, capReading, daysLeftIn, sortCaps } from "../lib/caps";
 import { formatMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import type { BudgetMonth } from "../types/analytics";
@@ -9,9 +10,9 @@ import { defineWidget } from "./types";
 
 export default defineWidget({
   id: "budget-progress",
-  title: "Budgets",
-  description: "How much of each category's monthly budget you have used.",
-  group: "Budgets",
+  title: "Spending caps",
+  description: "How each category is doing against its monthly cap, and where it looks set to end.",
+  group: "Spending caps",
   defaultSize: { w: 6, h: 6 },
   minSize: { w: 3, h: 3 },
   order: 45,
@@ -30,7 +31,9 @@ export default defineWidget({
   Component: function BudgetProgress({ config }) {
     const thisMonth = monthOf(today());
     const month = config.month === "previous" ? shiftMonth(thisMonth, -1) : thisMonth;
-    const { data, error, loading } = useApi<BudgetMonth>(`/budgets?month=${month}`);
+    const day = today();
+    const { data, error, loading } = useApi<BudgetMonth>(`/budgets?month=${month}&today=${day}`);
+    const daysLeft = daysLeftIn(month, day);
     const money = (n: number) => formatMinor(n, "USD");
 
     return (
@@ -38,40 +41,38 @@ export default defineWidget({
         loading={loading}
         error={error}
         empty={data !== null && data.budgets.length === 0}
-        emptyText={`No budgets for ${monthLabel(month, "long")} yet. A budget sets how much to spend on a category each month.`}
-        emptyAction={{ to: "/planning/budgets", label: "Set up a budget" }}
+        emptyText={`No caps for ${monthLabel(month, "long")} yet. A cap sets the most to spend on a category.`}
+        emptyAction={{ to: "/planning/budgets", label: "Set a cap" }}
       >
         {data && (
           <div className="space-y-3">
             <p className="text-sm text-slate-600 dark:text-slate-300">
               <span className="font-medium tabular-nums">{money(data.totals.spentMinor)}</span> of{" "}
-              <span className="tabular-nums">{money(data.totals.budgetedMinor)}</span> budgeted in{" "}
+              <span className="tabular-nums">{money(data.totals.budgetedMinor)}</span> in caps for{" "}
               {monthLabel(month, "long")}
             </p>
             <ul className="space-y-3">
-              {data.budgets.map((b) => (
-                <li key={b.id} className="text-sm">
+              {sortCaps(data.budgets).map((b) => (
+                <li key={b.categoryId} className="text-sm">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="truncate">{b.categoryName}</span>
-                    <span
-                      className={`shrink-0 tabular-nums ${b.overspent ? "font-medium text-red-600 dark:text-red-400" : ""}`}
-                    >
-                      {money(b.spentMinor)} / {money(b.amountMinor)}
+                    <span className="shrink-0 tabular-nums">
+                      {money(b.spentMinor)}
+                      <span className="text-slate-500"> / {money(b.availableMinor)}</span>
                     </span>
                   </div>
-                  <ProgressBar
-                    value={b.spentMinor}
-                    max={b.amountMinor}
-                    label={`${b.categoryName} budget`}
+                  <CapMeter
+                    spentMinor={b.spentMinor}
+                    capMinor={b.availableMinor}
+                    expectedMinor={b.expectedMinor}
+                    projectedMinor={b.projectedMinor}
                     color={b.categoryColor}
+                    label={`${b.categoryName} cap`}
+                    description={capReading(b, daysLeft, money)}
                   />
-                  <div
-                    className={`text-xs ${b.overspent ? "text-red-600 dark:text-red-400" : "text-slate-500"}`}
-                  >
-                    {b.overspent
-                      ? `${money(-b.remainingMinor)} over budget`
-                      : `${money(b.remainingMinor)} left`}{" "}
-                    Â· {b.percentUsed}%
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <CapStatusLabel status={b.status} />
+                    <span className="text-xs text-slate-500">{capDetail(b, daysLeft, money)}</span>
                   </div>
                 </li>
               ))}
@@ -79,7 +80,7 @@ export default defineWidget({
           </div>
         )}
         <Link to="/planning/budgets" className="mt-3 inline-block text-xs text-blue-600 underline">
-          Manage budgets
+          Manage caps
         </Link>
       </WidgetState>
     );

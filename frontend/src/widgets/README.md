@@ -2,6 +2,8 @@
 
 A widget is **one file** in this folder. You do not edit any list, route, or server code.
 
+Widgets sit directly on the dashboard with no border. Set `framed: true` on one busy or interactive enough to need its own edge; anyone can override that for a placed copy, in its settings.
+
 ## The short version
 
 1. Copy `TemplateWidget.example.tsx` to `YourThingWidget.tsx` (the name must end in `Widget.tsx`).

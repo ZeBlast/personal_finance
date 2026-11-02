@@ -27,7 +27,7 @@ export default defineWidget({
   id: "example-biggest-purchases",
   title: "Biggest purchases",
   description: "Your largest purchases in a period, from biggest down.",
-  // One of: "Accounts", "Spending", "Budgets", "Activity", "Tools".
+  // One of: "Accounts", "Spending", "Spending caps", "Activity", "Tools".
   group: "Spending",
   // Width is in columns (out of 12) and height in rows.
   defaultSize: { w: 6, h: 6 },

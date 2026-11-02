@@ -17,8 +17,8 @@ const CHOICES: Array<{ key: keyof Reminders; label: string; help: string }> = [
   },
   {
     key: "budgets",
-    label: "A budget is nearly used up",
-    help: "At 90% of the month's budget, and again when it is used up.",
+    label: "A spending cap is nearly used up",
+    help: "At 90% of the month's cap, and again when it is used up.",
   },
 ];
 
