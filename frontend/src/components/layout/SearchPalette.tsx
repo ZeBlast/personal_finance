@@ -32,6 +32,7 @@ const PAGE_WORDS: Record<string, string> = {
   "/accounts/investments": "tsp retirement brokerage returns",
   "/reports": "month report",
   "/reports/year": "annual twelve months summary",
+  "/reports/statements": "credit card bills closing date balance due payment",
   "/reports/cash-flow": "sankey income where money goes flow map",
   "/reports/spending": "insights category explorer trends",
   "/reports/patterns": "heatmap weekdays merchants habits calendar",

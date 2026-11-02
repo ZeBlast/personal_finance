@@ -22,6 +22,9 @@ const AccountsPage = lazyPage(() => import("../pages/AccountsPage").then((m) => 
 const AnalyticsPage = lazyPage(() => import("../pages/AnalyticsPage").then((m) => m.AnalyticsPage));
 const BudgetsPage = lazyPage(() => import("../pages/BudgetsPage").then((m) => m.BudgetsPage));
 const CalendarPage = lazyPage(() => import("../pages/CalendarPage").then((m) => m.CalendarPage));
+const CardStatementsPage = lazyPage(() =>
+  import("../pages/CardStatementsPage").then((m) => m.CardStatementsPage),
+);
 const CashFlowPage = lazyPage(() => import("../pages/CashFlowPage").then((m) => m.CashFlowPage));
 const PatternsPage = lazyPage(() => import("../pages/PatternsPage").then((m) => m.PatternsPage));
 const YearPage = lazyPage(() => import("../pages/YearPage").then((m) => m.YearPage));
@@ -111,6 +114,7 @@ export const areas: AppArea[] = [
     sections: [
       { path: "/reports", label: "Monthly summary", Page: ReportsPage },
       { path: "/reports/year", label: "Year in review", Page: YearPage },
+      { path: "/reports/statements", label: "Card statements", Page: CardStatementsPage },
       { path: "/reports/cash-flow", label: "Cash flow", Page: CashFlowPage },
       { path: "/reports/spending", label: "Spending", Page: InsightsPage },
       { path: "/reports/patterns", label: "Patterns", Page: PatternsPage },
