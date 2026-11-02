@@ -4,10 +4,12 @@ import { NotFound } from "../components/common/NotFound";
 import { PageErrorBoundary } from "../components/common/PageErrorBoundary";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { DemoBanner } from "../components/layout/DemoBanner";
+import { RemindersHost } from "../components/layout/RemindersHost";
 import { SectionTabs } from "../components/layout/SectionTabs";
 import { Sidebar } from "../components/layout/Sidebar";
+import { StartupScreen } from "../components/layout/StartupScreen";
 import { StatusBanner } from "../components/layout/StatusBanner";
-import { useBackendStatus } from "../hooks/useBackendStatus";
+import { useBackendStatus, type BackendStatus } from "../hooks/useBackendStatus";
 import { useTrackPages } from "../hooks/usePreviousPage";
 import { areas, LEGACY_PATHS } from "./routes";
 
@@ -19,6 +21,15 @@ function MovedTo({ to }: { to: string }) {
 
 export function App() {
   const status = useBackendStatus();
+  // The window opens before the backend is listening. Pages mount only once it answers, because a
+  // load that fails is not tried again. If it stops later, the pages stay up under a banner.
+  if (status.state === "starting" || (status.state === "down" && !status.wasReady)) {
+    return <StartupScreen status={status} />;
+  }
+  return <Shell status={status} />;
+}
+
+function Shell({ status }: { status: BackendStatus }) {
   const { pathname } = useLocation();
   useTrackPages();
 
@@ -36,6 +47,7 @@ export function App() {
       >
         Skip to content
       </a>
+      <RemindersHost />
       <Sidebar />
       <Toaster />
       <ConfirmHost />
