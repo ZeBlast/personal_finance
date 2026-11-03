@@ -133,7 +133,7 @@ export function ReportsPage() {
                 to="/planning/budgets"
                 className="text-xs text-blue-600 underline dark:text-blue-400"
               >
-                {data.budgets.count === 0 ? "Set a cap" : "Manage caps"}
+                {data.budgets.count === 0 ? "Set a cap" : "Open spending caps"}
               </Link>
             </div>
             {data.budgets.count === 0 ? (

@@ -127,7 +127,7 @@ function CardRow({
           </td>
           <td className="py-1.5 pr-3 whitespace-nowrap">
             <Link
-              to="/planning?view=bills"
+              to="/planning/bills"
               title="Card bills, under Planning, tracks what has been paid and adds the bill to your forecast."
               className="text-xs text-blue-700 underline dark:text-blue-300"
             >

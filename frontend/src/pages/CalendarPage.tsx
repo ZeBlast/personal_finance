@@ -77,7 +77,7 @@ export function CalendarPage() {
                 onClick={() => setView(value)}
                 className={`px-3 py-2 ${
                   view === value
-                    ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
+                    ? "bg-blue-600 text-white"
                     : "bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
                 }`}
               >
@@ -104,7 +104,7 @@ export function CalendarPage() {
                 onClick={() => setDateBasis(value)}
                 className={`px-3 py-2 ${
                   basis === value
-                    ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
+                    ? "bg-blue-600 text-white"
                     : "bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
                 }`}
               >

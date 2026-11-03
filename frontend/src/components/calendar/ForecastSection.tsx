@@ -136,7 +136,7 @@ export function ForecastSection({
               {e.source === "card_bill" && (
                 <div className="text-slate-500 dark:text-slate-400">
                   What the statement leaves to pay, from the card&apos;s{" "}
-                  <Link to="/planning" className="text-blue-600 underline">
+                  <Link to="/planning/bills" className="text-blue-600 underline">
                     bill settings
                   </Link>
                   .

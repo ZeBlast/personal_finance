@@ -12,6 +12,8 @@ import type { AnyWidget, PlacedWidget } from "./types";
  */
 export interface DashboardPreset {
   name: string;
+  /** Names it went by before, so dashboards saved under them are still recognised. */
+  formerNames?: readonly string[];
   /** What it answers, for the "New dashboard" choice. */
   blurb: string;
   /** The widgets; `capIds` are categories with a spending cap, the fullest first. */
@@ -46,7 +48,8 @@ export const PRESETS: readonly DashboardPreset[] = [
     plan: () => DEFAULT_PLAN,
   },
   {
-    name: "Budget",
+    name: "Spending caps",
+    formerNames: ["Budget"],
     blurb: "A bucket for your fullest spending caps, and where this month's money is going.",
     plan: (capIds) => [
       ...bucketRow(capIds),
@@ -97,8 +100,11 @@ export const PRESETS: readonly DashboardPreset[] = [
   },
 ];
 
+const namesOf = (p: DashboardPreset): string[] =>
+  [p.name, ...(p.formerNames ?? [])].map((n) => n.toLowerCase());
+
 export const presetNamed = (name: string): DashboardPreset | undefined =>
-  PRESETS.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+  PRESETS.find((p) => namesOf(p).includes(name.trim().toLowerCase()));
 
 /** A preset as widgets, skipping any not installed. Pure. */
 export function presetLayout(
@@ -163,7 +169,7 @@ export async function addDefaultViews(
   const taken = new Set(existingNames.map((n) => n.trim().toLowerCase()));
   const caps = await fullestCaps();
   for (const preset of PRESETS) {
-    if (taken.has(preset.name.toLowerCase())) continue;
+    if (namesOf(preset).some((n) => taken.has(n))) continue;
     if (preset.name === "Everyday" && firstDashboardIsNew) continue;
     const created = await api<{ id: number }>("/dashboards", {
       method: "POST",

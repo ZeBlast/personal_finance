@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { isFiltered, ALL_SHOWN, type CalendarFilters } from "./filters";
 
 const KINDS = [
@@ -44,12 +45,13 @@ export function FilterBar({
           aria-pressed={filters[key]}
           title={title}
           onClick={() => onChange({ ...filters, [key]: !filters[key] })}
-          className={`rounded-full border px-3 py-0.5 text-xs ${
+          className={`inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-xs ${
             filters[key]
-              ? "border-slate-700 bg-slate-800 text-white dark:border-slate-300 dark:bg-slate-200 dark:text-slate-900"
-              : "border-slate-300 text-slate-500 line-through dark:border-slate-600 dark:text-slate-400"
+              ? "border-blue-600 bg-blue-600 text-white"
+              : "border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400"
           }`}
         >
+          {filters[key] && <Check aria-hidden="true" className="h-3 w-3" />}
           {label}
         </button>
       ))}

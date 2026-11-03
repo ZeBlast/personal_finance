@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planningView } from "../../pages/PlanningPage";
+import { legacyPlanningPath } from "../../pages/PlanningPage";
 import { sectionLabel } from "../../hooks/usePreviousPage";
 import { freshnessWarning, type DailyBrief } from "../../widgets/DailyBriefWidget";
 import { reconcileVerdict, type Reconciliation } from "../accounts/ReconcileDialog";
@@ -24,11 +24,11 @@ describe("navigation badges", () => {
 });
 
 describe("addresses for views", () => {
-  it("open the Planning view named in the address, else the forecast", () => {
-    expect(planningView("bills")).toBe("bills");
-    expect(planningView("paychecks")).toBe("paychecks");
-    expect(planningView(null)).toBe("forecast");
-    expect(planningView("nonsense")).toBe("forecast");
+  it("send an old Planning view address to its own page, else keep the forecast", () => {
+    expect(legacyPlanningPath("bills")).toBe("/planning/bills");
+    expect(legacyPlanningPath("paychecks")).toBe("/planning/paychecks");
+    expect(legacyPlanningPath(null)).toBeNull();
+    expect(legacyPlanningPath("nonsense")).toBeNull();
   });
   it("name the section a page came from", () => {
     expect(sectionLabel("/reports/spending")).toBe("Spending");

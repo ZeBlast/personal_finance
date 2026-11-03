@@ -28,7 +28,7 @@ const sameShape = (a: PlacedWidget[], b: PlacedWidget[]): boolean => {
 /** Whether a dashboard is still laid out as one of the ready-made ones. Settings do not count. Pure. */
 export function isReadyMade(widgets: PlacedWidget[]): boolean {
   if (widgets.length === 0 || widgets.some((w) => !w.enabled)) return false;
-  // The Budget dashboard has a bucket per cap, so its plan depends on which caps it was made with.
+  // The Spending caps dashboard has a bucket per cap, so its plan depends on which caps it was made with.
   const capIds = widgets
     .filter((w) => w.widgetType === "spending-bucket" && w.config["category"])
     .map((w) => Number(w.config["category"]));

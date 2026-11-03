@@ -49,8 +49,13 @@ describe("the ready-made dashboards", () => {
     expect(presetNamed("Investing")).toBeUndefined();
   });
 
-  it("give the Budget dashboard a bucket for each of the fullest caps", () => {
-    const budget = presetNamed("Budget")!;
+  it("still know a dashboard saved as Budget, now called Spending caps", () => {
+    expect(presetNamed("Spending caps")?.name).toBe("Spending caps");
+    expect(presetNamed(" budget ")).toBe(presetNamed("Spending caps"));
+  });
+
+  it("give the Spending caps dashboard a bucket for each of the fullest caps", () => {
+    const budget = presetNamed("Spending caps")!;
     const buckets = (capIds: number[]) =>
       presetLayout(budget, capIds, allWidgets()).filter((w) => w.widgetType === "spending-bucket");
     expect(buckets([7, 8, 9, 10, 11]).map((w) => w.config["category"])).toEqual([
@@ -62,7 +67,7 @@ describe("the ready-made dashboards", () => {
   });
 
   it("fall back to one bucket for every cap together, with no caps yet", () => {
-    const layout = presetLayout(presetNamed("Budget")!, [], allWidgets());
+    const layout = presetLayout(presetNamed("Spending caps")!, [], allWidgets());
     expect(layout.filter((w) => w.widgetType === "spending-bucket")).toHaveLength(1);
     expect(layout.some((w) => w.widgetType === "daily-brief")).toBe(true);
   });
@@ -110,6 +115,18 @@ describe("adding them as tabs", () => {
     );
     await addDefaultViews(["Main", "budget"], true);
     expect(created(calls)).toEqual(["Cash & bills", "Big picture", "Spending"]);
+  });
+
+  it("does not add Spending caps again when a dashboard is still named Budget", async () => {
+    const calls = backend();
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) =>
+      String(url).includes("/dashboard/widgets")
+        ? new Response(JSON.stringify({ widgets: [] }), { status: 200 })
+        : original(url as string, init),
+    );
+    await addDefaultViews(["Main", "Budget"], false);
+    expect(created(calls)).not.toContain("Spending caps");
   });
 
   it("does not mark it done if one fails, so it tries again next time", async () => {

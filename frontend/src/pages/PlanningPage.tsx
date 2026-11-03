@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
 import { Modal } from "../components/common/Modal";
@@ -14,63 +14,58 @@ import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning
 import { Select } from "../components/common/Select";
 import { Loading } from "../components/common/Loading";
 
-type Tab = "forecast" | "bills" | "paychecks";
-
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "forecast", label: "Cash-flow forecast" },
-  { id: "bills", label: "Card bills" },
-  { id: "paychecks", label: "Paychecks" },
-];
-
-/** The Planning view named in the address, or the forecast for anything else. Pure. */
-export function planningView(value: string | null): Tab {
-  return TABS.some((t) => t.id === value) ? (value as Tab) : "forecast";
+/**
+ * Where an old Planning link (/planning?view=bills) now goes: the page of that name, or null for
+ * the forecast, which stays at /planning. Pure.
+ */
+export function legacyPlanningPath(view: string | null): string | null {
+  if (view === "bills") return "/planning/bills";
+  if (view === "paychecks") return "/planning/paychecks";
+  return null;
 }
 
-/** Looking ahead: the cash forecast, card bills, and paychecks (subscriptions have their own page). */
+/** Where your cash is heading (the Planning area's first page; its other pages are tabs). */
 export function PlanningPage() {
-  // The view is in the address (?view=bills), so Back, a refresh and links keep it.
-  const [params, setParams] = useSearchParams();
-  const tab = planningView(params.get("view"));
-  const setTab = (next: Tab) =>
-    setParams(
-      (p) => {
-        if (next === "forecast") p.delete("view");
-        else p.set("view", next);
-        return p;
-      },
-      { replace: false },
-    );
+  const [params] = useSearchParams();
+  const moved = legacyPlanningPath(params.get("view"));
+  if (moved) return <Navigate to={moved} replace />;
   return (
     <section className="max-w-5xl space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Planning</h1>
+        <h1 className="text-2xl font-semibold">Cash forecast</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Where your cash is heading, what your cards will ask for, and what you are paid.
-          Subscriptions have their own page.
+          Where the money in your bank accounts is heading.
         </p>
       </div>
-      <div role="tablist" className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              tab === t.id
-                ? "border-blue-600 font-medium text-blue-700 dark:text-blue-300"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <ForecastTab />
+    </section>
+  );
+}
+
+/** Each card's statement and due date. */
+export function CardBillsPage() {
+  return (
+    <section className="max-w-5xl space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">Card bills</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          What each credit card will ask for, and when.
+        </p>
       </div>
-      {tab === "forecast" && <ForecastTab />}
-      {tab === "bills" && <BillsTab />}
-      {tab === "paychecks" && <PaychecksTab />}
+      <BillsTab />
+    </section>
+  );
+}
+
+/** Regular pay, and what it adds up to this year. */
+export function PaychecksPage() {
+  return (
+    <section className="max-w-5xl space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">Paychecks</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">What you are paid.</p>
+      </div>
+      <PaychecksTab />
     </section>
   );
 }

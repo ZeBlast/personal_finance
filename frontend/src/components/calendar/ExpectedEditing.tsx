@@ -209,7 +209,7 @@ export function QuickAddExpected({
               type="button"
               aria-pressed={direction === d}
               onClick={() => setDirection(d)}
-              className={`px-2 py-1 ${direction === d ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900" : ""}`}
+              className={`px-2 py-1 ${direction === d ? "bg-blue-600 text-white" : ""}`}
             >
               {d === "out" ? "Money out" : "Money in"}
             </button>

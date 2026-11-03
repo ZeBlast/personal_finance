@@ -38,6 +38,8 @@ const InvestmentsPage = lazyPage(() =>
 );
 const NetworkPage = lazyPage(() => import("../pages/NetworkPage").then((m) => m.NetworkPage));
 const PlanningPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.PlanningPage));
+const CardBillsPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.CardBillsPage));
+const PaychecksPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.PaychecksPage));
 const DebtPage = lazyPage(() => import("../pages/DebtPage").then((m) => m.DebtPage));
 const GoalsPage = lazyPage(() => import("../pages/GoalsPage").then((m) => m.GoalsPage));
 const ReportsPage = lazyPage(() => import("../pages/ReportsPage").then((m) => m.ReportsPage));
@@ -93,7 +95,9 @@ export const areas: AppArea[] = [
     path: "/planning",
     label: "Planning",
     sections: [
-      { path: "/planning", label: "Forecast & bills", Page: PlanningPage },
+      { path: "/planning", label: "Cash forecast", Page: PlanningPage },
+      { path: "/planning/bills", label: "Card bills", Page: CardBillsPage },
+      { path: "/planning/paychecks", label: "Paychecks", Page: PaychecksPage },
       { path: "/planning/subscriptions", label: "Subscriptions", Page: SubscriptionsPage },
       { path: "/planning/budgets", label: "Spending caps", Page: BudgetsPage },
       { path: "/planning/goals", label: "Goals", Page: GoalsPage },

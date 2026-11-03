@@ -80,7 +80,7 @@ export default defineWidget({
           </div>
         )}
         <Link to="/planning/budgets" className="mt-3 inline-block text-xs text-blue-600 underline">
-          Manage caps
+          Open spending caps
         </Link>
       </WidgetState>
     );
