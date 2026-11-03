@@ -31,6 +31,7 @@ import { BankCsvImportDialog } from "../BankCsvImportDialog";
 import { CollectionDialog, isCollection } from "../CollectionDialog";
 import { CollectionShowcase } from "./CollectionShowcase";
 import { HideToggle } from "../HideToggle";
+import { formatApy, type AccountInterest } from "../InterestSection";
 import { dayOfMonth, StatementsDialog } from "../StatementsDialog";
 import { LoanPaymentDialog } from "../LoanPaymentDialog";
 import { ReconcileDialog } from "../ReconcileDialog";
@@ -58,6 +59,8 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
   const [limitsOf, setLimitsOf] = useState<Account | null>(null);
   const [paying, setPaying] = useState<Account | null>(null);
   const [more, setMore] = useState<Account | null>(null);
+  // The More window opens with the interest section expanded when it came from a card's APY row.
+  const [moreInterest, setMoreInterest] = useState(false);
   const [reconciling, setReconciling] = useState<Account | null>(null);
   const [credits, setCredits] = useState<{ account: Account; action: "add" | "use" } | null>(null);
   // Each card's and loan's rate, minimum and payoff at the minimum, from the Debt page's figures.
@@ -237,7 +240,10 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             onStatements={() => setStatementsOf(a)}
             onPayment={() => setPaying(a)}
             onCredits={(action) => setCredits({ account: a, action })}
-            onMore={() => setMore(a)}
+            onMore={(interest) => {
+              setMoreInterest(interest);
+              setMore(a);
+            }}
             terms={termsOf.get(a.id)}
             onHiddenChanged={() => accounts.reload()}
           />
@@ -371,6 +377,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
       {more && (
         <AccountMoreDialog
           account={more}
+          openInterest={moreInterest}
           onLimits={() => {
             setMore(null);
             setLimitsOf(more);
@@ -799,8 +806,8 @@ function AccountCard({
   onPayment: () => void;
   /** A gift card (store credit): add credits to it, or record a purchase that used them. */
   onCredits: (action: "add" | "use") => void;
-  /** The rest of the account's actions, in a window. */
-  onMore: () => void;
+  /** The rest of the account's actions, in a window; `interest` opens it at the APY. */
+  onMore: (interest: boolean) => void;
   /** A card's or loan's rate, minimum, and payoff at the minimum, when it owes something. */
   terms: DebtTerms | undefined;
   /** After the account was hidden or shown again, so the cards refresh. */
@@ -809,6 +816,12 @@ function AccountCard({
   const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
   const [hideError, setHideError] = useState<string | null>(null);
+  // A bank account's APY shows on its back; ask for it only once the card is turned over, so a long
+  // list of cards does not make a request each on load.
+  const hasInterest = a.type === "depository" && !isStoreCredit(a);
+  const interest = useApi<AccountInterest>(
+    hasInterest && flipped ? `/accounts/${a.id}/interest` : null,
+  );
   const color = a.color ?? "#94a3b8";
   const payment = a.type === "credit" || a.type === "depository";
   const credit = a.type === "credit";
@@ -855,6 +868,16 @@ function AccountCard({
         {/* Front. */}
         <div className={faceClass} style={hidden}>
           {accent}
+          {/* A cue that the card turns over: on hover and keyboard focus, not on touch screens. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0.5 right-2 hidden items-center gap-0.5 text-[10px] leading-none text-slate-400 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:hover)]:flex dark:text-slate-500"
+          >
+            Details
+            <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor">
+              <path d="M13 8a5 5 0 1 1-1.5-3.5M13 2v3h-3" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="truncate font-medium">{a.name}</div>
@@ -985,6 +1008,26 @@ function AccountCard({
                 )}
               </>
             )}
+            {hasInterest && interest.data && (
+              <>
+                <dt className="text-slate-500">Interest</dt>
+                <dd className="text-right">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMore(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className="rounded text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    {interest.data.apyBps !== null && interest.data.monthlyMinor !== null
+                      ? `${formatApy(interest.data.apyBps)} APY · ${money(a, interest.data.monthlyMinor)} a month`
+                      : "Set APY"}
+                  </button>
+                </dd>
+              </>
+            )}
           </dl>
           {hideError && (
             <p role="alert" className="mt-1 text-xs text-red-600">
@@ -1029,7 +1072,7 @@ function AccountCard({
                 <BackButton onClick={onAdd}>Add transaction</BackButton>
               )
             )}
-            <BackButton onClick={onMore}>More...</BackButton>
+            <BackButton onClick={() => onMore(false)}>More...</BackButton>
           </div>
         </div>
       </div>

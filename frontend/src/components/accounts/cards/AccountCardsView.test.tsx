@@ -127,4 +127,82 @@ describe("the account cards", () => {
     expect(back.getByRole("button", { name: "Statements" })).toBeTruthy();
     expect(back.getByRole("button", { name: "Rate & payoff" })).toBeTruthy();
   });
+
+  describe("a bank account's interest", () => {
+    const interest = (apyBps: number | null) => ({
+      accountId: 4,
+      apyBps,
+      balanceMinor: 205_000,
+      monthlyMinor: apyBps === null ? null : 73,
+      yearlyMinor: apyBps === null ? null : 880,
+      earnedThisYearMinor: 0,
+      earnedLast12MonthsMinor: 0,
+    });
+    function showSavings(apyBps: number | null) {
+      fakeBackend({
+        "/accounts?includeHidden=1": [account(4, "Savings", { subtype: "savings" })],
+        "/categories": [],
+        "/accounts/4/interest": interest(apyBps),
+      });
+      render(
+        <MemoryRouter>
+          <AccountCardsView items={[item]} />
+        </MemoryRouter>,
+      );
+    }
+
+    it("shows the APY and the monthly interest on the back, and opens it from there", async () => {
+      showSavings(425);
+      const savings = await card("Savings");
+      await userEvent.click(savings);
+      await userEvent.click(
+        await within(savings).findByRole("button", { name: `4.25% APY · ${usd(73)} a month` }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog)
+          .getByText(/Interest · 4.25% APY/)
+          .closest("details")?.open,
+      ).toBe(true);
+    });
+
+    it("offers Set APY when none is set, and More... leaves the interest folded", async () => {
+      showSavings(null);
+      const savings = await card("Savings");
+      await userEvent.click(savings);
+      await userEvent.click(await within(savings).findByRole("button", { name: "Set APY" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog)
+          .getByText(/Interest · set the APY/)
+          .closest("details")?.open,
+      ).toBe(true);
+      await userEvent.click(within(dialog).getByRole("button", { name: /close/i }));
+      await userEvent.click(within(savings).getByRole("button", { name: "More..." }));
+      const again = await screen.findByRole("dialog");
+      expect(
+        within(again)
+          .getByText(/Interest · set the APY/)
+          .closest("details")?.open,
+      ).toBe(false);
+    });
+
+    it("asks for the interest only when the card is turned over", async () => {
+      const calls = fakeBackend({
+        "/accounts?includeHidden=1": [account(4, "Savings", { subtype: "savings" })],
+        "/categories": [],
+        "/accounts/4/interest": interest(425),
+      });
+      render(
+        <MemoryRouter>
+          <AccountCardsView items={[item]} />
+        </MemoryRouter>,
+      );
+      const savings = await card("Savings");
+      expect(calls.some((c) => c.path.includes("/interest"))).toBe(false);
+      await userEvent.click(savings);
+      await within(savings).findByRole("button", { name: /APY/ });
+      expect(calls.some((c) => c.path === "/accounts/4/interest")).toBe(true);
+    });
+  });
 });

@@ -30,13 +30,20 @@ export const formatApy = (bps: number): string => `${(bps / 100).toFixed(2)}%`;
  * A bank account's interest: the APY the user enters, what that should pay at today's balance
  * (which the cash forecast counts at the end of each month), and the interest it has received.
  */
-export function InterestSection({ account }: { account: Account }) {
+export function InterestSection({
+  account,
+  startOpen,
+}: {
+  account: Account;
+  /** Show it expanded, for when the user came here to set the APY. */
+  startOpen?: boolean;
+}) {
   const { data, error, reload } = useApi<AccountInterest>(`/accounts/${account.id}/interest`);
   const [editing, setEditing] = useState(false);
   const money = (n: number) => formatMinor(n, account.currency);
 
   return (
-    <details className="text-sm">
+    <details className="text-sm" open={startOpen}>
       <summary className="cursor-pointer text-xs text-slate-500">
         Interest
         {data?.apyBps != null ? ` · ${formatApy(data.apyBps)} APY` : " · set the APY"}

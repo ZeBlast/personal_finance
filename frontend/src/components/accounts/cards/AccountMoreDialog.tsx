@@ -13,6 +13,7 @@ import { isStoreCredit } from "../StoreCreditDialogs";
  */
 export function AccountMoreDialog({
   account: a,
+  openInterest,
   onLimits,
   onReconcile,
   onImport,
@@ -20,6 +21,8 @@ export function AccountMoreDialog({
   onClose,
 }: {
   account: Account;
+  /** Show the interest section expanded, for the card's "Set APY". */
+  openInterest?: boolean;
   onLimits: () => void;
   onReconcile: () => void;
   onImport: () => void;
@@ -61,7 +64,7 @@ export function AccountMoreDialog({
         )}
         {a.type === "depository" && !storeCredit && (
           <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
-            <InterestSection account={a} />
+            <InterestSection account={a} startOpen={openInterest} />
           </div>
         )}
         {a.isManual ? (
