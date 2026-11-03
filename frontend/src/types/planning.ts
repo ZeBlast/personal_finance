@@ -8,6 +8,9 @@ export interface ForecastEvent {
   label: string;
   amountMinor: number;
   source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
+  /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
+  card?: string;
+  chargedOn?: string;
 }
 
 export interface Forecast {

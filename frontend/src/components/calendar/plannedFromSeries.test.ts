@@ -34,6 +34,16 @@ describe("making a plan of a recurring item found in the history", () => {
     });
   });
 
+  it("plans one paid with a card bill on the card, from the day it is charged", () => {
+    const onCard = { ...series("monthly"), accountId: 7, card: "Visa", chargedOn: "2026-10-15" };
+    expect(planFromCadence(onCard, "2026-11-20")).toMatchObject({
+      startDate: "2026-10-15",
+      dayOfMonth: 15,
+      accountId: 7,
+    });
+    expect(planFromCadence(series("monthly"), "2026-11-20")).not.toHaveProperty("accountId");
+  });
+
   it("offers no plan for twice a month, which plans cannot express", () => {
     expect(planFromCadence(series("semimonthly"), "2026-10-20")).toBeNull();
   });

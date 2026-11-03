@@ -137,8 +137,9 @@ function ForecastTab() {
       <p className="text-xs text-slate-500">
         From the balances of {data.accountsCounted} bank account
         {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,
-        recurring money in and out of those accounts, and card bills (for cards with their bill
-        dates set). An estimate.
+        recurring money in and out, and card bills (for cards with their bill dates set). Upcoming
+        charges to such a card, subscriptions among them, count on the day their bill is due. An
+        estimate.
       </p>
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-slate-500">
@@ -161,6 +162,9 @@ function ForecastTab() {
                   {e.label}{" "}
                   <span className="text-xs text-slate-500 dark:text-slate-400">
                     {SOURCE_LABEL[e.source]}
+                    {e.card !== undefined && e.chargedOn !== undefined
+                      ? ` · charged to ${e.card} ${formatDay(e.chargedOn)}, paid with its bill`
+                      : ""}
                   </span>
                 </td>
                 <td

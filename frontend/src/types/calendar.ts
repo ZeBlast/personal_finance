@@ -152,6 +152,9 @@ export interface ForecastEvent {
   seriesKey?: string;
   cadence?: "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
   accountId?: number;
+  /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
+  card?: string;
+  chargedOn?: string;
 }
 
 /** The cash forecast for the days ahead in a span: cash in the bank accounts, day by day. */

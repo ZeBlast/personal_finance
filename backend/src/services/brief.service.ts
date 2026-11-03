@@ -93,7 +93,12 @@ export function dailyBrief(
   const obligations: BriefLine[] = inWindow.flatMap((d) =>
     d.events
       .filter((e) => e.amountMinor < 0)
-      .map((e) => ({ label: e.label, date: d.date, amountMinor: e.amountMinor, source: e.source })),
+      .map((e) => ({
+        label: e.card === undefined ? e.label : `${e.label} (${e.card} bill)`,
+        date: d.date,
+        amountMinor: e.amountMinor,
+        source: e.source,
+      })),
   );
   let lowest = { date: today, balanceMinor: forecast.startBalanceMinor };
   for (const d of inWindow) {

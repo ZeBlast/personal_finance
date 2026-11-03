@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
+import { formatDay } from "../../lib/time";
 import { announceDataChanged } from "../../lib/syncEvents";
 import type { CalendarForecast, ForecastEvent } from "../../types/calendar";
 import { planFromCadence } from "./plannedFromSeries";
@@ -124,6 +125,11 @@ export function ForecastSection({
                   >
                     Not recurring
                   </button>
+                </div>
+              )}
+              {e.card !== undefined && e.chargedOn !== undefined && (
+                <div className="text-slate-500 dark:text-slate-400">
+                  Charged to {e.card} on {formatDay(e.chargedOn)}, paid with its bill.
                 </div>
               )}
               {e.source === "card_bill" && (

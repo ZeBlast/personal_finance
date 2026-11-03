@@ -1,9 +1,11 @@
+import { eq } from "drizzle-orm";
+import { subscriptionReviews, trackedSubscriptions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, isRealDate } from "../utils/dates.js";
 import { debtOverview } from "./debt.service.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
-import { closingDates, dueAfter, listBills } from "./bills.service.js";
+import { closingDates, dueAfter, listBills, type CardBill } from "./bills.service.js";
 import { listOccurrences } from "./calendar.service.js";
 import { nextAfter, recurringReport, type Cadence } from "./recurring.service.js";
 import { getSettings } from "./settings.service.js";
@@ -14,14 +16,17 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  * balances, plus what is expected to come in and go out.
  *
  * What it counts:
- * - Expected transactions the user entered (the calendar's), when they are on a bank account or on
- *   no account in particular.
- * - Recurring charges and deposits found in the bank accounts' history (paychecks, rent, bills),
- *   continued on their schedule. Ones charged to a credit card are left out: they reach the bank
- *   account only when the card is paid, which the next item covers. A recurring item with the same
- *   merchant as an expected transaction is counted once.
+ * - Expected transactions the user entered (the calendar's, which include the subscriptions they
+ *   added), when they are on a bank account or on no account in particular.
+ * - Recurring charges and deposits found in the history (paychecks, rent, bills, subscriptions),
+ *   continued on their schedule. One the user marked cancelled, as a subscription or in the
+ *   subscription review, is left out. A recurring item with the same merchant as an expected
+ *   transaction is counted once.
  * - Credit card bills, for cards whose statement dates are set: what is left of the latest statement
  *   on its due day, and the next statement (as charged so far) on the following due day.
+ * - Expected and recurring charges to such a card: on the due day of the bill they will be on, since
+ *   that is when they leave the bank account. A card without statement dates has no bills here, so
+ *   its charges are left out.
  * - The debt payoff plan's extra monthly payment, when the user chose to count it.
  *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
@@ -37,8 +42,11 @@ export interface ForecastEvent {
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
-  /** A card bill: the card. */
+  /** A card bill, or a charge paid with one: the card. */
   accountId?: number;
+  /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
+  card?: string;
+  chargedOn?: string;
 }
 
 export interface ForecastDay {
@@ -59,6 +67,32 @@ export interface Forecast {
 }
 
 const norm = (s: string): string => s.trim().toLowerCase();
+
+/**
+ * Recurring series the user said are cancelled, with the day their charges stop: a tracked
+ * subscription marked cancelled (from its day), or one marked cancelled in the subscription review
+ * (from when it was marked).
+ */
+function cancelledSeries(db: AppDb): Map<string, string> {
+  const stops = new Map<string, string>();
+  const reviewed = db
+    .select({ key: subscriptionReviews.key, on: subscriptionReviews.updatedAt })
+    .from(subscriptionReviews)
+    .where(eq(subscriptionReviews.status, "cancelled"))
+    .all();
+  for (const r of reviewed) stops.set(r.key, r.on.slice(0, 10));
+  const tracked = db
+    .select({ key: trackedSubscriptions.recurringKey, on: trackedSubscriptions.cancelledOn })
+    .from(trackedSubscriptions)
+    .where(eq(trackedSubscriptions.status, "cancelled"))
+    .all();
+  for (const r of tracked) {
+    if (r.key === null || r.on === null) continue;
+    const earlier = stops.get(r.key);
+    stops.set(r.key, earlier !== undefined && earlier < r.on ? earlier : r.on);
+  }
+  return stops;
+}
 
 export function cashForecast(
   db: AppDb,
@@ -96,51 +130,88 @@ export function cashForecast(
     add(pendingDate(t.date), { label: t.merchant, amountMinor: -t.amountMinor, source: "pending" });
   }
 
+  // Cards with a known bill: a charge to one leaves the bank on the due day of the bill it is on.
+  const bills = listBills(db, today).filter(
+    (b) => b.statement !== null && b.currency === settings.currency,
+  );
+  const billByAccount = new Map(bills.map((b) => [b.accountId, b]));
+  const billByName = new Map(bills.map((b) => [b.name, b]));
+  const billDueFor = (bill: CardBill, date: string): string => {
+    const closes = closingDates(bill.settings!.closingDay, date);
+    return dueAfter(closes.last === date ? closes.last : closes.next, bill.settings!.dueDay);
+  };
+  const addCharge = (bill: CardBill, date: string, e: ForecastEvent): void => {
+    add(billDueFor(bill, date), {
+      ...e,
+      accountId: bill.accountId,
+      card: bill.name,
+      chargedOn: date,
+    });
+  };
+
   // 1. What the user expects.
   const planned = listOccurrences(db, addDays(today, 1), end).filter(
-    (o) => o.status === "expected" && (o.accountType === null || o.accountType === "depository"),
+    (o) => o.status === "expected",
   );
+  const plannedMerchants = new Set<string>();
   for (const o of planned) {
-    if (matchesPendingManual(projectedPending, o)) continue;
     const amount = Math.abs(o.amountMinor);
-    add(o.date, {
+    const event: ForecastEvent = {
       label: o.merchant,
       amountMinor: o.direction === "in" ? amount : -amount,
       source: "expected",
-    });
+    };
+    if (o.accountType === null || o.accountType === "depository") {
+      if (matchesPendingManual(projectedPending, o)) continue;
+      add(o.date, event);
+    } else {
+      const bill = o.accountId === null ? undefined : billByAccount.get(o.accountId);
+      if (!bill || matchesPendingManual(allPending, o)) continue;
+      addCharge(bill, o.date, event);
+    }
+    plannedMerchants.add(norm(o.merchant));
   }
-  const plannedMerchants = new Set(planned.map((o) => norm(o.merchant)));
 
-  // 2. Recurring money in and out of the bank accounts.
+  // 2. Recurring money in and out, until the day the user said it was cancelled.
+  const stops = cancelledSeries(db);
   for (const s of recurringReport(db, { today }).series) {
     if (s.status !== "active" || s.dismissed || plannedMerchants.has(norm(s.merchant))) continue;
-    if (!s.accountNames.some((name) => typeByName.get(name) === "depository")) continue;
+    const onBank = s.accountNames.some((name) => typeByName.get(name) === "depository");
+    const bill = onBank
+      ? undefined
+      : s.accountNames.map((name) => billByName.get(name)).find((b) => b !== undefined);
+    if (!onBank && !bill) continue;
+    const stop = stops.get(s.key);
     const amount = s.typicalAmountMinor;
     for (let d = s.nextExpected, guard = 0; d <= end && guard < 400; d = nextAfter(d, s.cadence)) {
       guard += 1;
+      if (stop !== undefined && d >= stop) break;
+      if (d <= today) continue;
       if (
-        matchesPendingManual(projectedPending, {
+        matchesPendingManual(bill ? allPending : projectedPending, {
           date: d,
           merchant: s.merchant,
           amountMinor: amount,
           direction: s.direction,
-          accountId: null,
+          accountId: bill?.accountId ?? null,
         })
       )
         continue;
-      add(d, {
+      const event: ForecastEvent = {
         label: s.merchant,
         amountMinor: s.direction === "in" ? amount : -amount,
         source: "recurring",
         seriesKey: s.key,
         cadence: s.cadence,
-      });
+      };
+      if (bill) addCharge(bill, d, event);
+      else add(d, event);
     }
   }
 
   // 3. Card bills.
-  for (const bill of listBills(db, today)) {
-    if (!bill.statement || bill.currency !== settings.currency) continue;
+  for (const bill of bills) {
+    if (!bill.statement) continue;
     add(bill.statement.dueOn, {
       label: `${bill.name} bill`,
       amountMinor: -bill.statement.remainingMinor,
@@ -159,9 +230,7 @@ export function cashForecast(
       for (const t of allPending.filter(
         (t) => t.accountId === bill.accountId && t.date > bill.next!.closesOn,
       )) {
-        const closes = closingDates(bill.settings!.closingDay, t.date);
-        const closedOn = closes.last === t.date ? closes.last : closes.next;
-        add(dueAfter(closedOn, bill.settings!.dueDay), {
+        add(billDueFor(bill, t.date), {
           label: `${bill.name} pending charges`,
           amountMinor: -t.amountMinor,
           source: "pending",

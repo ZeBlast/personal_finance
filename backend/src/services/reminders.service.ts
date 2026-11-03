@@ -55,8 +55,9 @@ export function dueReminders(db: AppDb, today = new Date().toISOString().slice(0
       if (day.date < today || day.date > last) continue;
       for (const e of day.events) {
         // Payments the user makes: card bills, recurring charges and expected ones. Not pending
-        // charges (already spent) or the debt plan's extra (a plan, not a bill).
-        if (e.amountMinor >= 0) continue;
+        // charges (already spent) or the debt plan's extra (a plan, not a bill). Nor a charge paid
+        // with a card bill: the card's own reminder covers it.
+        if (e.amountMinor >= 0 || e.card !== undefined) continue;
         if (e.source !== "card_bill" && e.source !== "recurring" && e.source !== "expected")
           continue;
         out.push({
