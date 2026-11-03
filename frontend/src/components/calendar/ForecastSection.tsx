@@ -14,6 +14,7 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   card_bill: "Card bill (estimated)",
   recurring: "Found recurring",
   debt_plan: "Debt payoff plan",
+  interest: "Interest (estimated from the APY)",
 };
 
 const smallButton =

@@ -7,6 +7,7 @@ import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
 import { closingDates, dueAfter, listBills, type CardBill } from "./bills.service.js";
 import { listOccurrences } from "./calendar.service.js";
+import { accountYieldsById, monthlyInterest } from "./interest.service.js";
 import { nextAfter, recurringReport, type Cadence } from "./recurring.service.js";
 import { getSettings } from "./settings.service.js";
 import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
@@ -28,6 +29,9 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  *   that is when they leave the bank account. A card without statement dates has no bills here, so
  *   its charges are left out.
  * - The debt payoff plan's extra monthly payment, when the user chose to count it.
+ * - Interest on bank accounts whose APY the user entered: on the last day of each month, on the
+ *   account's balance today plus the interest before it. Interest found recurring in such an
+ *   account's history is left to this, so it is not counted twice.
  *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
  */
@@ -38,11 +42,11 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "interest";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
-  /** A card bill, or a charge paid with one: the card. */
+  /** A card bill, or a charge paid with one: the card. Interest: the bank account. */
   accountId?: number;
   /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
   card?: string;
@@ -67,6 +71,12 @@ export interface Forecast {
 }
 
 const norm = (s: string): string => s.trim().toLowerCase();
+
+/** The last day of a `YYYY-MM` month. Pure. */
+function lastDayOf(month: string): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+}
 
 /**
  * Recurring series the user said are cancelled, with the day their charges stop: a tracked
@@ -174,8 +184,14 @@ export function cashForecast(
 
   // 2. Recurring money in and out, until the day the user said it was cancelled.
   const stops = cancelledSeries(db);
+  const apys = accountYieldsById(db);
+  const earning = cash.filter((a) => (apys.get(a.id) ?? 0) > 0);
+  const earningNames = new Set(earning.map((a) => a.name));
   for (const s of recurringReport(db, { today }).series) {
     if (s.status !== "active" || s.dismissed || plannedMerchants.has(norm(s.merchant))) continue;
+    // Interest paid into an account with an APY: step 5 estimates it.
+    const interest = s.direction === "in" && /interest/i.test(s.merchant);
+    if (interest && s.accountNames.some((name) => earningNames.has(name))) continue;
     const onBank = s.accountNames.some((name) => typeByName.get(name) === "depository");
     const bill = onBank
       ? undefined
@@ -249,6 +265,25 @@ export function cashForecast(
       if (day > end) break;
       add(day, { label: "Extra debt payment (plan)", amountMinor: -extra, source: "debt_plan" });
     }
+  }
+
+  // 5. Interest, at the end of each month.
+  const monthEnds: string[] = [];
+  for (let k = 0; ; k += 1) {
+    const day = lastDayOf(addMonths(today.slice(0, 7), k));
+    if (day > end) break;
+    if (day > today) monthEnds.push(day);
+  }
+  for (const a of earning) {
+    const paid = monthlyInterest(a.currentBalanceMinor!, apys.get(a.id)!, monthEnds.length);
+    monthEnds.forEach((day, k) => {
+      add(day, {
+        label: `${a.name} interest`,
+        amountMinor: paid[k]!,
+        source: "interest",
+        accountId: a.id,
+      });
+    });
   }
 
   const days: ForecastDay[] = [];

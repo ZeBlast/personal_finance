@@ -83,6 +83,7 @@ const SOURCE_LABEL = {
   card_bill: "Card bill",
   pending: "Pending",
   debt_plan: "Debt plan",
+  interest: "Interest (from the APY)",
 };
 
 function ForecastTab() {
@@ -138,8 +139,9 @@ function ForecastTab() {
         From the balances of {data.accountsCounted} bank account
         {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,
         recurring money in and out, and card bills (for cards with their bill dates set). Upcoming
-        charges to such a card, subscriptions among them, count on the day their bill is due. An
-        estimate.
+        charges to such a card, subscriptions among them, count on the day their bill is due.
+        Interest counts at the end of each month for bank accounts with an APY set (under
+        &quot;More...&quot; on the account). An estimate.
       </p>
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-slate-500">

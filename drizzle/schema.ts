@@ -1002,6 +1002,16 @@ export const debtTerms = sqliteTable("debt_terms", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** A bank account's interest rate (APY), entered by the user to estimate what it earns. */
+export const accountYields = sqliteTable("account_yields", {
+  accountId: integer("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  /** Annual percentage yield in hundredths of a percent: 425 is 4.25%. */
+  apyBps: integer("apy_bps").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const goals = sqliteTable("goals", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),

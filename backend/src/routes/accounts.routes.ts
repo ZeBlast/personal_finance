@@ -30,6 +30,12 @@ import {
   deleteManualBankAccount,
   MANUAL_ACCOUNT_KINDS,
 } from "../services/manual-transaction.service.js";
+import {
+  accountInterest,
+  clearAccountYield,
+  MAX_APY_BPS,
+  setAccountYield,
+} from "../services/interest.service.js";
 import { reconcileAccount } from "../services/reconcile.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { importBankCsv } from "../services/bank-csv-import.service.js";
@@ -205,6 +211,24 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
       }),
     );
   });
+  /** A bank account's APY, what it should earn at today's balance, and what it has earned. */
+  router.get("/accounts/:id/interest", (req, res) => {
+    res.json(accountInterest(db, idParam.parse(req.params["id"])));
+  });
+  router.put("/accounts/:id/interest", (req, res) => {
+    const id = idParam.parse(req.params["id"]);
+    const body = z
+      .object({ apyBps: z.number().int().min(0).max(MAX_APY_BPS) })
+      .strict()
+      .parse(req.body);
+    setAccountYield(db, id, body.apyBps);
+    res.json(accountInterest(db, id));
+  });
+  router.delete("/accounts/:id/interest", (req, res) => {
+    clearAccountYield(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+
   /** A credit card's statement periods, newest first, with what happened in each. */
   /** The app's balance on a statement's closing day, against the statement's. */
   router.get("/accounts/:id/reconcile", (req, res) => {

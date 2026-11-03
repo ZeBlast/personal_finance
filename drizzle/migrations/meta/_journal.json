@@ -344,6 +344,13 @@
       "when": 1793546169919,
       "tag": "0048_spending_caps",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1793682393123,
+      "tag": "0049_account_yields",
+      "breakpoints": true
     }
   ]
 }

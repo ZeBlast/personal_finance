@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import type { Account } from "../../../types/api";
 import { CashbackSection } from "../CashbackSection";
+import { InterestSection } from "../InterestSection";
 import { Modal } from "../../common/Modal";
 import { isStoreCredit } from "../StoreCreditDialogs";
 
 /**
  * The rest of what can be done with an account, behind "More..." on the back of its card (the
  * card itself has room only for the everyday actions): the credit limit's history, checking the
- * balance against a statement, cashback rates, importing a CSV, and deleting an account kept by
- * hand.
+ * balance against a statement, cashback rates, a bank account's interest (APY), importing a CSV,
+ * and deleting an account kept by hand.
  */
 export function AccountMoreDialog({
   account: a,
@@ -56,6 +57,11 @@ export function AccountMoreDialog({
         {credit && (
           <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
             <CashbackSection account={a} />
+          </div>
+        )}
+        {a.type === "depository" && !storeCredit && (
+          <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+            <InterestSection account={a} />
           </div>
         )}
         {a.isManual ? (
