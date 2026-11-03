@@ -75,21 +75,29 @@ export function historyWords(history: Budget["history"]): string {
   return `Within the cap in ${within} of ${capped.length} month${capped.length === 1 ? "" : "s"}.`;
 }
 
-/** One sentence on how a month's caps went, naming what went over. Pure. */
+/**
+ * How a month's caps went: how many held, and (only when some went over) a separate part naming
+ * what went over, so the page can show just that part in red. Pure.
+ */
 export function reportVerdict(
   items: Array<{ label: string; status: CapStatus; remainingMinor: number }>,
   money: (minor: number) => string,
-): string {
+): { held: string; over: string | null } {
   const over = items.filter((i) => i.status === "over");
   if (over.length === 0) {
-    return items.length === 1
-      ? "Stayed within the cap."
-      : `Stayed within all ${items.length} caps.`;
+    return {
+      held:
+        items.length === 1 ? "Stayed within the cap." : `Stayed within all ${items.length} caps.`,
+      over: null,
+    };
   }
   const named = over
     .slice(0, 3)
     .map((i) => `${i.label} by ${money(-i.remainingMinor)}`)
     .join(", ");
   const others = over.length > 3 ? `, and ${over.length - 3} more` : "";
-  return `${items.length - over.length} of ${items.length} caps held. Over: ${named}${others}.`;
+  return {
+    held: `${items.length - over.length} of ${items.length} caps held.`,
+    over: `Over: ${named}${others}.`,
+  };
 }

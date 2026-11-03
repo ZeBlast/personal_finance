@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../../api/client";
 import { categoryOptions, useCategories } from "../../hooks/useCategories";
 import type { Category } from "../../types/api";
+import { ActionMenu } from "../common/ActionMenu";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { Select } from "../common/Select";
 import { buttonClass, inputClass, primaryClass, type Notice } from "./shared";
@@ -209,59 +210,63 @@ export function CategoriesSection({ onChanged }: { onChanged: () => void }) {
     }
   }
 
-  const row = (c: Category, indent: boolean) => (
-    <li
-      key={c.id}
-      className={`flex flex-wrap items-center justify-between gap-2 py-2 ${indent ? "pl-8" : ""}`}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className="h-3 w-3 rounded-full"
-          style={{ backgroundColor: c.color ?? "#94a3b8" }}
-        />
-        <span className={c.active ? "font-medium" : "text-slate-400 line-through"}>{c.name}</span>
-        {!c.active && <span className="text-xs text-slate-500">archived</span>}
-        {c.incomeTreatment && (
+  const row = (c: Category, indent: boolean) => {
+    const counts = `${c.transactionCount} transaction${c.transactionCount === 1 ? "" : "s"}${
+      c.ruleCount > 0 ? ` · ${c.ruleCount} rule${c.ruleCount === 1 ? "" : "s"}` : ""
+    }`;
+    return (
+      <li
+        key={c.id}
+        className={`flex items-center justify-between gap-2 py-2 ${indent ? "pl-8" : ""}`}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
-            className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-            title={
-              c.incomeTreatment === "income"
-                ? "Money coming in here counts as taxable income"
-                : c.incomeTreatment === "refund"
-                  ? "Money coming in here is a refund: it lowers spending and is never income"
-                  : "Moving your own money: never income or spending, like a transfer"
-            }
+            aria-hidden="true"
+            className="h-3 w-3 shrink-0 rounded-full"
+            style={{ backgroundColor: c.color ?? "#94a3b8" }}
+          />
+          <span
+            className={`min-w-0 truncate ${c.active ? "font-medium" : "text-slate-400 line-through"}`}
+            title={c.name}
           >
-            {c.incomeTreatment === "income"
-              ? "counts as income"
-              : c.incomeTreatment === "refund"
-                ? "refund"
-                : "moves your money"}
+            {c.name}
           </span>
-        )}
-        <span className="text-xs text-slate-500">
-          {c.transactionCount} transaction{c.transactionCount === 1 ? "" : "s"}
-          {c.ruleCount > 0 ? ` · ${c.ruleCount} rule${c.ruleCount === 1 ? "" : "s"}` : ""}
-        </span>
-      </div>
-      <div className="flex gap-2">
-        <button type="button" className={buttonClass} onClick={() => setEditing(c)}>
-          Edit
-        </button>
-        <button type="button" className={buttonClass} onClick={() => void toggleActive(c)}>
-          {c.active ? "Archive" : "Restore"}
-        </button>
-        <button
-          type="button"
-          className={`${buttonClass} border-red-300 text-red-700 dark:border-red-800 dark:text-red-400`}
-          onClick={() => setRemoving(c)}
-        >
-          Delete
-        </button>
-      </div>
-    </li>
-  );
+          {!c.active && <span className="shrink-0 text-xs text-slate-500">archived</span>}
+          {c.incomeTreatment && (
+            <span
+              className="max-w-40 min-w-0 truncate rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              title={
+                c.incomeTreatment === "income"
+                  ? "Money coming in here counts as taxable income"
+                  : c.incomeTreatment === "refund"
+                    ? "Money coming in here is a refund: it lowers spending and is never income"
+                    : "Moving your own money: never income or spending, like a transfer"
+              }
+            >
+              {c.incomeTreatment === "income"
+                ? "counts as income"
+                : c.incomeTreatment === "refund"
+                  ? "refund"
+                  : "moves your money"}
+            </span>
+          )}
+          <span className="min-w-0 truncate text-xs text-slate-500" title={counts}>
+            {counts}
+          </span>
+        </div>
+        <div className="w-10 shrink-0">
+          <ActionMenu
+            label={`Actions for ${c.name}`}
+            items={[
+              { label: "Edit", onSelect: () => setEditing(c) },
+              { label: c.active ? "Archive" : "Restore", onSelect: () => void toggleActive(c) },
+              { label: "Delete", danger: true, onSelect: () => setRemoving(c) },
+            ]}
+          />
+        </div>
+      </li>
+    );
+  };
 
   const reassignChoices = categoryOptions(all.filter((c) => c.active && c.id !== removing?.id));
 

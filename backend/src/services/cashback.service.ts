@@ -351,7 +351,9 @@ export interface TransactionCashback {
 
 /**
  * For each of these transactions that is a purchase: what it earned, and whether the best card for
- * it was used. Refunds, transfers, payments to people, card payments, fees, and income are left out.
+ * it was used. Refunds, transfers, payments to people, card payments, fees, and income are left out,
+ * as is anything off a bank account that sits in a category marked as income, a refund, or moving
+ * your own money.
  */
 export function transactionCashback(db: AppDb, ids: number[]): Map<number, TransactionCashback> {
   const result = new Map<number, TransactionCashback>();
@@ -369,7 +371,8 @@ export function transactionCashback(db: AppDb, ids: number[]): Map<number, Trans
       and a.type in ('credit', 'depository', 'other')
       and ${EARNS}
       and coalesce(t.plaid_category_primary, '') not in ('TRANSFER_OUT', 'TRANSFER_IN', 'LOAN_PAYMENTS', 'INCOME')
-      and (a.type = 'credit' or coalesce(t.recipient_user, t.recipient) is null)`);
+      and (a.type = 'credit' or coalesce(t.recipient_user, t.recipient) is null)
+      and (a.type = 'credit' or c.income_treatment is null)`);
   if (rows.length === 0) return result;
   const cards = currentCards(db);
   const rules = loadRules(

@@ -115,10 +115,15 @@ export function ReportsPage() {
                 data.budgets.count > 0 ? (
                   <span>
                     {money(data.budgets.spentMinor)} of {money(data.budgets.budgetedMinor)}
+                    {data.budgets.overspent > 0 && (
+                      <span className="text-red-600 dark:text-red-400">
+                        {" "}
+                        · {data.budgets.overspent} over
+                      </span>
+                    )}
                   </span>
                 ) : undefined
               }
-              warn={data.budgets.overspent > 0}
             />
             <Card label="Transactions" value={String(data.transactionCount)} />
           </div>
@@ -144,7 +149,7 @@ export function ReportsPage() {
             ) : (
               <>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  {reportVerdict(data.budgets.items, money)}
+                  <CapsVerdict items={data.budgets.items} money={money} />
                 </p>
                 <ul className="mt-3 grid gap-x-6 gap-y-3 @min-[56rem]:grid-cols-2">
                   {data.budgets.items.map((c) => (
@@ -268,5 +273,22 @@ function Card({
       </div>
       {sub && <div className="text-xs">{sub}</div>}
     </div>
+  );
+}
+
+/** How the caps went: the count in the page's own colour, only what went over in red. */
+function CapsVerdict({
+  items,
+  money,
+}: {
+  items: Parameters<typeof reportVerdict>[0];
+  money: (minor: number) => string;
+}) {
+  const verdict = reportVerdict(items, money);
+  return (
+    <>
+      {verdict.held}
+      {verdict.over && <span className="text-red-600 dark:text-red-400"> {verdict.over}</span>}
+    </>
   );
 }

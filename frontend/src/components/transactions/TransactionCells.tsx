@@ -15,7 +15,9 @@ export function AmountCell({ t }: { t: Transaction }) {
     >
       {shown > 0 ? "+" : ""}
       {formatMinor(shown, t.currency)}
-      {t.cashback && <CashbackBadge cashback={t.cashback} />}
+      {t.cashback && !t.isTransfer && !t.refundOf && shown < 0 && (
+        <CashbackBadge cashback={t.cashback} />
+      )}
     </span>
   );
 }
@@ -23,12 +25,16 @@ export function AmountCell({ t }: { t: Transaction }) {
 const BADGE_TONE = {
   green: "text-green-700 dark:text-green-400",
   yellow: "text-amber-800 dark:text-amber-400",
-  red: "text-red-600 dark:text-red-400",
+  muted: "text-slate-500 dark:text-slate-400",
 } as const;
 
-/** Green: the best card was used. Yellow: a credit card, but not the best. Red: not a credit card. */
+/**
+ * Green: the best card was used. Yellow: a credit card, but not the best. Muted: not a credit card,
+ * naming the card that would have earned (nothing when none would).
+ */
 function CashbackBadge({ cashback }: { cashback: NonNullable<Transaction["cashback"]> }) {
   const badge = cashbackBadge(cashback);
+  if (!badge) return null;
   return (
     <span className={`block text-xs font-medium ${BADGE_TONE[badge.tone]}`} title={badge.title}>
       {badge.text}

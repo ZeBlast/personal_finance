@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { ActionMenu } from "../common/ActionMenu";
 import { Select } from "../common/Select";
 import { applyPreset, presetNamed, PRESETS } from "../../widgets/presets";
 import { api, errorMessage } from "../../api/client";
@@ -11,9 +11,6 @@ type Dialog = "new" | "rename" | "delete" | null;
 
 /** The "Start from" choice meaning a copy of the dashboard on show. */
 const COPY = "copy";
-
-const itemClass =
-  "block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none dark:hover:bg-slate-700 dark:focus:bg-slate-700";
 
 /**
  * A "..." menu with New dashboard, Rename and Delete (Delete only when there is more than one
@@ -31,49 +28,12 @@ export function DashboardActions({
   onError: (message: string) => void;
 }) {
   const id = useId();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [name, setName] = useState("");
   const [start, setStart] = useState(COPY);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const active = list.dashboards.find((d) => d.id === list.active);
-
-  // While open, the first item has focus and a click anywhere else closes the menu.
-  useEffect(() => {
-    if (!menuOpen) return;
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    const away = (event: MouseEvent) => {
-      if (!menuRef.current?.parentElement?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [menuOpen]);
-
-  function closeMenu(): void {
-    setMenuOpen(false);
-    buttonRef.current?.focus();
-  }
-
-  function menuKey(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeMenu();
-      return;
-    }
-    if (event.key === "Tab") {
-      setMenuOpen(false);
-      return;
-    }
-    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    items[(at + step + items.length) % items.length]?.focus();
-  }
 
   async function run(work: () => Promise<unknown>, failure: string): Promise<boolean> {
     setBusy(true);
@@ -96,7 +56,6 @@ export function DashboardActions({
     setName(next === "rename" ? (active?.name ?? "") : "");
     setStart(COPY);
     setProblem(null);
-    setMenuOpen(false);
     setDialog(next);
   }
 
@@ -133,57 +92,16 @@ export function DashboardActions({
 
   return (
     <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-label="Dashboard actions"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        className={`${buttonClass} px-2`}
-        onClick={() => setMenuOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setMenuOpen(true);
-          }
-        }}
-      >
-        <MoreHorizontal aria-hidden="true" className="h-5 w-5" />
-      </button>
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label="Dashboard actions"
-          onKeyDown={menuKey}
-          className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-md border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-800"
-        >
-          <button type="button" role="menuitem" className={itemClass} onClick={() => open("new")}>
-            New dashboard
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={itemClass}
-            onClick={() => open("rename")}
-          >
-            Rename
-          </button>
-          {list.dashboards.length > 1 && (
-            <button
-              type="button"
-              role="menuitem"
-              className={`${itemClass} text-red-600 dark:text-red-400`}
-              onClick={() => {
-                setMenuOpen(false);
-                setDialog("delete");
-              }}
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
+      <ActionMenu
+        label="Dashboard actions"
+        items={[
+          { label: "New dashboard", onSelect: () => open("new") },
+          { label: "Rename", onSelect: () => open("rename") },
+          ...(list.dashboards.length > 1
+            ? [{ label: "Delete", danger: true, onSelect: () => setDialog("delete") }]
+            : []),
+        ]}
+      />
 
       {(dialog === "new" || dialog === "rename") && (
         <Modal

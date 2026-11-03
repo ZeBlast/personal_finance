@@ -162,12 +162,15 @@ export function formatRate(bps: number | null): string {
   return `${(bps / 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 }
 
-/** How a purchase's card choice is shown in the transaction list. */
+/**
+ * How a purchase's card choice is shown in the transaction list. A purchase not paid with a credit
+ * card shows nothing unless one of your cards would have earned on it.
+ */
 export function cashbackBadge(c: TransactionCashback): {
-  tone: "green" | "yellow" | "red";
+  tone: "green" | "yellow" | "muted";
   text: string;
   title: string;
-} {
+} | null {
   const best =
     c.bestCard && c.bestRateBps > 0
       ? `${c.bestCard} would earn ${formatRate(c.bestRateBps)}.`
@@ -186,5 +189,10 @@ export function cashbackBadge(c: TransactionCashback): {
       title: `Paid with a credit card at ${formatRate(c.rateBps)}. ${best}`,
     };
   }
-  return { tone: "red", text: "no cashback", title: `Not paid with a credit card. ${best}` };
+  if (!c.bestCard || c.bestRateBps <= 0) return null;
+  return {
+    tone: "muted",
+    text: `${c.bestCard}: ${formatRate(c.bestRateBps)}`,
+    title: `Not paid with a credit card. ${best}`,
+  };
 }

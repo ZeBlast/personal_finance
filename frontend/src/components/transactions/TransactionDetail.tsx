@@ -216,14 +216,14 @@ export function TransactionDetail({
             {t.accountName}
             {t.institutionName ? ` · ${t.institutionName}` : ""}
           </Field>
-          {t.cashback && (
+          {t.cashback && cashbackBadge(t.cashback) && (
             <Field label="Cashback">
               {t.cashback.status === "missed"
                 ? "None: not paid with a credit card"
                 : `${formatMinor(t.cashback.cashbackMinor, t.currency)} at ${formatRate(t.cashback.rateBps)}${t.cashback.online ? " (online rate)" : ""}`}
               <span className="text-slate-500">
                 {" "}
-                · {cashbackBadge(t.cashback).title} Cashback is kept apart from balances until the
+                · {cashbackBadge(t.cashback)?.title} Cashback is kept apart from balances until the
                 card pays it as a credit.
               </span>
             </Field>

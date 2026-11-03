@@ -95,12 +95,14 @@ describe("caps in words", () => {
       status,
       remainingMinor,
     });
-    expect(reportVerdict([item("Food", "ok", 100), item("Gas", "ok", 100)], money)).toBe(
-      "Stayed within all 2 caps.",
-    );
-    expect(reportVerdict([item("Food", "over", -500), item("Gas", "ok", 100)], money)).toBe(
-      "1 of 2 caps held. Over: Food by $5.",
-    );
+    expect(reportVerdict([item("Food", "ok", 100), item("Gas", "ok", 100)], money)).toEqual({
+      held: "Stayed within all 2 caps.",
+      over: null,
+    });
+    expect(reportVerdict([item("Food", "over", -500), item("Gas", "ok", 100)], money)).toEqual({
+      held: "1 of 2 caps held.",
+      over: "Over: Food by $5.",
+    });
   });
 });
 

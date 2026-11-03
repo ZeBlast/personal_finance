@@ -129,14 +129,23 @@ describe("the transaction badge", () => {
     bestCard: "Grocery Card",
     online: false,
   };
-  it("is green for the best card, yellow for another card, red for no credit card", () => {
-    expect(cashbackBadge({ ...base, status: "best", rateBps: 300 }).tone).toBe("green");
+  it("is green for the best card and yellow for another card", () => {
+    expect(cashbackBadge({ ...base, status: "best", rateBps: 300 })?.tone).toBe("green");
     const yellow = cashbackBadge({ ...base, status: "card", rateBps: 100 });
-    expect(yellow.tone).toBe("yellow");
-    expect(yellow.title).toMatch(/Grocery Card would earn 3%/);
-    expect(cashbackBadge({ ...base, status: "missed" })).toMatchObject({
-      tone: "red",
-      text: "no cashback",
+    expect(yellow?.tone).toBe("yellow");
+    expect(yellow?.title).toMatch(/Grocery Card would earn 3%/);
+  });
+
+  it("names the card that would have earned when no credit card was used", () => {
+    expect(cashbackBadge({ ...base, status: "missed" })).toEqual({
+      tone: "muted",
+      text: "Grocery Card: 3%",
+      title: "Not paid with a credit card. Grocery Card would earn 3%.",
     });
+  });
+
+  it("shows nothing when no credit card was used and none would have earned", () => {
+    expect(cashbackBadge({ ...base, status: "missed", bestRateBps: 0, bestCard: null })).toBeNull();
+    expect(cashbackBadge({ ...base, status: "missed", bestCard: null })).toBeNull();
   });
 });
