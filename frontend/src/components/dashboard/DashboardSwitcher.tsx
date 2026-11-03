@@ -1,20 +1,12 @@
-import { useId, useState, type FormEvent } from "react";
-import { Select } from "../common/Select";
-import { applyPreset, presetNamed, PRESETS } from "../../widgets/presets";
+import { useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import type { DashboardList } from "../../types/analytics";
-import { ConfirmDialog, Modal } from "../common/Modal";
-import { buttonClass, inputClass, primaryClass } from "../investments/styles";
-
-type Dialog = "new" | "rename" | "delete" | null;
 
 /**
- * Tabs for the named dashboards, plus New, Rename and Delete. Switching is disabled while a
- * dashboard is being edited, so a half-finished edit is never carried (or lost) by accident.
+ * Tabs for the named dashboards, in the same style as the section tabs of Planning and
+ * Transactions. Switching is disabled while a dashboard is being edited, so a half-finished edit is
+ * never carried (or lost) by accident. New, Rename and Delete are in `DashboardActions`.
  */
-/** The "Start from" choice meaning a copy of the dashboard on show. */
-const COPY = "copy";
-
 export function DashboardSwitcher({
   list,
   disabled,
@@ -28,197 +20,43 @@ export function DashboardSwitcher({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const id = useId();
-  const [dialog, setDialog] = useState<Dialog>(null);
-  const [name, setName] = useState("");
-  const [start, setStart] = useState(COPY);
-  const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const active = list.dashboards.find((d) => d.id === list.active);
 
-  async function run(work: () => Promise<unknown>, failure: string): Promise<boolean> {
+  async function switchTo(id: number): Promise<void> {
     setBusy(true);
-    setProblem(null);
     try {
-      await work();
+      await api(`/dashboards/${id}/activate`, { method: "POST", body: "{}" });
       onChanged();
-      return true;
     } catch (e) {
-      const message = errorMessage(e, failure);
-      if (dialog === "new" || dialog === "rename") setProblem(message);
-      else onError(message);
-      return false;
+      onError(errorMessage(e, "Could not switch dashboards."));
     } finally {
       setBusy(false);
     }
   }
 
-  function open(next: Dialog): void {
-    setName(next === "rename" ? (active?.name ?? "") : "");
-    setStart(COPY);
-    setProblem(null);
-    setDialog(next);
-  }
-
-  async function submit(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (name.trim() === "") {
-      setProblem("Give the dashboard a name.");
-      return;
-    }
-    const ok =
-      dialog === "new"
-        ? await run(async () => {
-            const created = await api<{ id: number }>("/dashboards", {
-              method: "POST",
-              body: JSON.stringify({
-                name,
-                ...(start === COPY && active ? { copyFrom: active.id } : {}),
-              }),
-            });
-            const preset = presetNamed(start);
-            if (preset) await applyPreset(created.id, preset);
-            await api(`/dashboards/${created.id}/activate`, { method: "POST", body: "{}" });
-          }, "Could not create the dashboard.")
-        : await run(
-            () =>
-              api(`/dashboards/${list.active}`, {
-                method: "PATCH",
-                body: JSON.stringify({ name }),
-              }),
-            "Could not rename the dashboard.",
-          );
-    if (ok) setDialog(null);
-  }
-
   return (
-    <div className="contents">
-      <div
-        role="tablist"
-        aria-label="Choose a dashboard"
-        className="flex flex-wrap gap-1 @max-6xl:order-last @max-6xl:w-full"
-      >
-        {list.dashboards.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            role="tab"
-            aria-selected={d.id === list.active}
-            disabled={disabled || busy}
-            onClick={() =>
-              d.id !== list.active &&
-              void run(
-                () => api(`/dashboards/${d.id}/activate`, { method: "POST", body: "{}" }),
-                "Could not switch dashboards.",
-              )
-            }
-            className={`rounded-md border px-3 py-1.5 text-sm disabled:opacity-60 ${
-              d.id === list.active
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
-            }`}
-          >
-            {d.name}
-          </button>
-        ))}
-      </div>
-      <button type="button" className={buttonClass} disabled={disabled} onClick={() => open("new")}>
-        New dashboard
-      </button>
-      {!disabled && (
-        <>
-          <button type="button" className={buttonClass} onClick={() => open("rename")}>
-            Rename
-          </button>
-          {list.dashboards.length > 1 && (
-            <button type="button" className={buttonClass} onClick={() => setDialog("delete")}>
-              Delete
-            </button>
-          )}
-        </>
-      )}
-
-      {(dialog === "new" || dialog === "rename") && (
-        <Modal
-          title={dialog === "new" ? "New dashboard" : `Rename ${active?.name ?? "dashboard"}`}
-          onClose={() => setDialog(null)}
+    <div
+      role="tablist"
+      aria-label="Choose a dashboard"
+      className="flex flex-wrap gap-1 border-b border-slate-200 @max-6xl:order-last @max-6xl:w-full dark:border-slate-700"
+    >
+      {list.dashboards.map((d) => (
+        <button
+          key={d.id}
+          type="button"
+          role="tab"
+          aria-selected={d.id === list.active}
+          disabled={disabled || busy}
+          onClick={() => d.id !== list.active && void switchTo(d.id)}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm disabled:opacity-60 ${
+            d.id === list.active
+              ? "border-blue-600 font-medium text-blue-700 dark:text-blue-300"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
         >
-          <form onSubmit={(e) => void submit(e)} className="space-y-3 text-sm">
-            <div>
-              <label htmlFor={`${id}-name`} className="block font-medium">
-                Name
-              </label>
-              <input
-                id={`${id}-name`}
-                value={name}
-                autoFocus
-                maxLength={40}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Investing"
-                className={inputClass}
-              />
-            </div>
-            {dialog === "new" && (
-              <div>
-                <label htmlFor={`${id}-start`} className="block font-medium">
-                  Start from
-                </label>
-                <Select
-                  id={`${id}-start`}
-                  value={start}
-                  onChange={(e) => {
-                    setStart(e.target.value);
-                    // A ready-made dashboard's name is a good start, unless one has been typed.
-                    if (name === "" && presetNamed(e.target.value)) setName(e.target.value);
-                  }}
-                  className={inputClass}
-                >
-                  <option value={COPY}>A copy of {active?.name ?? "this dashboard"}</option>
-                  {PRESETS.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </Select>
-                {presetNamed(start) && (
-                  <p className="mt-1 text-xs text-slate-500">{presetNamed(start)!.blurb}</p>
-                )}
-              </div>
-            )}
-            {problem && (
-              <p role="alert" className="text-red-600">
-                {problem}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <button type="button" className={buttonClass} onClick={() => setDialog(null)}>
-                Cancel
-              </button>
-              <button type="submit" className={primaryClass} disabled={busy}>
-                {busy ? "Saving..." : dialog === "new" ? "Create" : "Save"}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-      {dialog === "delete" && active && (
-        <ConfirmDialog
-          title={`Delete ${active.name}?`}
-          message={`The dashboard and its ${active.widgetCount} widget${
-            active.widgetCount === 1 ? "" : "s"
-          } will be removed. Your data is not affected.`}
-          confirmLabel="Delete dashboard"
-          danger
-          busy={busy}
-          onConfirm={() =>
-            void run(
-              () => api(`/dashboards/${active.id}`, { method: "DELETE" }),
-              "Could not delete the dashboard.",
-            ).then(() => setDialog(null))
-          }
-          onCancel={() => setDialog(null)}
-        />
-      )}
+          {d.name}
+        </button>
+      ))}
     </div>
   );
 }

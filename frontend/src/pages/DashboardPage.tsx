@@ -3,6 +3,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ConfirmDialog } from "../components/common/Modal";
+import { DashboardActions } from "../components/dashboard/DashboardActions";
 import { DashboardSwitcher } from "../components/dashboard/DashboardSwitcher";
 import { Welcome } from "../components/onboarding/Welcome";
 import type { Account, Settings } from "../types/api";
@@ -103,15 +104,20 @@ function WidgetGrid({
 /** A new copy's identity and place, leaving out any saved ID. */
 const withoutId = ({ key, x, y }: PlacedWidget) => ({ id: undefined, key, x, y });
 
-/** One dashboard's widgets and the edit-mode controls. `switcher` is drawn beside the title. */
+/**
+ * One dashboard's widgets and the edit-mode controls. `switcher` is drawn beside the title and
+ * `actions` beside "Edit dashboard" (not while editing).
+ */
 function DashboardView({
   dashboardId,
   name,
   switcher,
+  actions,
 }: {
   dashboardId: number;
   name: string;
   switcher: (editing: boolean) => ReactNode;
+  actions: ReactNode;
 }) {
   const dashboard = useDashboard(dashboardId, name);
   const { widgets, editing, update } = dashboard;
@@ -206,9 +212,12 @@ function DashboardView({
                 </button>
               </>
             ) : (
-              <button type="button" className={buttonClass} onClick={dashboard.startEditing}>
-                Edit dashboard
-              </button>
+              <>
+                {actions}
+                <button type="button" className={buttonClass} onClick={dashboard.startEditing}>
+                  Edit dashboard
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -446,6 +455,16 @@ export function DashboardPage() {
             onError={setProblem}
           />
         )}
+        actions={
+          <DashboardActions
+            list={list}
+            onChanged={() => {
+              setProblem(null);
+              boards.reload();
+            }}
+            onError={setProblem}
+          />
+        }
       />
     </>
   );
