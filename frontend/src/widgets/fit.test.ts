@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fitLayout, hasNoOverlap, isReadyMade, rowsFor } from "./fit";
-import { GRID_COLUMNS } from "./layout";
+import { GRID_COLUMNS, LEGACY_DEFAULT_PLAN, planToPlaced } from "./layout";
 import { presetLayout, presetNamed, PRESETS } from "./presets";
 import { allWidgets } from "./registry";
 import type { PlacedWidget } from "./types";
@@ -14,6 +14,14 @@ describe("which dashboards fit the window", () => {
     for (const p of PRESETS) expect(isReadyMade(made(p.name)), p.name).toBe(true);
     expect(isReadyMade(made("Budget", [1, 2]))).toBe(true);
     expect(isReadyMade(made("Budget", [1, 2, 3, 4, 5]))).toBe(true);
+  });
+
+  it("still fits an untouched Everyday made before This month was added", () => {
+    const old = planToPlaced(LEGACY_DEFAULT_PLAN, allWidgets());
+    expect(old.some((w) => w.widgetType === "this-month")).toBe(false);
+    expect(isReadyMade(old)).toBe(true);
+    expect(isReadyMade(made("Everyday"))).toBe(true);
+    expect(isReadyMade(old.map((w, i) => (i === 1 ? { ...w, y: w.y + 2 } : w)))).toBe(false);
   });
 
   it("stops once a widget has been moved or resized, removed, added or hidden", () => {

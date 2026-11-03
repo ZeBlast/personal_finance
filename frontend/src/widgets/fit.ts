@@ -1,4 +1,4 @@
-import { GRID_COLUMNS, overlaps, type Rect } from "./layout";
+import { GRID_COLUMNS, LEGACY_DEFAULT_PLAN, overlaps, planToPlaced, type Rect } from "./layout";
 import { presetLayout, PRESETS } from "./presets";
 import { allWidgets, getWidget } from "./registry";
 import type { PlacedWidget } from "./types";
@@ -32,7 +32,11 @@ export function isReadyMade(widgets: PlacedWidget[]): boolean {
   const capIds = widgets
     .filter((w) => w.widgetType === "spending-bucket" && w.config["category"])
     .map((w) => Number(w.config["category"]));
-  return PRESETS.some((p) => sameShape(widgets, presetLayout(p, capIds, allWidgets())));
+  return (
+    PRESETS.some((p) => sameShape(widgets, presetLayout(p, capIds, allWidgets()))) ||
+    // Everyday as it was made before "This month" was added.
+    sameShape(widgets, planToPlaced(LEGACY_DEFAULT_PLAN, allWidgets()))
+  );
 }
 
 /** How many grid rows a widget needs to show content this tall. Pure. */

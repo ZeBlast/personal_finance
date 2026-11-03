@@ -76,6 +76,26 @@ export const DEFAULT_PLAN: readonly PlannedWidget[] = [
   { widgetType: "spending-heatmap", x: 6, y: 20, w: 6, h: 5 },
 ];
 
+/**
+ * The default dashboard as it was before "This month" joined it. Dashboards made from it and left
+ * alone are still ready-made (see `isReadyMade`), so they keep fitting the window. Never changed.
+ */
+export const LEGACY_DEFAULT_PLAN: readonly PlannedWidget[] = [
+  { widgetType: "home-summary", x: 0, y: 0, w: 12, h: 2, config: { _hideHeader: true } },
+  { ...tile("net-worth", 0), y: 2 },
+  { ...tile("summary-number", 3, { metric: "spending" }), y: 2 },
+  { ...tile("summary-number", 6, { metric: "income" }), y: 2 },
+  { ...tile("summary-number", 9, { metric: "net" }), y: 2 },
+  { widgetType: "cash-forecast", x: 0, y: 4, w: 8, h: 5 },
+  { widgetType: "account-balances", x: 8, y: 4, w: 4, h: 5 },
+  { widgetType: "spending-by-category", x: 0, y: 9, w: 6, h: 4 },
+  { widgetType: "budget-progress", x: 6, y: 9, w: 6, h: 4 },
+  { widgetType: "recent-transactions", x: 0, y: 13, w: 6, h: 5, config: { count: 6 } },
+  { widgetType: "recurring-charges", x: 6, y: 13, w: 6, h: 5 },
+  { widgetType: "net-worth-history", x: 0, y: 18, w: 6, h: 5 },
+  { widgetType: "spending-heatmap", x: 6, y: 18, w: 6, h: 5 },
+];
+
 /** A plan as widgets ready to place, skipping any that are not installed. Pure. */
 export function planToPlaced(plan: readonly PlannedWidget[], widgets: AnyWidget[]): PlacedWidget[] {
   const byId = new Map(widgets.map((w) => [w.id, w]));
