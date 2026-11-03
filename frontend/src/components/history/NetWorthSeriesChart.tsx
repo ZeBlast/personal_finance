@@ -16,8 +16,11 @@ export function NetWorthSeriesChart({
   series,
   breakdown,
   maxHeight,
+  drawToWidth = false,
 }: {
   series: NetWorthSeries;
+  /** Draw at the real width, for a dashboard that fits the window. */
+  drawToWidth?: boolean;
   /** Caps the chart's height in pixels, for a dashboard card. */
   maxHeight?: number;
   /** Also draw assets and debts as separate lines. */
@@ -56,7 +59,13 @@ export function NetWorthSeriesChart({
 
   return (
     <div>
-      <LineChart series={lines} format={money} formatAxis={formatAxisMoney} maxHeight={maxHeight} />
+      <LineChart
+        series={lines}
+        format={money}
+        formatAxis={formatAxisMoney}
+        maxHeight={maxHeight}
+        drawToWidth={drawToWidth}
+      />
       <details className="mt-1 text-xs text-slate-500">
         <summary className="cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">
           ⓘ How this is worked out

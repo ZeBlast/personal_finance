@@ -38,7 +38,7 @@ export default defineWidget({
             rows={data.rows}
             month={month}
             money={(n) => formatMinor(n, "USD")}
-            height={Math.max(180, size.h * 78 - 60)}
+            height={Math.max(180, size.h * 78 - 84)}
           />
         )}
       </WidgetState>

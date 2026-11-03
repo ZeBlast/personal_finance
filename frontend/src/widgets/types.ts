@@ -65,6 +65,8 @@ export interface WidgetProps<C extends WidgetConfig = WidgetConfig> {
   instanceId: number | string;
   /** Its current size, if the content should adapt (for example to show fewer rows). */
   size: WidgetSize;
+  /** On a dashboard that fits the window: the row follows the content, so it may be any height. */
+  fitting?: boolean;
 }
 
 export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
@@ -88,6 +90,11 @@ export interface WidgetDefinition<C extends WidgetConfig = WidgetConfig> {
    * need its own edge. Anyone can override it for a placed copy, in its settings.
    */
   framed?: boolean;
+  /**
+   * Draws itself to the height of its slot, so a dashboard that fits the window leaves it its planned
+   * height rather than following its content.
+   */
+  fixedHeight?: boolean;
   /** Starts with its title hidden, for a widget whose content already says what it is. */
   headerless?: boolean;
   /** Allow only one copy on the dashboard. */

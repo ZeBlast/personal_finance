@@ -38,7 +38,7 @@ export default defineWidget({
     },
     { key: "breakdown", label: "Show assets and debts as separate lines", type: "boolean" },
   ],
-  Component: function NetWorthHistoryView({ config, size }) {
+  Component: function NetWorthHistoryView({ config, size, fitting }) {
     const { data, error, loading } = useApi<NetWorthSeries>(
       seriesPath(config.granularity, Number(config.range)),
     );
@@ -55,7 +55,7 @@ export default defineWidget({
             series={data}
             breakdown={config.breakdown}
             // Rows are at least 60px; leave room for the title bar and the notes toggle.
-            maxHeight={Math.max(120, size.h * 60 - 60)}
+            {...(fitting ? { drawToWidth: true } : { maxHeight: Math.max(120, size.h * 60 - 60) })}
           />
         )}
       </WidgetState>

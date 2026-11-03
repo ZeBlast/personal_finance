@@ -81,7 +81,7 @@ export function Donut({
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: slice.color ?? colorAt(index) }}
               />
-              <span className="truncate" title={slice.label}>
+              <span className="min-w-0 break-words" title={slice.label}>
                 {slice.label}
               </span>
             </span>

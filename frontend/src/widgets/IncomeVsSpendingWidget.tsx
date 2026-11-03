@@ -20,7 +20,7 @@ export default defineWidget({
   order: 70,
   defaultConfig: { months: "6", accountId: "", includeTransfers: false },
   configFields: [monthsField, accountField, includeTransfersField],
-  Component: function IncomeVsSpending({ config }) {
+  Component: function IncomeVsSpending({ config, fitting }) {
     const range = useMemo(() => recentMonths(Number(config.months)), [config.months]);
     const { data, error, loading } = useApi<Summary>(
       summaryPath({
@@ -53,6 +53,7 @@ export default defineWidget({
             }))}
             format={(n) => formatMinor(n, "USD")}
             formatAxis={formatAxisMoney}
+            drawToWidth={fitting === true}
           />
         )}
       </WidgetState>

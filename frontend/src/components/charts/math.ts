@@ -74,3 +74,8 @@ export function segmentsOf<T extends { date: string }>(
     return { from, to, gap: gapDays !== undefined && daysBetween(from.date, to.date) >= gapDays };
   });
 }
+
+/** The size to draw a chart a real number of pixels wide, its height following within limits. Pure. */
+export function drawnSize(width: number): { width: number; height: number } {
+  return { width, height: Math.min(320, Math.max(160, Math.round((width * 200) / 480))) };
+}
