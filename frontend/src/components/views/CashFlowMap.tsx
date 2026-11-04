@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
 import { summaryPath } from "../../lib/analytics";
+import { rolledUpTitle } from "../../lib/categoryRollup";
 import { firstOfMonth, lastOfMonth } from "../../lib/period";
 import {
   cashFlowModel,
@@ -55,11 +56,14 @@ export function CashFlowMap({
   month,
   money,
   height = 360,
+  childrenOf,
 }: {
   rows: FlowRow[];
   month: string;
   money: (minor: number) => string;
   height?: number;
+  /** The subcategories a rolled-up category adds together, to list in its tooltip. */
+  childrenOf?: (label: string) => string[];
 }) {
   const navigate = useNavigate();
   const { ref, width } = useMeasuredWidth();
@@ -175,7 +179,7 @@ export function CashFlowMap({
             className={t.kind === "category" ? "cursor-pointer" : undefined}
           >
             <title>
-              {`${t.label}: ${money(t.amountMinor)}${t.kind === "category" ? ". Click for its transactions." : ""}`}
+              {`${t.kind === "category" ? rolledUpTitle(t.label, childrenOf?.(t.label) ?? []) : t.label}: ${money(t.amountMinor)}${t.kind === "category" ? ". Click for its transactions." : ""}`}
             </title>
             <path
               d={flowPath(centreX, toCentre[i]!, rightX, top + t.y, t.amountMinor * scale)}

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Loading } from "../components/common/Loading";
 import { cashFlowPath, CashFlowMap } from "../components/views/CashFlowMap";
 import { useApi } from "../hooks/useApi";
+import { useCategories } from "../hooks/useCategories";
+import { childNames } from "../lib/categoryRollup";
 import { formatMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import { cashFlowModel } from "../lib/views";
@@ -11,6 +13,7 @@ import type { Summary } from "../types/analytics";
 export function CashFlowPage() {
   const [month, setMonth] = useState(() => shiftMonth(monthOf(today()), -1));
   const { data, error, loading } = useApi<Summary>(cashFlowPath(month));
+  const { categories } = useCategories();
   const money = (n: number) => formatMinor(n, "USD");
   const model = data ? cashFlowModel(data.rows) : null;
   const left = model ? model.incomeMinor - model.spendingMinor : 0;
@@ -56,10 +59,19 @@ export function CashFlowPage() {
         </p>
       )}
       {!data && loading && <Loading lines={6} />}
-      {data && <CashFlowMap rows={data.rows} month={month} money={money} height={460} />}
+      {data && (
+        <CashFlowMap
+          rows={data.rows}
+          month={month}
+          money={money}
+          height={460}
+          childrenOf={(label) => childNames(categories ?? [], label)}
+        />
+      )}
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Moves between your own accounts and card payments are left out. Refunds reduce a category.
-        Click a category for its transactions.
+        Categories are shown by parent category, with their subcategories added together. Moves
+        between your own accounts and card payments are left out. Refunds reduce a category. Click a
+        category for its transactions.
       </p>
     </section>
   );

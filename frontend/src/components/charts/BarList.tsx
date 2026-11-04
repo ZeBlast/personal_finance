@@ -6,6 +6,8 @@ export interface BarRow {
   value: number;
   color?: string | null | undefined;
   note?: string | undefined;
+  /** Hover text for the row, when it should say more than the label. */
+  title?: string | undefined;
 }
 
 /**
@@ -31,7 +33,7 @@ export function BarList({
         return (
           <li key={row.key} className="text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 truncate" title={row.label}>
+              <span className="min-w-0 truncate" title={row.title ?? row.label}>
                 {row.label}
                 {row.note ? <span className="ml-1 text-xs text-slate-500">{row.note}</span> : null}
               </span>

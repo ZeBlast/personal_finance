@@ -3,6 +3,8 @@ import { BarList } from "../components/charts/BarList";
 import { Loading } from "../components/common/Loading";
 import { YearMonthsTable, type YearMonthRow } from "../components/views/YearMonthsTable";
 import { useApi } from "../hooks/useApi";
+import { useCategories } from "../hooks/useCategories";
+import { childNames, rolledUpTitle } from "../lib/categoryRollup";
 import { formatMinor } from "../lib/money";
 import { monthLabel, today } from "../lib/period";
 
@@ -50,6 +52,7 @@ export function YearPage() {
   const day = today();
   const [year, setYear] = useState(Number(day.slice(0, 4)));
   const { data, error, loading } = useApi<YearReport>(`/reports/year?year=${year}&today=${day}`);
+  const { categories } = useCategories();
   const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
 
   return (
@@ -105,13 +108,14 @@ export function YearPage() {
           )}
           <div className="grid gap-8 @min-[48rem]:grid-cols-2">
             <div>
-              <h2 className="mb-2 font-semibold">Where it went</h2>
+              <h2 className="mb-2 font-semibold">Where it went, by parent category</h2>
               <BarList
                 rows={data.categories.map((c) => ({
                   key: c.label,
                   label: c.label,
                   value: c.spendingMinor,
                   color: c.color,
+                  title: rolledUpTitle(c.label, childNames(categories ?? [], c.label)),
                 }))}
                 format={money}
               />
