@@ -34,7 +34,18 @@ export interface DailyBrief {
   cashMinor: number;
   accountsCounted: number;
   /** The next money coming in, which ends the window, or null when none is expected in 60 days. */
-  nextIncome: { date: string; label: string; amountMinor: number } | null;
+  nextIncome: {
+    date: string;
+    label: string;
+    amountMinor: number;
+    key: string;
+    /** True when it is the income the user picked rather than the next one. */
+    chosen: boolean;
+  } | null;
+  /** Income the user can pick to count up to: the first of each coming in 60 days, by date. */
+  incomeOptions: Array<{ key: string; date: string; label: string; amountMinor: number }>;
+  /** The user picked an income that is not expected in the next 60 days. */
+  incomeChoiceMissing: boolean;
   /** The last day counted: the day before the next income, or 30 days out without one. */
   until: string;
   /** What goes out before then, oldest first. */
@@ -60,6 +71,10 @@ export interface DailyBrief {
    * needs signing in again): the starting cash is only as good as these balances.
    */
   staleAccounts: Array<{ name: string; updatedAt: string | null; needsSignIn: boolean }>;
+  /** Bank accounts left out because they have no balance yet. */
+  missingAccounts: string[];
+  /** Spending caps held back in the forecast, and how much of that falls before the window ends. */
+  capHoldBack: { included: boolean; inWindowMinor: number };
 }
 
 /** A bank balance older than this may be out of date. */
@@ -75,18 +90,40 @@ export function dailyBrief(
   const settings = getSettings(db);
   const forecast = cashForecast(db, { today, days: 60 });
 
-  // The window runs to the day before the next money coming in.
-  let nextIncome: DailyBrief["nextIncome"] = null;
+  // The window runs to the day before the next money coming in, or the one the user picked.
+  type Incoming = NonNullable<DailyBrief["nextIncome"]>;
+  const incomes: Incoming[] = [];
   for (const d of forecast.days) {
+    if (d.date <= today) continue;
     const incoming = d.events.filter(
       (e) => e.amountMinor > 0 && (e.source === "recurring" || e.source === "expected"),
     );
-    if (d.date > today && incoming.length > 0) {
-      const biggest = incoming.reduce((a, b) => (b.amountMinor > a.amountMinor ? b : a));
-      nextIncome = { date: d.date, label: biggest.label, amountMinor: biggest.amountMinor };
-      break;
+    for (const e of incoming) {
+      const key = e.source === "recurring" ? `recurring:${e.seriesKey}` : `expected:${e.plannedId}`;
+      incomes.push({
+        date: d.date,
+        label: e.label,
+        amountMinor: e.amountMinor,
+        key,
+        chosen: false,
+      });
     }
   }
+  // The biggest on the first day with any money coming in.
+  const firstDay = incomes[0]?.date;
+  const first = incomes
+    .filter((i) => i.date === firstDay)
+    .reduce<Incoming | null>((a, b) => (a && a.amountMinor >= b.amountMinor ? a : b), null);
+  const picked = settings.briefIncomeKey
+    ? incomes.find((i) => i.key === settings.briefIncomeKey)
+    : undefined;
+  const incomeChoiceMissing = settings.briefIncomeKey !== null && !picked;
+  const nextIncome: DailyBrief["nextIncome"] = picked ? { ...picked, chosen: true } : first;
+  const seen = new Set<string>();
+  const incomeOptions = incomes
+    .filter((i) => !seen.has(i.key) && seen.add(i.key))
+    .slice(0, 6)
+    .map(({ key, date, label, amountMinor }) => ({ key, date, label, amountMinor }));
   const until = nextIncome ? addDays(nextIncome.date, -1) : addDays(today, 30);
 
   const inWindow = forecast.days.filter((d) => d.date <= until);
@@ -131,6 +168,16 @@ export function dailyBrief(
       updatedAt: a.lastBalanceUpdateAt,
       needsSignIn: a.connectionStatus === "login_required",
     }));
+  const missingAccounts = listAccounts(db)
+    .filter(
+      (a) =>
+        a.countsInTotals &&
+        a.type === "depository" &&
+        a.currency === settings.currency &&
+        a.currentBalanceMinor === null &&
+        (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
+    )
+    .map((a) => a.name);
   const reservedFor = cashAccounts
     .map((a) => ({ accountName: a.name, amountMinor: reserved.get(a.id) ?? 0 }))
     .filter((r) => r.amountMinor > 0);
@@ -159,6 +206,8 @@ export function dailyBrief(
     cashMinor: forecast.startBalanceMinor,
     accountsCounted: forecast.accountsCounted,
     nextIncome,
+    incomeOptions,
+    incomeChoiceMissing,
     until,
     obligations,
     obligationsMinor: obligations.reduce((n, o) => n + o.amountMinor, 0),
@@ -172,5 +221,17 @@ export function dailyBrief(
     spentYesterdayMinor: spent(yesterday, yesterday),
     spentThisMonthMinor: spent(`${today.slice(0, 7)}-01`, today),
     staleAccounts,
+    missingAccounts,
+    capHoldBack: {
+      included: forecast.capHoldBack.included,
+      inWindowMinor: inWindow.reduce(
+        (n, d) =>
+          n +
+          d.events
+            .filter((e) => e.source === "cap_holdback")
+            .reduce((m, e) => m - e.amountMinor, 0),
+        0,
+      ),
+    },
   };
 }

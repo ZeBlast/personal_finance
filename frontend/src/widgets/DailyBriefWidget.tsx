@@ -1,4 +1,7 @@
+import { Link } from "react-router-dom";
+import { Select } from "../components/common/Select";
 import { useApi } from "../hooks/useApi";
+import { api } from "../api/client";
 import { formatMinor } from "../lib/money";
 import { formatDay } from "../lib/time";
 import { WidgetState } from "./WidgetFrame";
@@ -9,7 +12,17 @@ export interface DailyBrief {
   today: string;
   cashMinor: number;
   accountsCounted: number;
-  nextIncome: { date: string; label: string; amountMinor: number } | null;
+  nextIncome: {
+    date: string;
+    label: string;
+    amountMinor: number;
+    key: string;
+    chosen: boolean;
+  } | null;
+  /** Income that can be picked to count up to. */
+  incomeOptions: Array<{ key: string; date: string; label: string; amountMinor: number }>;
+  /** The income picked is not expected in the next 60 days. */
+  incomeChoiceMissing: boolean;
   until: string;
   obligations: Array<{ label: string; date: string; amountMinor: number; source: string }>;
   obligationsMinor: number;
@@ -24,6 +37,25 @@ export interface DailyBrief {
   spentThisMonthMinor: number;
   /** Bank accounts whose balance may be out of date. */
   staleAccounts?: Array<{ name: string; updatedAt: string | null; needsSignIn: boolean }>;
+  /** Bank accounts left out because they have no balance yet. */
+  missingAccounts: string[];
+  /** Spending caps held back, and how much of that falls before the window ends. */
+  capHoldBack: { included: boolean; inWindowMinor: number };
+}
+
+/** A warning when bank accounts are left out for having no balance, or null. Pure. */
+export function missingWarning(b: DailyBrief): string | null {
+  const names = b.missingAccounts;
+  if (names.length === 0) return null;
+  return `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no balance yet, so ${names.length === 1 ? "it is" : "they are"} not counted.`;
+}
+
+/** One line saying whether spending caps are part of the number. Pure. */
+export function holdBackNote(b: DailyBrief, money: (n: number) => string): string {
+  if (!b.capHoldBack.included) {
+    return "Spending caps are not held back. You can turn that on in Cash forecast.";
+  }
+  return `Includes ${money(b.capHoldBack.inWindowMinor)} held back for your spending caps.`;
 }
 
 /** A warning when the starting cash rests on old balances, or null when they are fresh. Pure. */
@@ -54,12 +86,25 @@ export function briefSteps(b: DailyBrief): BriefStep[] {
       note: `${b.accountsCounted} account${b.accountsCounted === 1 ? "" : "s"}`,
     },
   ];
-  if (b.obligations.length > 0) {
+  // Goal set-asides and the cap hold-back are not bills: each gets its own line.
+  const charges = b.obligations.filter((o) => o.source !== "goal" && o.source !== "cap_holdback");
+  const setAside = b.obligations.filter((o) => o.source === "goal");
+  const held = b.obligations.filter((o) => o.source === "cap_holdback");
+  const sum = (list: typeof charges) => list.reduce((n, o) => n + o.amountMinor, 0);
+  const note = (list: typeof charges) =>
+    list.map((o) => `${o.label} ${money(-o.amountMinor)}`).join(" · ");
+  if (charges.length > 0) {
     steps.push({
       label: `Going out by ${formatDay(b.until)}`,
-      amountMinor: b.obligationsMinor,
-      note: b.obligations.map((o) => `${o.label} ${money(-o.amountMinor)}`).join(" · "),
+      amountMinor: sum(charges),
+      note: note(charges),
     });
+  }
+  if (setAside.length > 0) {
+    steps.push({ label: "Set aside for goals", amountMinor: sum(setAside), note: note(setAside) });
+  }
+  if (held.length > 0) {
+    steps.push({ label: "Held back for spending caps", amountMinor: sum(held), note: note(held) });
   }
   if (b.lowest.balanceMinor !== b.cashMinor + b.obligationsMinor) {
     steps.push({
@@ -102,7 +147,16 @@ export default defineWidget({
   ],
   Component: function DailyBriefCard({ config }) {
     const bufferMinor = Math.round(Number(config.buffer) * 100);
-    const { data, error, loading } = useApi<DailyBrief>(`/brief?bufferMinor=${bufferMinor}`);
+    const { data, error, loading, reload } = useApi<DailyBrief>(
+      `/brief?bufferMinor=${bufferMinor}`,
+    );
+    const pickIncome = async (key: string) => {
+      await api("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ briefIncomeKey: key === "" ? null : key }),
+      });
+      reload();
+    };
     const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
     return (
       <WidgetState
@@ -140,6 +194,37 @@ export default defineWidget({
                 {freshnessWarning(data)}
               </p>
             )}
+            {missingWarning(data) && (
+              <p
+                role="status"
+                className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                {missingWarning(data)}
+              </p>
+            )}
+            {data.incomeOptions.length > 0 && (
+              <label className="flex items-center gap-2 text-xs text-slate-500">
+                Counting to:
+                <Select
+                  value={data.nextIncome?.chosen ? data.nextIncome.key : ""}
+                  onChange={(e) => void pickIncome(e.target.value)}
+                  className="min-w-0 flex-1"
+                >
+                  <option value="">Next money in (automatic)</option>
+                  {data.incomeOptions.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.label}, {formatDay(o.date)} ({money(o.amountMinor)})
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+            {data.incomeChoiceMissing && (
+              <p className="text-xs text-slate-500">
+                The pay you chose is not expected in the next 60 days, so this counts to the next
+                money in.
+              </p>
+            )}
             <details>
               <summary className="cursor-pointer text-xs text-blue-600">
                 How this is worked out
@@ -159,6 +244,12 @@ export default defineWidget({
                 Card purchases count once, when their bill is paid.
               </p>
             </details>
+            <p className="text-xs text-slate-500">
+              {holdBackNote(data, money)}{" "}
+              <Link to="/planning" className="text-blue-600 underline">
+                Cash forecast
+              </Link>
+            </p>
             <p className="text-xs text-slate-500">
               Spent yesterday {money(data.spentYesterdayMinor)} · this month{" "}
               {money(data.spentThisMonthMinor)}

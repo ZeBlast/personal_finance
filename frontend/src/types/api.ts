@@ -24,6 +24,8 @@ export interface Settings {
   debtExtraInForecastMinor: number;
   /** Hold back the rest of this month's spending caps in the cash forecast. */
   forecastHoldCaps: boolean;
+  /** The income safe-to-spend counts up to (null: the next money coming in). */
+  briefIncomeKey: string | null;
   /** The user said they saved the recovery key somewhere safe. */
   recoveryKeySaved: boolean;
   /** The user closed the first-run welcome. */

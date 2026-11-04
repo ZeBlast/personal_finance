@@ -142,6 +142,7 @@ describe("settings", () => {
       ownNames: [],
       debtExtraInForecastMinor: 0,
       forecastHoldCaps: false,
+      briefIncomeKey: null,
       recoveryKeySaved: false,
       welcomeDismissed: false,
       dashboardViewsAdded: false,

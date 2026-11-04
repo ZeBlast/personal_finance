@@ -51,6 +51,11 @@ export const settingsSchema = z.object({
    * safe-to-spend), spread over the rest of the month.
    */
   forecastHoldCaps: z.boolean(),
+  /**
+   * The income that safe-to-spend counts up to: `recurring:<series key>` or `expected:<planned
+   * id>`. null: the next money coming in, whatever it is.
+   */
+  briefIncomeKey: z.string().max(200).nullable(),
   /** The user said they saved the recovery key somewhere safe (asked until they do). */
   recoveryKeySaved: z.boolean(),
   /** The user closed the first-run welcome. */
@@ -84,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ownNames: [],
   debtExtraInForecastMinor: 0,
   forecastHoldCaps: false,
+  briefIncomeKey: null,
   recoveryKeySaved: false,
   welcomeDismissed: false,
   dashboardViewsAdded: false,
