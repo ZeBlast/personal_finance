@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatMinor } from "../../../lib/money";
+import { shortDay } from "../../../lib/reconcile";
+import { formatDay } from "../../../lib/time";
 import { fakeBackend } from "../../../test/fakeBackend";
 import type { Account, PlaidItem } from "../../../types/api";
 import { AccountCardsView } from "./AccountCardsView";
@@ -41,6 +43,7 @@ function account(id: number, name: string, extra: Partial<Account>): Account {
     statementDueDay: null,
     // Still shared by Plaid (a field newer versions of the API send).
     noLongerSharedAt: null,
+    lastReconciled: null,
     ...extra,
   } as Account;
 }
@@ -218,6 +221,43 @@ describe("the account cards", () => {
       await userEvent.click(savings);
       await within(savings).findByRole("button", { name: /APY/ });
       expect(calls.some((c) => c.path === "/accounts/4/interest")).toBe(true);
+    });
+  });
+
+  describe("a statement check", () => {
+    it("notes a matched check on the front and on the back", async () => {
+      show([
+        account(4, "Checking", {
+          lastReconciled: { statementDate: "2026-10-31", status: "matched" },
+        }),
+      ]);
+      const checking = await card("Checking");
+      expect(
+        within(checking).getByText(`Checked against a statement on ${formatDay("2026-10-31")}`),
+      ).toBeTruthy();
+      await userEvent.click(checking);
+      expect(within(checking).getByText(`Matched · ${shortDay("2026-10-31")}`)).toBeTruthy();
+    });
+
+    it("shows an unresolved check as off, with no note on the front", async () => {
+      show([
+        account(4, "Checking", {
+          lastReconciled: { statementDate: "2026-10-31", status: "unresolved" },
+        }),
+      ]);
+      const checking = await card("Checking");
+      expect(within(checking).queryByText(/Checked against a statement on/)).toBeNull();
+      await userEvent.click(checking);
+      expect(within(checking).getByText(`Off · ${shortDay("2026-10-31")}`)).toBeTruthy();
+    });
+
+    it("offers to check an account that has no check yet", async () => {
+      show([account(4, "Checking", {})]);
+      const checking = await card("Checking");
+      await userEvent.click(checking);
+      expect(
+        within(checking).getByRole("button", { name: "Check against a statement" }),
+      ).toBeTruthy();
     });
   });
 });

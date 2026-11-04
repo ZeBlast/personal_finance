@@ -24,6 +24,7 @@ import {
   shownBalanceMinor,
 } from "../../../lib/accountKinds";
 import { announceDataChanged, announceSyncFinished } from "../../../lib/syncEvents";
+import { checkedNote, shortDay } from "../../../lib/reconcile";
 import { formatDay, timeAgo } from "../../../lib/time";
 import type { Account, PlaidItem } from "../../../types/api";
 import { ManualTransactionDialog } from "../../transactions/ManualTransactionDialog";
@@ -240,6 +241,7 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
             onStatements={() => setStatementsOf(a)}
             onPayment={() => setPaying(a)}
             onCredits={(action) => setCredits({ account: a, action })}
+            onReconcile={() => setReconciling(a)}
             onMore={(interest) => {
               setMoreInterest(interest);
               setMore(a);
@@ -799,6 +801,7 @@ function AccountCard({
   onPayment,
   onCredits,
   onMore,
+  onReconcile,
   terms,
   onHiddenChanged,
 }: {
@@ -811,6 +814,8 @@ function AccountCard({
   onCredits: (action: "add" | "use") => void;
   /** The rest of the account's actions, in a window; `interest` opens it at the APY. */
   onMore: (interest: boolean) => void;
+  /** Opens the statement check for this bank account or card. */
+  onReconcile: () => void;
   /** A card's or loan's rate, minimum, and payoff at the minimum, when it owes something. */
   terms: DebtTerms | undefined;
   /** After the account was hidden or shown again, so the cards refresh. */
@@ -832,6 +837,7 @@ function AccountCard({
   const used =
     limit && limit > 0 ? Math.min(1, Math.max(0, (a.currentBalanceMinor ?? 0) / limit)) : null;
   const frozen = frozenSince(a);
+  const checked = checkedNote(a);
   const kind = a.subtype
     ? `${a.subtype[0]!.toUpperCase()}${a.subtype.slice(1)}`
     : (KIND[a.type] ?? a.type);
@@ -909,6 +915,25 @@ function AccountCard({
                 {money(a, shownBalanceMinor(a))}
               </span>
             </div>
+            {checked && (
+              <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-3 w-3 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    d="M3 8.5l3.2 3L13 4.5"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {checked}
+              </div>
+            )}
             {credit && (
               <div className="mt-1">
                 <div
@@ -1030,6 +1055,37 @@ function AccountCard({
                       ? `${formatApy(interest.data.apyBps)} APY · ${money(a, interest.data.monthlyMinor)} a month`
                       : "Set APY"}
                   </button>
+                </dd>
+              </>
+            )}
+            {payment && (
+              <>
+                <dt className="text-slate-500">Statement check</dt>
+                <dd className="text-right">
+                  {a.lastReconciled ? (
+                    <span
+                      className={
+                        a.lastReconciled.status === "matched"
+                          ? undefined
+                          : "text-amber-700 dark:text-amber-400"
+                      }
+                    >
+                      {a.lastReconciled.status === "matched" ? "Matched" : "Off"} ·{" "}
+                      {shortDay(a.lastReconciled.statementDate)}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReconcile();
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      className="rounded text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Check against a statement
+                    </button>
+                  )}
                 </dd>
               </>
             )}

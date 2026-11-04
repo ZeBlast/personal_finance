@@ -71,6 +71,8 @@ export interface Account {
   statementDueDay: number | null;
   /** For a connected account: when Plaid stopped reporting it, so its balance stopped updating. */
   noLongerSharedAt: string | null;
+  /** The newest saved statement check, or null when there is none. */
+  lastReconciled: { statementDate: string; status: "matched" | "unresolved" } | null;
 }
 
 export interface SyncRun {
