@@ -71,6 +71,9 @@ export function stopsShort(gaps: ReconcileGap[]): ReconcileGap | undefined {
 export function unconfirmedNote(gaps: ReconcileGap[]): string | null {
   const g = stopsShort(gaps);
   if (!g) return null;
+  if (g.reason === "no_longer_shared") {
+    return "The bank stopped sharing this account, so this can't be confirmed.";
+  }
   return `Your records stop on ${shortDay(prevDay(g.from))}, so this can't be confirmed yet — sync and check again.`;
 }
 

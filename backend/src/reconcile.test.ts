@@ -89,7 +89,11 @@ describe("reconciling with a statement", () => {
     expect(list[1].status).toBe("matched");
     const accounts = (await t.call("get", "/api/accounts?includeHidden=1")).body;
     const acct = accounts.find((a: { id: number }) => a.id === id);
-    expect(acct.lastReconciled).toEqual({ statementDate: "2026-10-20", status: "unresolved" });
+    expect(acct.lastReconciled).toEqual({
+      statementDate: "2026-10-20",
+      status: "unresolved",
+      differenceMinor: -8_000,
+    });
 
     // A note can be changed or cleared, and a check removed.
     const patched = await t

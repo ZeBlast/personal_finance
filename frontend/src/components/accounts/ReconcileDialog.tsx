@@ -18,8 +18,6 @@ import { askConfirm } from "../common/ConfirmHost";
 import { Modal } from "../common/Modal";
 import { inputClass, primaryClass } from "../common/styles";
 
-export type { Reconciliation };
-
 /** What a reconciliation found, in one sentence. Pure. */
 export function reconcileVerdict(r: Reconciliation, currency = "USD"): string {
   if (r.differenceMinor === null) return "Enter the statement's ending balance to compare.";
@@ -210,7 +208,7 @@ export function ReconcileDialog({ account, onClose }: { account: Account; onClos
             >
               {reconcileVerdict(data, account.currency)}
             </p>
-            {unconfirmedPreview && (
+            {unconfirmedPreview && !unconfirmed && (
               <p className="text-amber-700 dark:text-amber-400">{unconfirmedPreview}</p>
             )}
             {causes.length > 0 && (

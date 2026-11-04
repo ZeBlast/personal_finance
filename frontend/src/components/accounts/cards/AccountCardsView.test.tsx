@@ -228,7 +228,7 @@ describe("the account cards", () => {
     it("notes a matched check on the front and on the back", async () => {
       show([
         account(4, "Checking", {
-          lastReconciled: { statementDate: "2026-10-31", status: "matched" },
+          lastReconciled: { statementDate: "2026-10-31", status: "matched", differenceMinor: 0 },
         }),
       ]);
       const checking = await card("Checking");
@@ -239,16 +239,38 @@ describe("the account cards", () => {
       expect(within(checking).getByText(`Matched · ${shortDay("2026-10-31")}`)).toBeTruthy();
     });
 
-    it("shows an unresolved check as off, with no note on the front", async () => {
+    it("shows an unresolved check as off by the difference, with no note on the front", async () => {
       show([
         account(4, "Checking", {
-          lastReconciled: { statementDate: "2026-10-31", status: "unresolved" },
+          lastReconciled: {
+            statementDate: "2026-10-31",
+            status: "unresolved",
+            differenceMinor: -8_000,
+          },
         }),
       ]);
       const checking = await card("Checking");
       expect(within(checking).queryByText(/Checked against a statement on/)).toBeNull();
       await userEvent.click(checking);
-      expect(within(checking).getByText(`Off · ${shortDay("2026-10-31")}`)).toBeTruthy();
+      expect(
+        within(checking).getByText(`Off by ${usd(8_000)} · ${shortDay("2026-10-31")}`),
+      ).toBeTruthy();
+    });
+
+    it("says a check that agreed but could not be confirmed is not confirmed", async () => {
+      show([
+        account(4, "Checking", {
+          lastReconciled: {
+            statementDate: "2026-10-31",
+            status: "unresolved",
+            differenceMinor: 0,
+          },
+        }),
+      ]);
+      const checking = await card("Checking");
+      expect(within(checking).queryByText(/Checked against a statement on/)).toBeNull();
+      await userEvent.click(checking);
+      expect(within(checking).getByText(`Not confirmed · ${shortDay("2026-10-31")}`)).toBeTruthy();
     });
 
     it("offers to check an account that has no check yet", async () => {

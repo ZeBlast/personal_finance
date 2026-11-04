@@ -1070,8 +1070,12 @@ function AccountCard({
                           : "text-amber-700 dark:text-amber-400"
                       }
                     >
-                      {a.lastReconciled.status === "matched" ? "Matched" : "Off"} ·{" "}
-                      {shortDay(a.lastReconciled.statementDate)}
+                      {a.lastReconciled.status === "matched"
+                        ? "Matched"
+                        : a.lastReconciled.differenceMinor === 0
+                          ? "Not confirmed"
+                          : `Off by ${money(a, Math.abs(a.lastReconciled.differenceMinor))}`}{" "}
+                      · {shortDay(a.lastReconciled.statementDate)}
                     </span>
                   ) : (
                     <button

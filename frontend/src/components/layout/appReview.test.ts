@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { legacyPlanningPath } from "../../pages/PlanningPage";
 import { sectionLabel } from "../../hooks/usePreviousPage";
 import { freshnessWarning, type DailyBrief } from "../../widgets/DailyBriefWidget";
-import { reconcileVerdict, type Reconciliation } from "../accounts/ReconcileDialog";
+import { reconcileVerdict } from "../accounts/ReconcileDialog";
+import type { Reconciliation } from "../../lib/reconcile";
 import { areaBadge } from "./NavBadge";
 
 describe("navigation badges", () => {

@@ -75,7 +75,12 @@ export interface AccountSummary {
   /** When Plaid stopped reporting this connected account (so its balance stopped updating). */
   noLongerSharedAt: string | null;
   /** The newest saved statement check, or null when there is none. */
-  lastReconciled: { statementDate: string; status: "matched" | "unresolved" } | null;
+  lastReconciled: {
+    statementDate: string;
+    status: "matched" | "unresolved";
+    /** Statement minus the app's figure when the check was saved. */
+    differenceMinor: number;
+  } | null;
 }
 
 const summaryColumns = {
@@ -118,12 +123,17 @@ export function listAccounts(
     .leftJoin(plaidItems, eq(accounts.plaidItemId, plaidItems.id));
   const rows = itemId === undefined ? query : query.where(eq(accounts.plaidItemId, itemId));
   const today = new Date().toISOString().slice(0, 10);
-  const latest = new Map<number, { statementDate: string; status: "matched" | "unresolved" }>();
+  const latest = new Map<
+    number,
+    { statementDate: string; status: "matched" | "unresolved"; differenceMinor: number }
+  >();
   const checks = db
     .select({
       accountId: reconciliations.accountId,
       statementDate: reconciliations.statementDate,
       status: reconciliations.status,
+      statementBalanceMinor: reconciliations.statementBalanceMinor,
+      appBalanceMinor: reconciliations.appBalanceMinor,
     })
     .from(reconciliations)
     .orderBy(asc(reconciliations.statementDate), asc(reconciliations.id))
@@ -133,6 +143,7 @@ export function listAccounts(
     latest.set(r.accountId, {
       statementDate: r.statementDate,
       status: r.status === "matched" ? "matched" : "unresolved",
+      differenceMinor: r.statementBalanceMinor - r.appBalanceMinor,
     });
   }
   return rows

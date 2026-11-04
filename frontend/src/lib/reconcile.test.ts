@@ -77,6 +77,12 @@ describe("unconfirmedNote", () => {
     );
   });
 
+  it("gives no sync advice when the bank stopped sharing the account", () => {
+    expect(
+      unconfirmedNote([{ from: "2026-10-21", to: "2026-10-31", reason: "no_longer_shared" }]),
+    ).toBe("The bank stopped sharing this account, so this can't be confirmed.");
+  });
+
   it("is null for gaps that do not stop the records short", () => {
     expect(unconfirmedNote([{ from: "2026-10-12", to: "2026-10-25", reason: "quiet" }])).toBeNull();
     expect(unconfirmedNote([])).toBeNull();
@@ -88,7 +94,10 @@ describe("checkedNote", () => {
 
   it("says when an account was last checked and matched", () => {
     expect(
-      checkedNote({ ...acct, lastReconciled: { statementDate: "2026-10-31", status: "matched" } }),
+      checkedNote({
+        ...acct,
+        lastReconciled: { statementDate: "2026-10-31", status: "matched", differenceMinor: 0 },
+      }),
     ).toBe(`Checked against a statement on ${formatDay("2026-10-31")}`);
   });
 
@@ -96,7 +105,11 @@ describe("checkedNote", () => {
     expect(
       checkedNote({
         ...acct,
-        lastReconciled: { statementDate: "2026-10-31", status: "unresolved" },
+        lastReconciled: {
+          statementDate: "2026-10-31",
+          status: "unresolved",
+          differenceMinor: 0,
+        },
       }),
     ).toBeNull();
     expect(checkedNote(acct)).toBeNull();
