@@ -116,16 +116,21 @@ export function RecurringSection() {
     : [];
 
   return (
-    <section className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Recurring charges and deposits</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Found by looking for payments that repeat at steady intervals (at least three, two for
-            yearly). Transfers between your own accounts and card payments are left out. If
-            something is not really a subscription, mark it and it disappears.
-          </p>
-        </div>
+    <details className="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+      <summary className="cursor-pointer select-none">
+        <h2 className="inline text-lg font-semibold">Recurring charges and deposits</h2>
+        {data && (
+          <span className="ml-2 text-sm text-slate-500 dark:text-slate-400">
+            {money(data.monthlyOutMinor)} a month out · {money(data.monthlyInMinor)} a month in
+          </span>
+        )}
+      </summary>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Found by looking for payments that repeat at steady intervals (at least three, two for
+          yearly). Transfers between your own accounts and card payments are left out. If something
+          is not really a subscription, mark it and it disappears.
+        </p>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -208,6 +213,6 @@ export function RecurringSection() {
           </p>
         </>
       )}
-    </section>
+    </details>
   );
 }

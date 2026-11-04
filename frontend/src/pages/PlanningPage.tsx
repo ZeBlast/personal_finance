@@ -9,6 +9,7 @@ import { useApi } from "../hooks/useApi";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
+import { lowestTile } from "../lib/views";
 import { CADENCE_LABEL } from "../lib/insights";
 import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning";
 import { Select } from "../components/common/Select";
@@ -93,6 +94,7 @@ function ForecastTab() {
   if (!data) return loading ? <Loading lines={5} /> : null;
   const money = (n: number) => formatMinor(n, data.currency);
   const upcoming = data.days.filter((d) => d.events.length > 0);
+  const low = lowestTile(data);
 
   return (
     <div className="space-y-4">
@@ -100,9 +102,9 @@ function ForecastTab() {
         <dl className="grid grid-cols-3 gap-3 text-sm">
           <Stat label="In the bank today" value={money(data.startBalanceMinor)} />
           <Stat
-            label={`Lowest (${formatDay(data.lowest.date)})`}
-            value={money(data.lowest.balanceMinor)}
-            warn={data.lowest.balanceMinor < 0}
+            label={`${low.afterToday ? "Lowest after today" : "Lowest"} (${formatDay(low.date)})`}
+            value={money(low.balanceMinor)}
+            warn={low.balanceMinor < 0}
           />
           <Stat label={`In ${days} days`} value={money(data.endBalanceMinor)} />
         </dl>

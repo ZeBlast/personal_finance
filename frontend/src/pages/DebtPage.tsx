@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import { buttonClass, inputClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
-import { formatMinor, parseMoneyToMinor } from "../lib/money";
+import { useMeasuredWidth } from "../hooks/useMeasuredWidth";
+import { formatAxisMoney, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { monthLabel, monthOf, shiftMonth, today } from "../lib/period";
 import { announceDataChanged } from "../lib/syncEvents";
 import type { Settings } from "../types/api";
@@ -184,7 +185,12 @@ export function DebtPage() {
                     </span>
                   </span>
                 </label>
-                <BalanceChart plan={plan.balances} minimums={base.balances} />
+                <BalanceChart
+                  plan={plan.balances}
+                  minimums={base.balances}
+                  planMonths={plan.months}
+                  minimumsMonths={base.months}
+                />
                 <ol className="space-y-1 text-sm">
                   {plan.debts.map((d) => (
                     <li key={d.id} className="flex justify-between gap-2">
@@ -283,36 +289,112 @@ function DebtRow({ debt, onSaved }: { debt: DebtOverview["debts"][number]; onSav
   );
 }
 
-/** What is owed month by month: this plan against the minimums only. */
-function BalanceChart({ plan, minimums }: { plan: number[]; minimums: number[] }) {
+/** The month a plan ends, for a chart label: "Oct 2029", or "Not paid off". Pure. */
+export function payoffMonthLabel(months: number | null, now: string = today()): string {
+  return months === null ? "Not paid off" : monthLabel(shiftMonth(monthOf(now), months));
+}
+
+const CHART = { left: 44, right: 12, top: 16, bottom: 22, height: 150, labelWidth: 56 };
+
+/** What is owed month by month: this plan against the minimums only, with axes and end dates. */
+function BalanceChart({
+  plan,
+  minimums,
+  planMonths,
+  minimumsMonths,
+}: {
+  plan: number[];
+  minimums: number[];
+  planMonths: number | null;
+  minimumsMonths: number | null;
+}) {
+  const { ref, width } = useMeasuredWidth();
   const length = Math.min(Math.max(plan.length, minimums.length), 361);
   const top = Math.max(1, ...plan, ...minimums.slice(0, length));
+  const plotWidth = Math.max(1, width - CHART.left - CHART.right);
+  const baseline = CHART.height - CHART.bottom;
+  const x = (i: number) => CHART.left + (i / Math.max(1, length - 1)) * plotWidth;
+  const y = (v: number) => CHART.top + (1 - v / top) * (baseline - CHART.top);
   const line = (values: number[]) =>
     values
       .slice(0, length)
-      .map((v, i) => `${(i / Math.max(1, length - 1)) * 300},${100 - (v / top) * 100}`)
+      .map((v, i) => `${x(i)},${y(v)}`)
       .join(" ");
+  const planEnd = x(Math.min(plan.length, length) - 1);
+  const minimumsEnd = x(Math.min(minimums.length, length) - 1);
+  // Each label sits just above the baseline at the end of its line; the second goes higher if close.
+  const planOnLeft = planEnd > width - CHART.right - CHART.labelWidth;
+  const crowded = minimumsEnd - planEnd < CHART.labelWidth * 1.5;
+  const now = today();
+  const axisText = "fill-slate-500 text-[11px] dark:fill-slate-400";
+  const endText =
+    "text-[11px] font-medium tabular-nums stroke-white dark:stroke-slate-900 [paint-order:stroke]";
   return (
     <figure>
-      <svg viewBox="0 0 300 100" className="h-28 w-full" preserveAspectRatio="none" role="img">
-        <title>What is owed over time: this plan against the minimums only</title>
-        <polyline
-          points={line(minimums)}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          className="text-slate-400"
-          vectorEffect="non-scaling-stroke"
-        />
-        <polyline
-          points={line(plan)}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="text-blue-600"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      <div ref={ref}>
+        <svg width={width} height={CHART.height} className="block" role="img">
+          <title>What is owed over time: this plan against the minimums only</title>
+          {[0, top / 2, top].map((v) => (
+            <g key={v}>
+              <line
+                x1={CHART.left}
+                x2={width - CHART.right}
+                y1={y(v)}
+                y2={y(v)}
+                className={
+                  v === 0
+                    ? "stroke-slate-400 dark:stroke-slate-500"
+                    : "stroke-slate-200 dark:stroke-slate-700"
+                }
+              />
+              <text
+                x={CHART.left - 6}
+                y={y(v) + 4}
+                textAnchor="end"
+                className={`${axisText} tabular-nums`}
+              >
+                {formatAxisMoney(v)}
+              </text>
+            </g>
+          ))}
+          <text x={CHART.left} y={CHART.height - 6} className={axisText}>
+            {payoffMonthLabel(0, now)}
+          </text>
+          <text x={width - CHART.right} y={CHART.height - 6} textAnchor="end" className={axisText}>
+            {payoffMonthLabel(length - 1, now)}
+          </text>
+          <polyline
+            points={line(minimums)}
+            fill="none"
+            strokeWidth={1.5}
+            className="stroke-slate-400"
+          />
+          <polyline
+            points={line(plan)}
+            fill="none"
+            strokeWidth={2}
+            className="stroke-blue-600 dark:stroke-blue-400"
+          />
+          <text
+            x={planOnLeft ? planEnd : planEnd + 4}
+            y={baseline - 6}
+            textAnchor={planOnLeft ? "end" : "start"}
+            strokeWidth={3}
+            className={`${endText} fill-blue-700 dark:fill-blue-300`}
+          >
+            {payoffMonthLabel(planMonths, now)}
+          </text>
+          <text
+            x={minimumsEnd}
+            y={baseline - 6 - (crowded ? 14 : 0)}
+            textAnchor="end"
+            strokeWidth={3}
+            className={`${endText} fill-slate-600 dark:fill-slate-300`}
+          >
+            {payoffMonthLabel(minimumsMonths, now)}
+          </text>
+        </svg>
+      </div>
       <figcaption className="text-xs text-slate-500">
         <span className="text-blue-600">This plan</span> against{" "}
         <span className="text-slate-400">the minimums only</span>.

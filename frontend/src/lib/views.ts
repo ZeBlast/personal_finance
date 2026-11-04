@@ -22,6 +22,22 @@ export function lowestOf<T extends { date: string; balanceMinor: number }>(days:
   );
 }
 
+/**
+ * The forecast's "Lowest" figure. When the lowest point is today (it only repeats what is in the
+ * bank), the lowest of the days after today instead, with `afterToday` set. Pure.
+ */
+export function lowestTile(forecast: Pick<Forecast, "today" | "lowest" | "days">): {
+  date: string;
+  balanceMinor: number;
+  afterToday: boolean;
+} {
+  if (forecast.lowest.date !== forecast.today) return { ...forecast.lowest, afterToday: false };
+  const later = lowestOf(forecast.days.filter((d) => d.date > forecast.today));
+  return later
+    ? { date: later.date, balanceMinor: later.balanceMinor, afterToday: true }
+    : { ...forecast.lowest, afterToday: false };
+}
+
 export interface AttentionItem {
   text: string;
   to: string;

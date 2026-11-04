@@ -435,16 +435,6 @@ export function BudgetsPage() {
                     {daysLeft !== null && `, ${daysLeft} day${daysLeft === 1 ? "" : "s"} to go`}
                     {attention > 0 && `. ${attention} need${attention === 1 ? "s" : ""} a look.`}
                   </p>
-                  <div className="max-w-xl">
-                    <CapMeter
-                      spentMinor={data.totals.spentMinor}
-                      capMinor={data.totals.budgetedMinor}
-                      expectedMinor={daysLeft === null ? null : totalExpected(caps)}
-                      color={null}
-                      label="All caps together"
-                      description={`${money(data.totals.spentMinor)} of ${money(data.totals.budgetedMinor)} in caps.`}
-                    />
-                  </div>
                 </>
               )}
             </div>
@@ -462,6 +452,17 @@ export function BudgetsPage() {
               </button>
             </div>
           </div>
+          {data.budgets.length > 0 && (
+            // The full width of the grid of caps below it.
+            <CapMeter
+              spentMinor={data.totals.spentMinor}
+              capMinor={data.totals.budgetedMinor}
+              expectedMinor={daysLeft === null ? null : totalExpected(caps)}
+              color={null}
+              label="All caps together"
+              description={`${money(data.totals.spentMinor)} of ${money(data.totals.budgetedMinor)} in caps.`}
+            />
+          )}
 
           {/* Two columns of caps when the page has room. Those that need attention come first. */}
           <ul className="grid gap-3 @min-[56rem]:grid-cols-2">

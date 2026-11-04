@@ -45,6 +45,10 @@ export function FoundSection({
   const data = state.data;
   const cash = (n: number) => formatMinor(n, data.currency);
   const shown = data.subscriptions.filter((s) => showLapsed || s.status === "active");
+  const { byKey: changesByKey, other: otherChanges } = splitChanges(
+    data.changes,
+    new Set(shown.map((s) => s.key)),
+  );
 
   async function decide(s: Subscription, status: SubscriptionStatus | ""): Promise<void> {
     try {
@@ -79,7 +83,7 @@ export function FoundSection({
           {error}
         </p>
       )}
-      <RecentChanges changes={data.changes} money={cash} />
+      <RecentChanges changes={otherChanges} money={cash} />
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -96,9 +100,8 @@ export function FoundSection({
               <th className="py-1 font-medium">How often</th>
               <th className="py-1 text-right font-medium">Usual</th>
               <th className="py-1 text-right font-medium">Per year</th>
-              <th className="py-1 font-medium">Last / next</th>
+              <th className="py-1 pl-6 font-medium">Last / next</th>
               <th className="py-1 font-medium">Your decision</th>
-              <th className="py-1" />
             </tr>
           </thead>
           <tbody>
@@ -113,9 +116,11 @@ export function FoundSection({
                       {cash(s.priceChange.toMinor)} on {formatDay(s.priceChange.date)}
                     </div>
                   )}
-                  {s.chargedAfterCancel && (
-                    <div className="text-xs font-medium text-red-600">
-                      Still charged after you cancelled it
+                  {(changesByKey.get(s.key) ?? []).length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {changesByKey.get(s.key)!.map((c) => (
+                        <ChangeBadge key={c.kind} change={c} money={cash} />
+                      ))}
                     </div>
                   )}
                 </td>
@@ -127,7 +132,7 @@ export function FoundSection({
                 <td className="py-1.5 text-right font-medium tabular-nums">
                   {cash(s.yearlyMinor)}
                 </td>
-                <td className="py-1.5 text-xs text-slate-500">
+                <td className="py-1.5 pl-6 text-xs text-slate-500">
                   {formatDay(s.lastDate)}
                   <br />
                   {s.status === "active"
@@ -135,38 +140,38 @@ export function FoundSection({
                     : "seems to have stopped"}
                 </td>
                 <td className="py-1.5">
-                  <Select
-                    aria-label={`Decision for ${s.merchant}`}
-                    value={s.review?.status ?? ""}
-                    onChange={(e) => void decide(s, e.target.value as SubscriptionStatus | "")}
-                    className="rounded border border-slate-300 px-1 py-0.5 text-xs dark:border-slate-600"
-                  >
-                    {DECISIONS.map((d) => (
-                      <option key={d.value} value={d.value}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </Select>
-                </td>
-                <td className="py-1.5 text-right">
-                  {trackedKeys.has(s.key) ? (
-                    <span className="text-xs text-slate-500">Tracked</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
-                      onClick={() => onTrack(s)}
-                      title="Add it to your subscriptions, with the details of the account"
+                  <div className="flex items-center gap-2">
+                    <Select
+                      aria-label={`Decision for ${s.merchant}`}
+                      value={s.review?.status ?? ""}
+                      onChange={(e) => void decide(s, e.target.value as SubscriptionStatus | "")}
+                      className="rounded border border-slate-300 px-1 py-0.5 text-xs dark:border-slate-600"
                     >
-                      Track
-                    </button>
-                  )}
+                      {DECISIONS.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </Select>
+                    {trackedKeys.has(s.key) ? (
+                      <span className="text-xs text-slate-500">Tracked</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+                        onClick={() => onTrack(s)}
+                        title="Add it to your subscriptions, with the details of the account"
+                      >
+                        Track
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-3 text-slate-500">
+                <td colSpan={6} className="py-3 text-slate-500">
                   No recurring charges found yet. They show up after a few months of history.
                 </td>
               </tr>
@@ -185,7 +190,50 @@ export const CHANGE_TEXT: Record<RecurringChange["kind"], string> = {
   charged_after_cancel: "Still charged after you cancelled it",
 };
 
-/** Recent price changes, new recurring charges, and charges after cancelling, newest first. */
+/**
+ * Splits recent changes into those on a row of the table (matched on the series key both share)
+ * and those about items not shown there. Pure.
+ */
+export function splitChanges(
+  changes: RecurringChange[],
+  shownKeys: Set<string>,
+): { byKey: Map<string, RecurringChange[]>; other: RecurringChange[] } {
+  const byKey = new Map<string, RecurringChange[]>();
+  const other: RecurringChange[] = [];
+  for (const c of changes) {
+    if (shownKeys.has(c.key)) byKey.set(c.key, [...(byKey.get(c.key) ?? []), c]);
+    else other.push(c);
+  }
+  return { byKey, other };
+}
+
+/** What happened to a charge, as a small badge with what it does to the year. */
+function ChangeBadge({
+  change: c,
+  money: cash,
+}: {
+  change: RecurringChange;
+  money: (n: number) => string;
+}) {
+  const bad = c.kind === "price_up" || c.kind === "charged_after_cancel";
+  return (
+    <span
+      className={`rounded-xl px-2 py-0.5 text-xs font-medium ${
+        bad
+          ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+          : c.kind === "price_down"
+            ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
+            : "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+      }`}
+    >
+      {CHANGE_TEXT[c.kind]}
+      {c.yearlyDeltaMinor !== 0 &&
+        ` · ${c.yearlyDeltaMinor > 0 ? "+" : "−"}${cash(Math.abs(c.yearlyDeltaMinor))} a year`}
+    </span>
+  );
+}
+
+/** Recent changes about items that are not a row in the table above, newest first. */
 export function RecentChanges({
   changes,
   money: cash,
@@ -193,58 +241,27 @@ export function RecentChanges({
   changes: RecurringChange[];
   money: (n: number) => string;
 }) {
+  if (changes.length === 0) return null;
   return (
     <section
       aria-label="What changed recently"
       className="rounded-md border border-slate-200 p-3 dark:border-slate-700"
     >
       <h3 className="text-sm font-semibold">What changed recently</h3>
-      {changes.length === 0 ? (
-        <p className="mt-1 text-sm text-slate-500">
-          No price changes or new recurring charges in the last few months.
-        </p>
-      ) : (
-        <ul className="mt-2 space-y-1.5 text-sm">
-          {changes.map((c) => {
-            const bad = c.kind === "price_up" || c.kind === "charged_after_cancel";
-            return (
-              <li
-                key={`${c.key}-${c.kind}`}
-                className="flex flex-wrap items-baseline justify-between gap-2"
-              >
-                <span>
-                  <span
-                    className={`mr-2 rounded-xl px-2 py-0.5 text-xs font-medium ${
-                      bad
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200"
-                        : c.kind === "price_down"
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200"
-                          : "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-                    }`}
-                  >
-                    {CHANGE_TEXT[c.kind]}
-                  </span>
-                  <span className="font-medium">{c.merchant}</span>
-                  <span className="text-slate-500">
-                    {" "}
-                    {c.fromMinor !== null
-                      ? `${cash(c.fromMinor)} → ${cash(c.toMinor)}`
-                      : cash(c.toMinor)}
-                    {" · "}
-                    {c.kind === "new" ? "since" : "on"} {formatDay(c.date)}
-                  </span>
-                </span>
-                <span
-                  className={`tabular-nums ${c.yearlyDeltaMinor > 0 ? "text-red-600" : "text-green-700 dark:text-green-400"}`}
-                >
-                  {c.yearlyDeltaMinor > 0 ? "+" : "−"}
-                  {cash(Math.abs(c.yearlyDeltaMinor))} a year
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ul className="mt-2 space-y-1.5 text-sm">
+        {changes.map((c) => (
+          <li key={`${c.key}-${c.kind}`}>
+            <span className="font-medium">{c.merchant}</span>{" "}
+            <ChangeBadge change={c} money={cash} />
+            <span className="text-slate-500">
+              {" "}
+              {c.fromMinor !== null ? `${cash(c.fromMinor)} → ${cash(c.toMinor)}` : cash(c.toMinor)}
+              {" · "}
+              {c.kind === "new" ? "since" : "on"} {formatDay(c.date)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

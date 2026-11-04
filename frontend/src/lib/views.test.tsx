@@ -12,6 +12,7 @@ import {
   cashFlowModel,
   heatmapWeeks,
   lowestOf,
+  lowestTile,
   merchantChange,
   sortMerchants,
   spreadLabels,
@@ -49,6 +50,30 @@ const forecast: Forecast = {
   lowest: { date: "2026-11-02", balanceMinor: 40_000 },
   endBalanceMinor: 40_000,
 };
+
+describe("the forecast's lowest tile", () => {
+  it("keeps the lowest point when it is not today", () => {
+    expect(lowestTile(forecast)).toEqual({
+      date: "2026-11-02",
+      balanceMinor: 40_000,
+      afterToday: false,
+    });
+  });
+
+  it("uses the lowest of the days after today when the lowest is today", () => {
+    const low = { ...forecast, lowest: { date: "2026-11-01", balanceMinor: 100_000 } };
+    expect(lowestTile(low)).toEqual({ date: "2026-11-02", balanceMinor: 40_000, afterToday: true });
+  });
+
+  it("falls back to the overall lowest when there are no days after today", () => {
+    const only = {
+      ...forecast,
+      days: forecast.days.slice(0, 1),
+      lowest: { date: "2026-11-01", balanceMinor: 100_000 },
+    };
+    expect(lowestTile(only)).toMatchObject({ date: "2026-11-01", afterToday: false });
+  });
+});
 
 describe("the what-if", () => {
   it("takes an extra purchase off that day and every day after", () => {

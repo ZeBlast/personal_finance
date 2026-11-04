@@ -45,8 +45,8 @@ export function AnnotatedForecast({
   const line = stepLine(days.map((d, i) => ({ x: x(i), y: y(d.balanceMinor) })));
   const lowAt = days.findIndex((d) => d.date === forecast.lowest.date);
   const lowOnRight = lowAt >= 0 && x(lowAt) > width - 200;
-  // Under the line when there is room: after a low point, the line goes up and away from there.
-  const lowBelow = y(forecast.lowest.balanceMinor) + 18 < height - PAD.bottom;
+  // Always above the line, and at least 8px clear of the axis or baseline under it.
+  const lowLabelY = y(forecast.lowest.balanceMinor) - 8;
   // Top and zero, then the bottom or the middle, whichever has room for its label.
   const ticks = [...new Set([top, 0, Math.abs(y(bottom) - y(0)) > 16 ? bottom : top / 2])];
   const shown = hover === null ? null : days[hover]!;
@@ -140,7 +140,7 @@ export function AnnotatedForecast({
           {lowAt >= 0 && (
             <text
               x={lowOnRight ? x(lowAt) - 6 : x(lowAt) + 6}
-              y={y(forecast.lowest.balanceMinor) + (lowBelow ? 16 : -8)}
+              y={lowLabelY}
               textAnchor={lowOnRight ? "end" : "start"}
               strokeWidth={3}
               style={{ paintOrder: "stroke" }}

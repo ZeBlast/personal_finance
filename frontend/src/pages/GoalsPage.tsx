@@ -4,9 +4,13 @@ import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { useUnsavedGuard } from "../components/common/useUnsavedGuard";
 import { buttonClass, inputClass, primaryClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
+import { summaryPath } from "../lib/analytics";
+import { emergencyFundTargetMinor } from "../lib/emergencyFund";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
+import { firstOfMonth, lastOfMonth, monthOf, shiftMonth, today } from "../lib/period";
 import { formatDay } from "../lib/time";
 import type { Account } from "../types/api";
+import type { Summary } from "../types/analytics";
 
 export interface Goal {
   id: number;
@@ -47,6 +51,22 @@ export function GoalsPage() {
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
   const [deleting, setDeleting] = useState<Goal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ name: string; target: string } | null>(null);
+  // Typical spending is only looked up when there is no goal yet, for the emergency-fund button.
+  const noGoals = goals.data?.length === 0;
+  const lastMonth = shiftMonth(monthOf(today()), -1);
+  const spending = useApi<Summary>(
+    noGoals
+      ? summaryPath({
+          from: firstOfMonth(shiftMonth(lastMonth, -5)),
+          to: lastOfMonth(lastMonth),
+          groupBy: "month",
+        })
+      : null,
+  );
+  const fundTargetMinor = emergencyFundTargetMinor(
+    (spending.data?.rows ?? []).map((r) => r.spendingMinor),
+  );
 
   async function remove(): Promise<void> {
     if (!deleting) return;
@@ -86,9 +106,25 @@ export function GoalsPage() {
         </p>
       )}
       {goals.data?.length === 0 && (
-        <p className="text-sm text-slate-500">
-          No goals yet. An emergency fund of three to six months of spending is a common first one.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-slate-500">
+            No goals yet. An emergency fund of three to six months of spending is a common first
+            one.
+          </p>
+          <button
+            type="button"
+            className={buttonClass}
+            onClick={() => {
+              setPrefill({
+                name: "Emergency fund",
+                target: fundTargetMinor === null ? "" : (fundTargetMinor / 100).toFixed(2),
+              });
+              setEditing("new");
+            }}
+          >
+            Start an emergency fund{fundTargetMinor === null ? "" : ` (${money(fundTargetMinor)})`}
+          </button>
+        </div>
       )}
       <ul className="grid gap-3 sm:grid-cols-2">
         {goals.data?.map((g) => (
@@ -166,10 +202,15 @@ export function GoalsPage() {
       {editing && (
         <GoalDialog
           goal={editing === "new" ? null : editing}
+          prefill={editing === "new" ? prefill : null}
           accounts={(accounts.data ?? []).filter((a) => a.type !== "credit" && a.type !== "loan")}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            setPrefill(null);
+          }}
           onSaved={(text) => {
             setEditing(null);
+            setPrefill(null);
             setNotice(text);
             goals.reload();
           }}
@@ -206,19 +247,22 @@ export function goalAccountText(a: Goal["accounts"][number]): string {
 
 function GoalDialog({
   goal,
+  prefill,
   accounts,
   onClose,
   onSaved,
 }: {
   goal: Goal | null;
+  /** A name and target (as typed) to start a new goal with. */
+  prefill: { name: string; target: string } | null;
   accounts: Account[];
   onClose: () => void;
   onSaved: (text: string) => void;
 }) {
   const id = useId();
   const [initial] = useState(() => ({
-    name: goal?.name ?? "",
-    target: goal ? (goal.targetMinor / 100).toFixed(2) : "",
+    name: goal?.name ?? prefill?.name ?? "",
+    target: goal ? (goal.targetMinor / 100).toFixed(2) : (prefill?.target ?? ""),
     date: goal?.targetDate ?? "",
     saved: goal && goal.savedMinor > 0 ? (goal.savedMinor / 100).toFixed(2) : "",
     accountIds: goal?.accountIds ?? [],

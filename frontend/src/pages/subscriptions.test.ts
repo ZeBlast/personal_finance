@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RenewalItem, Subscription } from "../types/planning";
+import type { RecurringChange, RenewalItem, Subscription } from "../types/planning";
+import { splitChanges } from "../components/subscriptions/FoundSection";
 import { buildSubscription, draftFromSeries } from "../components/subscriptions/subscriptionDraft";
 import { billingText, renewalWhen } from "../components/subscriptions/subscriptionText";
 
@@ -93,5 +94,30 @@ describe("subscriptions page", () => {
       ok: true,
       body: { termMonths: 12, frequency: null },
     });
+  });
+});
+
+describe("recent changes next to the found charges", () => {
+  const change = (key: string, kind: RecurringChange["kind"]): RecurringChange => ({
+    key,
+    merchant: key,
+    kind,
+    date: "2026-10-01",
+    fromMinor: null,
+    toMinor: 1000,
+    yearlyDeltaMinor: 12_000,
+  });
+
+  it("puts a change on its row by series key and keeps the rest for the box", () => {
+    const { byKey, other } = splitChanges(
+      [change("a", "new"), change("a", "price_up"), change("b", "new")],
+      new Set(["a"]),
+    );
+    expect(byKey.get("a")?.map((c) => c.kind)).toEqual(["new", "price_up"]);
+    expect(other.map((c) => c.key)).toEqual(["b"]);
+  });
+
+  it("leaves nothing for the box when every change has a row", () => {
+    expect(splitChanges([change("a", "new")], new Set(["a"])).other).toEqual([]);
   });
 });
