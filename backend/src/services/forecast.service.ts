@@ -3,6 +3,7 @@ import { subscriptionReviews, trackedSubscriptions } from "../../../drizzle/sche
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, isRealDate } from "../utils/dates.js";
 import { debtOverview } from "./debt.service.js";
+import { listGoals, type GoalDto } from "./goal.service.js";
 import { AppError } from "../utils/errors.js";
 import { listAccounts } from "./account.service.js";
 import { closingDates, dueAfter, listBills, type CardBill } from "./bills.service.js";
@@ -32,6 +33,9 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  * - Interest on bank accounts whose APY the user entered: on the last day of each month, on the
  *   account's balance today plus the interest before it. Interest found recurring in such an
  *   account's history is left to this, so it is not counted twice.
+ * - Goals whose monthly contribution the user chose to count: that amount on the chosen day of each
+ *   month, until the goal is met. It lowers the line even when the money stays in a savings account
+ *   that is counted, since money set aside is no longer free to spend.
  *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
  */
@@ -42,12 +46,14 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "interest";
+  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "interest" | "goal";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
   /** A card bill, or a charge paid with one: the card. Interest: the bank account. */
   accountId?: number;
+  /** A goal contribution: the goal. */
+  goalId?: number;
   /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
   card?: string;
   chargedOn?: string;
@@ -102,6 +108,39 @@ function cancelledSeries(db: AppDb): Map<string, string> {
     stops.set(r.key, earlier !== undefined && earlier < r.on ? earlier : r.on);
   }
   return stops;
+}
+
+/**
+ * The contributions to goals that count in the forecast: each month on the goal's day, until what
+ * is left of the goal is covered (the last one is the remainder). Pure.
+ */
+export function goalEvents(
+  goals: Array<Pick<GoalDto, "id" | "name" | "remainingMinor" | "reached" | "forecast">>,
+  today: string,
+  end: string,
+): Array<{ date: string; event: ForecastEvent }> {
+  const out: Array<{ date: string; event: ForecastEvent }> = [];
+  for (const g of goals) {
+    if (g.reached || g.forecast === null) continue;
+    let left = g.remainingMinor;
+    for (let k = 0; left > 0; k += 1) {
+      const date = `${addMonths(today.slice(0, 7), k)}-${String(g.forecast.day).padStart(2, "0")}`;
+      if (date > end) break;
+      if (date <= today) continue;
+      const amount = Math.min(g.forecast.monthlyMinor, left);
+      left -= amount;
+      out.push({
+        date,
+        event: {
+          label: `Set aside for ${g.name}`,
+          amountMinor: -amount,
+          source: "goal",
+          goalId: g.id,
+        },
+      });
+    }
+  }
+  return out;
 }
 
 export function cashForecast(
@@ -285,6 +324,9 @@ export function cashForecast(
       });
     });
   }
+
+  // 6. Money set aside for goals.
+  for (const { date, event } of goalEvents(listGoals(db, today), today, end)) add(date, event);
 
   const days: ForecastDay[] = [];
   let balance = start;

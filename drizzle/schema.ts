@@ -1049,6 +1049,10 @@ export const goals = sqliteTable("goals", {
    */
   accountAmounts: text("account_amounts").notNull().default("{}"),
   color: text("color"),
+  /** What the user sets aside each month, counted in the cash forecast; null: not counted. */
+  forecastMonthlyMinor: integer("forecast_monthly_minor"),
+  /** The day of the month (1 to 28) the contribution is set aside. */
+  forecastDay: integer("forecast_day").notNull().default(1),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

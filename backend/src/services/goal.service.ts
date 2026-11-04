@@ -23,6 +23,8 @@ export interface GoalInput {
   /** A set amount owned in a linked account (cents), by account ID; others share the rest. */
   accountAmounts?: Record<string, number> | undefined;
   color?: string | null | undefined;
+  /** What to set aside each month and on which day (1 to 28), counted in the cash forecast. */
+  forecast?: { monthlyMinor: number; day: number } | null | undefined;
 }
 
 export interface GoalAccount {
@@ -49,6 +51,8 @@ export interface GoalDto {
   accountIds: number[];
   accountAmounts: Record<string, number>;
   color: string | null;
+  /** The monthly contribution counted in the cash forecast, or null when it is not counted. */
+  forecast: { monthlyMinor: number; day: number } | null;
   /** The linked accounts as they are now (an account that was removed is left out). */
   accounts: GoalAccount[];
   /** What it owns of the linked accounts, plus the amount kept by hand. */
@@ -82,6 +86,18 @@ function check(input: GoalInput): void {
   const saved = input.savedMinor ?? 0;
   if (!Number.isInteger(saved) || saved < 0 || saved > MAX_MINOR) {
     throw new AppError(400, "invalid_amount", "The amount saved elsewhere cannot be negative.");
+  }
+  const plan = input.forecast;
+  if (
+    plan &&
+    (!Number.isInteger(plan.monthlyMinor) ||
+      plan.monthlyMinor < 1 ||
+      plan.monthlyMinor > MAX_MINOR ||
+      !Number.isInteger(plan.day) ||
+      plan.day < 1 ||
+      plan.day > 28)
+  ) {
+    throw new AppError(400, "invalid_amount", "Enter the monthly amount and a day from 1 to 28.");
   }
   for (const amount of Object.values(input.accountAmounts ?? {})) {
     if (!Number.isInteger(amount) || amount < 0 || amount > MAX_MINOR) {
@@ -222,6 +238,10 @@ function toDtos(rows: Array<typeof goals.$inferSelect>, today: string, db: AppDb
       accountIds: ids,
       accountAmounts: amounts,
       color: row.color,
+      forecast:
+        row.forecastMonthlyMinor === null
+          ? null
+          : { monthlyMinor: row.forecastMonthlyMinor, day: row.forecastDay },
       accounts,
       currentMinor: current,
       percent: Math.min(100, Math.round((current / row.targetMinor) * 1000) / 10),
@@ -277,6 +297,8 @@ function valuesOf(input: GoalInput) {
       ),
     ),
     color: input.color ?? null,
+    forecastMonthlyMinor: input.forecast?.monthlyMinor ?? null,
+    forecastDay: input.forecast?.day ?? 1,
   };
 }
 

@@ -15,6 +15,7 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   recurring: "Found recurring",
   debt_plan: "Debt payoff plan",
   interest: "Interest (estimated from the APY)",
+  goal: "Goal contribution",
 };
 
 const smallButton =

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { divideAccount, goalReservations, monthsBetween } from "./services/goal.service.js";
+import { goalEvents } from "./services/forecast.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -59,6 +60,60 @@ describe("goals", () => {
     await t.call("delete", `/api/goals/${id}`).expect(204);
     expect((await t.call("get", "/api/goals").expect(200)).body).toHaveLength(0);
     await t.call("post", "/api/goals").send({ name: "", targetMinor: 100 }).expect(400);
+  });
+
+  it("counts a goal's monthly contribution until it is met", () => {
+    const g = {
+      id: 1,
+      name: "Trip",
+      remainingMinor: 100_000,
+      reached: false,
+      forecast: { monthlyMinor: 40_000, day: 5 },
+    };
+    expect(
+      goalEvents([g], "2026-10-09", "2027-03-01").map((e) => [e.date, e.event.amountMinor]),
+    ).toEqual([
+      ["2026-11-05", -40_000],
+      ["2026-12-05", -40_000],
+      ["2027-01-05", -20_000],
+    ]);
+    expect(goalEvents([g], "2026-10-04", "2026-10-31")[0]!.date).toBe("2026-10-05");
+    expect(goalEvents([{ ...g, reached: true }], "2026-10-09", "2027-03-01")).toEqual([]);
+    expect(goalEvents([{ ...g, forecast: null }], "2026-10-09", "2027-03-01")).toEqual([]);
+  });
+
+  it("keeps the forecast choice through an edit and shows it in the forecast", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const body = {
+      name: "Trip",
+      targetMinor: 1_000_000,
+      forecast: { monthlyMinor: 40_000, day: 5 },
+    };
+    const created = await t.call("post", "/api/goals").send(body).expect(201);
+    expect(created.body.forecast).toEqual({ monthlyMinor: 40_000, day: 5 });
+    const put = await t
+      .call("put", `/api/goals/${created.body.id}`)
+      .send({ ...body, name: "Big trip" })
+      .expect(200);
+    expect(put.body.forecast).toEqual({ monthlyMinor: 40_000, day: 5 });
+    const f = (await t.call("get", "/api/forecast?days=60&today=2026-10-09").expect(200)).body;
+    expect(f.days.find((d: { date: string }) => d.date === "2026-11-05").events).toContainEqual(
+      expect.objectContaining({
+        label: "Set aside for Big trip",
+        source: "goal",
+        amountMinor: -40_000,
+      }),
+    );
+    const cleared = await t
+      .call("put", `/api/goals/${created.body.id}`)
+      .send({ ...body, forecast: null })
+      .expect(200);
+    expect(cleared.body.forecast).toBeNull();
+    await t
+      .call("post", "/api/goals")
+      .send({ ...body, forecast: { monthlyMinor: 5, day: 29 } })
+      .expect(400);
   });
 
   it("counts whole months to the date, at least one", () => {

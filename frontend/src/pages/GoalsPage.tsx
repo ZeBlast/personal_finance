@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api/client";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { useUnsavedGuard } from "../components/common/useUnsavedGuard";
-import { buttonClass, inputClass, primaryClass } from "../components/investments/styles";
+import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
 import { useApi } from "../hooks/useApi";
 import { summaryPath } from "../lib/analytics";
 import { emergencyFundTargetMinor } from "../lib/emergencyFund";
@@ -22,6 +22,8 @@ export interface Goal {
   /** A set amount this goal owns in a linked account, by account ID; others share the rest. */
   accountAmounts: Record<string, number>;
   color: string | null;
+  /** The monthly contribution counted in the cash forecast, or null when it is not counted. */
+  forecast: { monthlyMinor: number; day: number } | null;
   accounts: Array<{
     id: number;
     name: string;
@@ -245,6 +247,23 @@ export function goalAccountText(a: Goal["accounts"][number]): string {
   return notes.length > 0 ? `${parts[0]} (${notes.join("; ")})` : parts[0]!;
 }
 
+/**
+ * The monthly contribution to send for the cash forecast: null when it is switched off, undefined
+ * when the amount or day typed is not usable.
+ */
+export function goalForecastInput(
+  on: boolean,
+  amount: string,
+  day: string,
+): { monthlyMinor: number; day: number } | null | undefined {
+  if (!on) return null;
+  const monthlyMinor = parseMoneyToMinor(amount, "USD");
+  const dayOfMonth = Number(day);
+  if (monthlyMinor === null || monthlyMinor <= 0) return undefined;
+  if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 28) return undefined;
+  return { monthlyMinor, day: dayOfMonth };
+}
+
 function GoalDialog({
   goal,
   prefill,
@@ -270,6 +289,15 @@ function GoalDialog({
     amounts: Object.fromEntries(
       Object.entries(goal?.accountAmounts ?? {}).map(([k, v]) => [k, (v / 100).toFixed(2)]),
     ) as Record<string, string>,
+    // The cash forecast's monthly amount starts at what the goal needs a month, when that is known.
+    forecastOn: goal?.forecast != null,
+    forecastAmount:
+      goal?.forecast != null
+        ? (goal.forecast.monthlyMinor / 100).toFixed(2)
+        : goal?.perMonthMinor != null
+          ? (goal.perMonthMinor / 100).toFixed(2)
+          : "",
+    forecastDay: String(goal?.forecast?.day ?? 1),
   }));
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -295,6 +323,9 @@ function GoalDialog({
       if (minor === null) return setError("Enter each account's amount, or leave it empty.");
       accountAmounts[String(accountId)] = minor;
     }
+    const forecast = goalForecastInput(form.forecastOn, form.forecastAmount, form.forecastDay);
+    if (forecast === undefined)
+      return setError("Enter the monthly amount for the forecast, and a day from 1 to 28.");
     setBusy(true);
     setError(null);
     try {
@@ -305,6 +336,7 @@ function GoalDialog({
         savedMinor,
         accountIds: form.accountIds,
         accountAmounts,
+        forecast,
       });
       if (goal) await api(`/goals/${goal.id}`, { method: "PUT", body });
       else await api("/goals", { method: "POST", body });
@@ -418,6 +450,54 @@ function GoalDialog({
             className={inputClass}
           />
         </div>
+        <fieldset className="space-y-1">
+          <label className="flex items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              checked={form.forecastOn}
+              onChange={(e) => set({ forecastOn: e.target.checked })}
+            />
+            Count my monthly contribution in the cash forecast
+          </label>
+          {form.forecastOn && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={`${id}-fc-amount`} className="block font-medium">
+                  Each month
+                </label>
+                <input
+                  id={`${id}-fc-amount`}
+                  inputMode="decimal"
+                  value={form.forecastAmount}
+                  placeholder="200.00"
+                  onChange={(e) => set({ forecastAmount: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor={`${id}-fc-day`} className="block font-medium">
+                  On day
+                </label>
+                <select
+                  id={`${id}-fc-day`}
+                  value={form.forecastDay}
+                  onChange={(e) => set({ forecastDay: e.target.value })}
+                  className={inputClass}
+                >
+                  {Array.from({ length: 28 }, (_, i) => (
+                    <option key={i + 1} value={String(i + 1)}>
+                      {i + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            Money you set aside lowers the forecast, even when it stays in a savings account you
+            count.
+          </p>
+        </fieldset>
         {error && (
           <p role="alert" className="text-red-600">
             {error}

@@ -67,6 +67,14 @@ export function planningRoutes(db: AppDb): Router {
         .record(z.string().regex(/^\d+$/), z.number().int().min(0).max(100_000_000_000))
         .optional(),
       color: z.string().max(20).nullable().optional(),
+      forecast: z
+        .object({
+          monthlyMinor: z.number().int().min(1).max(100_000_000_000),
+          day: z.number().int().min(1).max(28),
+        })
+        .strict()
+        .nullable()
+        .optional(),
     })
     .strict();
 

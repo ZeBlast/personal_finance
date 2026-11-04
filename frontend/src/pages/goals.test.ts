@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goalAccountText } from "./GoalsPage";
+import { goalAccountText, goalForecastInput } from "./GoalsPage";
 
 const account = {
   id: 1,
@@ -33,5 +33,14 @@ describe("what a goal owns of an account", () => {
         sharedWith: ["Car"],
       }),
     ).toBe("Savings: $0.00 of $5,000.00 ($100.00 set, not enough left; shared with Car)");
+  });
+});
+
+describe("the monthly contribution counted in the cash forecast", () => {
+  it("is nothing when switched off, and needs an amount and a day from 1 to 28", () => {
+    expect(goalForecastInput(false, "", "1")).toBeNull();
+    expect(goalForecastInput(true, "400.00", "5")).toEqual({ monthlyMinor: 40_000, day: 5 });
+    expect(goalForecastInput(true, "", "5")).toBeUndefined();
+    expect(goalForecastInput(true, "400", "29")).toBeUndefined();
   });
 });

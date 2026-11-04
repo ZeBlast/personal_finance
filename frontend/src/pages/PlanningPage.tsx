@@ -80,6 +80,7 @@ const SOURCE_LABEL = {
   pending: "Pending",
   debt_plan: "Debt plan",
   interest: "Interest (from the APY)",
+  goal: "Goal",
 };
 
 function ForecastView() {
