@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { edgePoint, facingSide, routeLink } from "./flowGeometry";
+import { edgePoint, facingSide, fitView, routeLink } from "./flowGeometry";
 
 const box = (x: number, y: number, w = 200, h = 100) => ({ x, y, w, h });
+
+describe("fitView", () => {
+  it("has nothing to fit without boxes", () => {
+    expect(fitView([], { w: 800, h: 600 })).toBeNull();
+  });
+
+  it("shrinks a wide map so every box lands inside the viewport", () => {
+    const boxes = [box(0, 0), box(1800, 400)];
+    const viewport = { w: 800, h: 600 };
+    const v = fitView(boxes, viewport)!;
+    expect(v.zoom).toBeLessThan(0.5);
+    for (const b of boxes) {
+      expect(b.x * v.zoom + v.x).toBeGreaterThanOrEqual(0);
+      expect((b.x + b.w) * v.zoom + v.x).toBeLessThanOrEqual(viewport.w);
+      expect(b.y * v.zoom + v.y).toBeGreaterThanOrEqual(0);
+      expect((b.y + b.h) * v.zoom + v.y).toBeLessThanOrEqual(viewport.h);
+    }
+  });
+
+  it("does not blow a small map up past real size, and centres it", () => {
+    const v = fitView([box(0, 0)], { w: 800, h: 600 })!;
+    expect(v.zoom).toBe(1);
+    expect(v.x).toBe(300);
+    expect(v.y).toBe(250);
+  });
+});
 
 describe("cash-flow connection routing", () => {
   it("picks the side the line between centers actually crosses", () => {

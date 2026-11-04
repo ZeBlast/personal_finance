@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { formatMinor } from "../../lib/money";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../../lib/sandbox/flow";
 import {
   GRID,
+  fitView,
   resizeFromBottomLeft,
   routeLink,
   routeToPoint,
@@ -138,6 +139,19 @@ export function FlowMap() {
     }, 600);
     return () => clearTimeout(timer);
   }, [graph, view, period, years]);
+
+  // When the map first appears, fit every bucket in view (whatever view was saved with it).
+  const fitted = useRef(false);
+  useLayoutEffect(() => {
+    const box = outer.current?.getBoundingClientRect();
+    if (!graph || !box || fitted.current) return;
+    fitted.current = true;
+    const next = fitView(
+      graph.nodes.map((n) => ({ x: n.x, y: n.y, w: n.w ?? CARD_W, h: n.h ?? CARD_H })),
+      { w: box.width, h: box.height },
+    );
+    if (next) setView(next);
+  }, [graph]);
 
   const result = useMemo(() => (graph ? computeFlow(graph) : null), [graph]);
   const growth = useMemo(
@@ -989,7 +1003,7 @@ function FlowCard({
       style={{ left: node.x, top: node.y, width: w, height: h, borderColor: color }}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase" style={{ color }}>
+        <span className="text-[11px] font-semibold uppercase" style={{ color }}>
           {KINDS.find((k) => k.kind === node.kind)!.label}
         </span>
         {selected && (

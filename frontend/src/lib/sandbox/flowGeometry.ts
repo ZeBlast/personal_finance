@@ -129,3 +129,32 @@ export function resizeFromBottomLeft(
   const bottom = Math.max(snap(start.y + start.h + dy, grid), start.y + min.h);
   return { x: left, w: right - left, h: bottom - start.y };
 }
+
+/**
+ * The pan and zoom that puts every box in view with a little room around, centred. The zoom
+ * never goes above 1 (a small map is not blown up) and never below `minZoom`. Null when there is
+ * nothing to fit.
+ */
+export function fitView(
+  boxes: Box[],
+  viewport: { w: number; h: number },
+  pad = 24,
+  minZoom = 0.15,
+): { x: number; y: number; zoom: number } | null {
+  if (boxes.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const right = Math.max(...boxes.map((b) => b.x + b.w));
+  const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+  const w = right - left;
+  const h = bottom - top;
+  const zoom = Math.max(
+    minZoom,
+    Math.min(1, (viewport.w - 2 * pad) / w, (viewport.h - 2 * pad) / h),
+  );
+  return {
+    zoom,
+    x: (viewport.w - w * zoom) / 2 - left * zoom,
+    y: (viewport.h - h * zoom) / 2 - top * zoom,
+  };
+}

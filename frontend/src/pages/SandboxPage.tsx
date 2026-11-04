@@ -15,6 +15,7 @@ import { formatMinor } from "../lib/money";
 import { scenarioSentence } from "../lib/pageSummaries";
 import { lastOfMonth, monthOf, shiftMonth, today } from "../lib/period";
 import { VIRGINIA_VEHICLE_LOCALITIES } from "../lib/sandbox/dmvTaxes";
+import { fitView } from "../lib/sandbox/flowGeometry";
 import {
   evaluate,
   newId,
@@ -117,6 +118,29 @@ function MathSandbox() {
         loaded.current = true;
       });
   }, []);
+
+  /** Pan and zoom so every node is in view (nodes differ in height, so they are measured). */
+  const fitAll = useCallback(() => {
+    const box = canvas.current?.getBoundingClientRect();
+    if (!graph || !box) return;
+    const heights = new Map<string, number>();
+    canvas.current?.querySelectorAll<HTMLElement>("[data-sandbox-node]").forEach((el) => {
+      heights.set(el.dataset["sandboxNode"]!, el.offsetHeight);
+    });
+    const next = fitView(
+      graph.nodes.map((n) => ({ x: n.x, y: n.y, w: NODE_WIDTH, h: heights.get(n.id) ?? 160 })),
+      { w: box.width, h: box.height },
+    );
+    if (next) setView(next);
+  }, [graph]);
+
+  // When the canvas first opens, fit everything in view (whatever view was saved with it).
+  const fitted = useRef(false);
+  useLayoutEffect(() => {
+    if (!graph || fitted.current) return;
+    fitted.current = true;
+    fitAll();
+  }, [graph, fitAll]);
 
   // Save a moment after the last change.
   useEffect(() => {
@@ -250,7 +274,7 @@ function MathSandbox() {
           )}
           <button
             type="button"
-            onClick={() => setView({ x: 30, y: 20, zoom: 0.72 })}
+            onClick={fitAll}
             className="rounded border border-slate-300 px-3 py-1 dark:border-slate-600"
           >
             Reset view
@@ -656,6 +680,7 @@ function NodeBox({
             ? "border-amber-500 ring-2 ring-amber-300"
             : "border-slate-300 dark:border-slate-600"
       }`}
+      data-sandbox-node={node.id}
       style={{ left: node.x, top: node.y, width: NODE_WIDTH }}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -740,7 +765,7 @@ function NodeBox({
 
         {node.kind === "vehicle_tax" &&
           VIRGINIA_VEHICLE_LOCALITIES.find((l) => l.id === String(node.params["locality"])) && (
-            <p className="text-[10px] leading-snug text-slate-500">
+            <p className="text-[11px] leading-snug text-slate-500">
               Rate from:{" "}
               {
                 VIRGINIA_VEHICLE_LOCALITIES.find((l) => l.id === String(node.params["locality"]))!
@@ -794,7 +819,7 @@ function ParamField({
     "w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-800";
   return (
     <label className="block" onPointerDown={(e) => e.stopPropagation()}>
-      <span className="text-[10px] text-slate-500">{def.label}</span>
+      <span className="text-[11px] text-slate-500">{def.label}</span>
       {def.type === "text" ? (
         <input
           type="text"
