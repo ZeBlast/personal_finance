@@ -1,5 +1,6 @@
 import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
+import { today } from "../../lib/period";
 import { formatDay } from "../../lib/time";
 
 export interface ReturnResult {
@@ -34,6 +35,32 @@ export function formatRate(rate: number | null): string {
   return `${pct > 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%`;
 }
 
+type Period = PortfolioReturns["periods"][number];
+
+/**
+ * The rows to show. When This year, Last 12 months and Since records began all start on the same
+ * day they say the same thing, so they become one row, "Since <date>". Pure.
+ */
+export function returnRows(
+  periods: Period[],
+  formatFrom: (day: string) => string,
+): Array<{ key: string; label: string; period: Period }> {
+  const shown = periods.filter((p) => p.combined !== null);
+  const all = shown.find((p) => p.key === "all");
+  if (all && shown.length > 1 && shown.every((p) => p.from === all.from)) {
+    return [{ key: all.key, label: `Since ${formatFrom(all.from)}`, period: all }];
+  }
+  return shown.map((p) => ({ key: p.key, label: p.label, period: p }));
+}
+
+/** Whether the records reach back more than a year before today, so "a year" rates mean something. */
+export function hasMoreThanAYear(earliest: string, now: string): boolean {
+  const start = new Date(`${earliest}T00:00:00Z`);
+  const limit = new Date(`${now}T00:00:00Z`);
+  limit.setUTCFullYear(limit.getUTCFullYear() - 1);
+  return start < limit;
+}
+
 const tone = (rate: number | null) =>
   rate === null || rate === 0
     ? ""
@@ -54,6 +81,8 @@ export function ReturnsCard() {
   }
   if (!data || data.periods.every((p) => p.combined === null)) return null;
   const all = data.periods.find((p) => p.key === "all");
+  const rows = returnRows(data.periods, formatDay);
+  const showYearly = all ? hasMoreThanAYear(all.from, today()) : false;
 
   return (
     <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
@@ -68,28 +97,32 @@ export function ReturnsCard() {
             <tr>
               <th className="py-1 font-medium">Period</th>
               <th className="py-1 text-right font-medium">Return</th>
-              <th className="py-1 text-right font-medium">A year</th>
+              {showYearly && <th className="py-1 text-right font-medium">A year</th>}
               <th className="py-1 text-right font-medium">Gained</th>
               <th className="py-1 text-right font-medium">Put in, net</th>
               <th className="py-1 text-right font-medium">Value now</th>
             </tr>
           </thead>
           <tbody>
-            {data.periods.map((p) =>
+            {rows.map(({ key, label, period: p }) =>
               p.combined ? (
-                <tr key={p.key} className="border-t border-slate-100 dark:border-slate-800">
+                <tr key={key} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="py-1.5">
-                    {p.label}
-                    <span className="block text-xs text-slate-500">from {formatDay(p.from)}</span>
+                    {label}
+                    {!label.startsWith("Since ") && (
+                      <span className="block text-xs text-slate-500">from {formatDay(p.from)}</span>
+                    )}
                   </td>
                   <td
                     className={`py-1.5 text-right font-semibold tabular-nums ${tone(p.combined.returnRate)}`}
                   >
                     {formatRate(p.combined.returnRate)}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                    {p.combined.annualRate === null ? "—" : formatRate(p.combined.annualRate)}
-                  </td>
+                  {showYearly && (
+                    <td className="py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      {p.combined.annualRate === null ? "—" : formatRate(p.combined.annualRate)}
+                    </td>
+                  )}
                   <td className={`py-1.5 text-right tabular-nums ${tone(p.combined.gainMinor)}`}>
                     {money(p.combined.gainMinor)}
                   </td>
