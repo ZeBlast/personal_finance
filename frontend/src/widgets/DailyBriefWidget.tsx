@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Select } from "../components/common/Select";
 import { useApi } from "../hooks/useApi";
-import { api } from "../api/client";
+import { api, errorMessage } from "../api/client";
 import { formatMinor } from "../lib/money";
 import { formatDay } from "../lib/time";
 import { WidgetState } from "./WidgetFrame";
@@ -106,11 +107,14 @@ export function briefSteps(b: DailyBrief): BriefStep[] {
   if (held.length > 0) {
     steps.push({ label: "Held back for spending caps", amountMinor: sum(held), note: note(held) });
   }
-  if (b.lowest.balanceMinor !== b.cashMinor + b.obligationsMinor) {
+  // Everything above ends at the lowest balance: money arriving before the lowest day adds to
+  // it, and what goes out after it does not count, so this step makes the lines add up.
+  const toLowest = b.lowest.balanceMinor - (b.cashMinor + b.obligationsMinor);
+  if (toLowest !== 0) {
     steps.push({
-      label: `Lowest point, ${formatDay(b.lowest.date)}`,
-      amountMinor: b.lowest.balanceMinor,
-      note: "Money arriving after the lowest day does not help before it.",
+      label: `Adjusted to the lowest point, ${formatDay(b.lowest.date)}`,
+      amountMinor: toLowest,
+      note: `Cash is lowest on that day, at ${money(b.lowest.balanceMinor)}. Money arriving before it is added; what goes out after it does not count.`,
     });
   }
   if (b.reservedMinor > 0) {
@@ -150,12 +154,19 @@ export default defineWidget({
     const { data, error, loading, reload } = useApi<DailyBrief>(
       `/brief?bufferMinor=${bufferMinor}`,
     );
+    const [pickError, setPickError] = useState<string | null>(null);
+    // The Select shows what the server says, so a failed save leaves it on the old choice.
     const pickIncome = async (key: string) => {
-      await api("/settings", {
-        method: "PATCH",
-        body: JSON.stringify({ briefIncomeKey: key === "" ? null : key }),
-      });
-      reload();
+      setPickError(null);
+      try {
+        await api("/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ briefIncomeKey: key === "" ? null : key }),
+        });
+        reload();
+      } catch (err) {
+        setPickError(errorMessage(err, "Could not save that choice."));
+      }
     };
     const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
     return (
@@ -219,10 +230,22 @@ export default defineWidget({
                 </Select>
               </label>
             )}
+            {pickError && (
+              <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                {pickError}
+              </p>
+            )}
             {data.incomeChoiceMissing && (
               <p className="text-xs text-slate-500">
                 The pay you chose is not expected in the next 60 days, so this counts to the next
-                money in.
+                money in.{" "}
+                <button
+                  type="button"
+                  className="text-blue-600 underline"
+                  onClick={() => void pickIncome("")}
+                >
+                  Use the next income
+                </button>
               </p>
             )}
             <details>

@@ -48,9 +48,23 @@ describe("how safe-to-spend is worked out", () => {
     expect(steps.reduce((n, s) => n + s.amountMinor, 0)).toBe(brief.safeToSpendMinor);
   });
 
-  it("shows the lowest point when cash dips lower before money comes back", () => {
-    const steps = briefSteps({ ...brief, lowest: { date: "2026-10-12", balanceMinor: 400_000 } });
-    expect(steps.map((s) => s.label)).toContainEqual(expect.stringMatching(/^Lowest point/));
+  it("always adds up to what is safe to spend, with or without the lowest-point step", () => {
+    const total = (b: DailyBrief) => briefSteps(b).reduce((n, s) => n + s.amountMinor, 0);
+    const safe = (b: DailyBrief) => b.lowest.balanceMinor - b.reservedMinor - b.bufferMinor;
+    // Cash dips lower than cash less the bills listed (a bill is missing from the list).
+    const dips = { ...brief, lowest: { date: "2026-10-12", balanceMinor: 400_000 } };
+    expect(briefSteps(dips).map((s) => s.label)).toContainEqual(
+      expect.stringMatching(/^Adjusted to the lowest point/),
+    );
+    expect(total(dips)).toBe(safe(dips));
+    // Money arrives before the lowest day, so the lowest is above cash less the bills.
+    const income = { ...brief, lowest: { date: "2026-10-12", balanceMinor: 500_000 } };
+    expect(total(income)).toBe(safe(income));
+    // No adjustment needed: the step is hidden and the lines still add up.
+    expect(briefSteps(brief).map((s) => s.label)).not.toContainEqual(
+      expect.stringMatching(/^Adjusted/),
+    );
+    expect(total(brief)).toBe(safe(brief));
   });
 
   it("shows goal set-asides and the cap hold-back apart from bills", () => {
@@ -65,6 +79,7 @@ describe("how safe-to-spend is worked out", () => {
       lowest: { date: "2026-10-14", balanceMinor: 425_000 },
       safeToSpendMinor: 275_000,
     });
+    expect(steps.reduce((n, s) => n + s.amountMinor, 0)).toBe(275_000);
     expect(steps.map((s) => s.label)).toEqual([
       "Cash in the bank now",
       expect.stringMatching(/^Going out by /),

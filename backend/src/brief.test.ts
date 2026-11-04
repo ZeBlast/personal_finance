@@ -97,6 +97,31 @@ describe("the daily brief", () => {
     });
   });
 
+  it("can end the window at an expected one-off payment", async () => {
+    const t = await withPaydays();
+    const checking = t.db.select().from(accounts).get()!.id;
+    const planned = await t
+      .call("post", "/api/planned")
+      .send({
+        merchant: "Tax refund",
+        amountMinor: 80_000,
+        direction: "in",
+        accountId: checking,
+        startDate: "2026-10-25",
+        frequency: "once",
+      })
+      .expect(201);
+    const key = `expected:${planned.body.id}`;
+    expect(dailyBrief(t.db, { today: TODAY }).incomeOptions).toContainEqual(
+      expect.objectContaining({ key, label: "Tax refund" }),
+    );
+    await t.call("patch", "/api/settings").send({ briefIncomeKey: key }).expect(200);
+    expect(dailyBrief(t.db, { today: TODAY })).toMatchObject({
+      until: "2026-10-24",
+      nextIncome: { label: "Tax refund", chosen: true },
+    });
+  });
+
   it("names bank accounts left out for having no balance", async () => {
     const t = await withPaydays();
     const savings = (
