@@ -42,4 +42,14 @@ describe("the other side of a transfer, in words", () => {
       transferLabel({ accountType: "credit", amountMinor: -1, transferWith: null }),
     ).toBeNull();
   });
+
+  it("can leave the institution out", () => {
+    const t = {
+      accountType: "depository",
+      amountMinor: -500,
+      transferWith: other("Plaid Checking", "depository", "First Platypus Bank"),
+    };
+    expect(transferLabel(t)).toBe("Moved from Plaid Checking (First Platypus Bank)");
+    expect(transferLabel(t, true)).toBe("Moved from Plaid Checking");
+  });
 });

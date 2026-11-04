@@ -6,9 +6,13 @@ import { api, errorMessage } from "../api/client";
 import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
 import { TransactionDetail, useWideScreen } from "../components/transactions/TransactionDetail";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
-import { AccountName } from "../components/common/AccountName";
 import { accountLabel } from "../lib/accountLabel";
-import { AmountCell, TransactionTags } from "../components/transactions/TransactionCells";
+import {
+  AccountCell,
+  AmountCell,
+  TransactionTags,
+  TransferNote,
+} from "../components/transactions/TransactionCells";
 import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { toast } from "../lib/toast";
@@ -959,6 +963,7 @@ export function TransactionsPage() {
                             ✎
                           </span>
                         )}
+                        <TransferNote t={t} />
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap">
                         {t.splits.length > 0 && t.splitValid ? (
@@ -1053,12 +1058,7 @@ export function TransactionsPage() {
                         </span>
                       </td>
                       <td className="max-w-56 min-w-32 px-2 py-2">
-                        <span
-                          aria-hidden="true"
-                          className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: t.accountColor ?? "#94a3b8" }}
-                        />
-                        <AccountName name={t.accountName} institutionName={t.institutionName} />
+                        <AccountCell t={t} />
                       </td>
                       {!compact && (
                         <td className="max-w-32 px-2 py-2 break-words text-slate-600 dark:text-slate-300">

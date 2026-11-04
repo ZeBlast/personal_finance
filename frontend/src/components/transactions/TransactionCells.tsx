@@ -1,3 +1,4 @@
+import { accountLabel } from "../../lib/accountLabel";
 import { cashbackBadge } from "../../lib/cashback";
 import { formatMinor } from "../../lib/money";
 import { transferLabel } from "../../lib/transferLabel";
@@ -60,14 +61,40 @@ export function mirrorLabel(t: Pick<Transaction, "mirror" | "amountMinor">): str
   return isPaypal(other) ? `Paid via ${other.accountName}` : `Paid using ${other.accountName}`;
 }
 
-/** Pending, a transfer and where it went or came from, and "entered by hand", as small tags. */
+/** An account's name on one line, cut with an ellipsis; the institution is in the tooltip. */
+export function AccountCell({
+  t,
+}: {
+  t: Pick<Transaction, "accountName" | "institutionName" | "accountColor">;
+}) {
+  return (
+    <span className="flex items-center" title={accountLabel(t.accountName, t.institutionName)}>
+      <span
+        aria-hidden="true"
+        className="mr-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+        style={{ backgroundColor: t.accountColor ?? "#94a3b8" }}
+      />
+      <span className="truncate">{t.accountName}</span>
+    </span>
+  );
+}
+
+/** For a transfer between your own accounts: where it went or came from, as one muted line. */
+export function TransferNote({ t }: { t: Transaction }) {
+  if (!t.isTransfer || mirrorLabel(t)) return null;
+  return (
+    <span
+      className="block truncate text-xs text-slate-500"
+      title={`${transferLabel(t) ?? "Own-account transfer"}. Money moved between your own accounts. It is left out of income and spending.`}
+    >
+      {transferLabel(t, true) ?? "Own-account transfer"}
+    </span>
+  );
+}
+
+/** A purchase shown on two accounts, a split, a refund, and "entered by hand", as small tags. */
 export function TransactionTags({ t }: { t: Transaction }) {
   const tags: Array<{ text: string; className: string; title?: string }> = [];
-  if (t.pending)
-    tags.push({
-      text: "Pending",
-      className: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
-    });
   const mirrorTag = mirrorLabel(t);
   if (mirrorTag) {
     tags.push({
@@ -77,12 +104,6 @@ export function TransactionTags({ t }: { t: Transaction }) {
         t.mirror!.role === "copy"
           ? `The same purchase as on ${t.mirror!.with.accountName}, which counts it. It is left out of totals here.`
           : `The same purchase also shows on ${t.mirror!.with.accountName}. This one counts it.`,
-    });
-  } else if (t.isTransfer) {
-    tags.push({
-      text: transferLabel(t) ?? "Own-account transfer",
-      className: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
-      title: "Money moved between your own accounts. It is left out of income and spending.",
     });
   }
   if (t.refundOf) {

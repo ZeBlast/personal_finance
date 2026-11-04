@@ -20,6 +20,18 @@ const REASONS: Record<ReviewReason, string> = {
   duplicate: "Possible duplicate",
 };
 
+/** The empty state for each list: one borderless line with a green check. */
+function AllClear({ children }: { children: string }) {
+  return (
+    <p className="text-sm text-slate-500">
+      <span aria-hidden="true" className="text-green-600 dark:text-green-400">
+        ✓
+      </span>{" "}
+      {children}
+    </p>
+  );
+}
+
 /** Tidying up: recent transactions worth a look, and possible duplicates. */
 export function ReviewPage() {
   // The transaction being looked at: beside the queue on a wide window, over it otherwise.
@@ -92,7 +104,7 @@ export function ReviewPage() {
               it reviewed when it looks right.
             </p>
           )}
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+          <ul className="divide-y divide-slate-100 empty:hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
             {items.map(({ transaction: t, reasons }) => (
               <li
                 key={t.id}
@@ -139,12 +151,8 @@ export function ReviewPage() {
                 </div>
               </li>
             ))}
-            {queue.data && items.length === 0 && (
-              <li className="px-3 py-4 text-sm text-slate-500">
-                Nothing to review. All caught up.
-              </li>
-            )}
           </ul>
+          {queue.data && items.length === 0 && <AllClear>Nothing to review</AllClear>}
         </div>
 
         <div className="space-y-2">
@@ -158,7 +166,7 @@ export function ReviewPage() {
               ? ` Showing the newest ${loose.data.items.length}.`
               : ""}
           </p>
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+          <ul className="divide-y divide-slate-100 empty:hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
             {(loose.data?.items ?? []).map((t) => (
               <li key={t.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                 <button
@@ -201,10 +209,10 @@ export function ReviewPage() {
                 </CategorySelect>
               </li>
             ))}
-            {loose.data && loose.data.items.length === 0 && (
-              <li className="px-3 py-4 text-sm text-slate-500">Everything has a category.</li>
-            )}
           </ul>
+          {loose.data && loose.data.items.length === 0 && (
+            <AllClear>Everything has a category</AllClear>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -274,9 +282,7 @@ export function ReviewPage() {
               </div>
             </div>
           ))}
-          {dupes.data && dupes.data.length === 0 && (
-            <p className="text-sm text-slate-500">No possible duplicates.</p>
-          )}
+          {dupes.data && dupes.data.length === 0 && <AllClear>No possible duplicates</AllClear>}
         </div>
       </section>
       {inspecting && (
