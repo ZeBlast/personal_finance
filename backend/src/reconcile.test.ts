@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { transactions } from "../../drizzle/schema.js";
+import { addDays } from "./utils/dates.js";
 import { reconcileAccount } from "./services/reconcile.service.js";
 import { linkDemoBank, makeSyncHarness, makeTestApp } from "./test-helpers.js";
 
@@ -167,5 +168,93 @@ describe("reconciling with a statement", () => {
     h.sqlite.prepare("update accounts set current_balance_minor = 100000 where id = ?").run(id);
     const r = reconcileAccount(h.db, id, "2026-10-31", null, "2026-11-03");
     expect(r.gaps).toContainEqual({ from: "2026-10-21", to: "2026-10-31", reason: "not_synced" });
+  });
+
+  it("never saves a check as matched when the connection has not synced to the statement day", async () => {
+    const h = makeSyncHarness();
+    cleanups.push(h.cleanup);
+    const bank = await linkDemoBank(h.call);
+    const id = bank.item.accounts.find((a) => a["type"] === "depository")!["id"] as number;
+    h.sqlite.prepare("update accounts set current_balance_minor = 100000 where id = ?").run(id);
+    const check = { statementDate: "2026-10-31", statementBalanceMinor: 100_000 };
+
+    // Never synced: nothing is covered yet.
+    const never = reconcileAccount(h.db, id, "2026-10-31", null, "2026-11-03");
+    expect(never.gaps.map((g) => g.reason)).toContain("not_synced");
+
+    h.sqlite
+      .prepare("update plaid_items set last_successful_sync_at = ? where id = ?")
+      .run("2026-10-20T08:00:00Z", bank.item.id);
+    const behind = await h
+      .call("post", `/api/accounts/${id}/reconciliations`)
+      .send(check)
+      .expect(201);
+    expect(behind.body).toMatchObject({ differenceMinor: 0, status: "unresolved" });
+    expect(behind.body.gaps).toContainEqual({
+      from: "2026-10-21",
+      to: "2026-10-31",
+      reason: "not_synced",
+    });
+
+    h.sqlite
+      .prepare("update plaid_items set last_successful_sync_at = ? where id = ?")
+      .run("2026-11-02T08:00:00Z", bank.item.id);
+    const current = await h
+      .call("post", `/api/accounts/${id}/reconciliations`)
+      .send(check)
+      .expect(201);
+    expect(current.body).toMatchObject({ differenceMinor: 0, status: "matched" });
+  });
+
+  it("only calls a stretch quiet when it is long for that account", async () => {
+    const put = (t: Awaited<ReturnType<typeof setup>>["t"], id: number, date: string) =>
+      t.db
+        .insert(transactions)
+        .values({
+          accountId: id,
+          date,
+          name: `Shop ${date}`,
+          amountMinor: 100,
+          source: "plaid",
+          createdAt: "2026-11-03T00:00:00Z",
+          updatedAt: "2026-11-03T00:00:00Z",
+        })
+        .run();
+    const slow = await setup("checking");
+    // Posting every 14 days: a 13-day wait is normal.
+    for (let d = 0; d < 7; d++) put(slow.t, slow.id, addDays("2026-08-01", d * 14));
+    const a = reconcileAccount(slow.t.db, slow.id, "2026-10-31", null, "2026-11-03");
+    expect(a.gaps.filter((g) => g.reason === "quiet")).toEqual([]);
+
+    const busy = await setup("checking");
+    // Posting every day, then nothing for 12 days.
+    for (let d = 0; d < 41; d++) put(busy.t, busy.id, addDays("2026-09-01", d));
+    put(busy.t, busy.id, "2026-10-25");
+    const b = reconcileAccount(busy.t.db, busy.id, "2026-10-31", null, "2026-11-03");
+    expect(b.gaps).toContainEqual({ from: "2026-10-12", to: "2026-10-24", reason: "quiet" });
+  });
+
+  it("flags days before the account's records begin", async () => {
+    const { t, id, add } = await setup("checking");
+    await add("2026-10-05", 2_000, "out");
+    const r = reconcileAccount(t.db, id, "2026-10-10", null, "2026-11-03");
+    expect(r.gaps).toContainEqual({
+      from: "2026-09-10",
+      to: "2026-10-04",
+      reason: "before_history",
+    });
+  });
+
+  it("removes an account's saved checks with the account", async () => {
+    const { t, id } = await setup("checking");
+    await t
+      .call("post", `/api/accounts/${id}/reconciliations`)
+      .send({ statementDate: "2026-10-10", statementBalanceMinor: 100_000 })
+      .expect(201);
+    await t.call("delete", `/api/accounts/manual/${id}`).expect(204);
+    const left = t.sqlite.prepare("select count(*) as n from reconciliations").get() as {
+      n: number;
+    };
+    expect(left.n).toBe(0);
   });
 });

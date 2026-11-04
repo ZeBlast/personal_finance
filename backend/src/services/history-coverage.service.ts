@@ -30,7 +30,7 @@ export type CoverageReason = "not_synced" | "no_longer_shared";
 
 export interface AccountCoverage {
   from: string | null;
-  /** The last day the records cover; null when they are up to date. */
+  /** The last day the records cover; null when they are up to date (a hand-kept account). */
   through: string | null;
   reason: CoverageReason | null;
 }
@@ -42,8 +42,10 @@ export function accountCoverage(db: AppDb, accountId: number): AccountCoverage {
     where a.id = ${accountId}`);
   const from = historyStart(db, accountId);
   if (row?.gone) return { from, through: row.gone.slice(0, 10), reason: "no_longer_shared" };
-  if (row?.item !== null && row?.item !== undefined && row.synced) {
-    return { from, through: row.synced.slice(0, 10), reason: "not_synced" };
+  if (row?.item !== null && row?.item !== undefined) {
+    // A connection that has never synced has covered nothing yet.
+    const through = row.synced ? row.synced.slice(0, 10) : addDays(from ?? "0001-01-02", -1);
+    return { from, through, reason: "not_synced" };
   }
   return { from, through: null, reason: null };
 }

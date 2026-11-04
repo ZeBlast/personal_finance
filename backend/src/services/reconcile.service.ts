@@ -64,8 +64,10 @@ const CUTOFF_DAYS = 3;
 /** A period starts the day after the last saved check when that is at most this many days back. */
 const MAX_PERIOD_DAYS = 62;
 const DEFAULT_PERIOD_DAYS = 30;
-/** A run of this many days with nothing posted, on an account that is usually busy, is a gap. */
+/** A run of this many days with nothing posted is a gap, if also long for this account. */
 const QUIET_DAYS = 10;
+/** ...and at least this many times the account's usual wait between days with something posted. */
+const QUIET_TIMES_USUAL = 3;
 const QUIET_LOOKBACK_DAYS = 90;
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
@@ -87,7 +89,10 @@ function periodStart(db: AppDb, accountId: number, statementDate: string): strin
   return addDays(statementDate, -DEFAULT_PERIOD_DAYS);
 }
 
-/** The longest run of QUIET_DAYS or more days in from..to with no posted transaction, if any. */
+/**
+ * The longest run in from..to with no posted transaction, if it is 10 or more days and well beyond
+ * the account's usual wait between days with something posted.
+ */
 function quietStretch(
   db: AppDb,
   accountId: number,
@@ -101,6 +106,18 @@ function quietStretch(
       and date > ${addDays(statementDate, -QUIET_LOOKBACK_DAYS)} and date <= ${statementDate}
       and not (source = 'manual' and name = ${OPENING_BALANCE_NAME})`);
   if (!busy || busy.n < QUIET_DAYS || from > to) return null;
+  const recent = db.all<{ date: string }>(sql`
+    select distinct date from transactions
+    where account_id = ${accountId} and pending = 0
+      and date > ${addDays(statementDate, -QUIET_LOOKBACK_DAYS)} and date <= ${statementDate}
+      and not (source = 'manual' and name = ${OPENING_BALANCE_NAME})
+    order by date`);
+  const waits = recent
+    .slice(1)
+    .map((r, i) => (Date.parse(r.date) - Date.parse(recent[i]!.date)) / 86_400_000)
+    .sort((a, b) => a - b);
+  const usual = waits.length === 0 ? 1 : waits[Math.floor(waits.length / 2)]!;
+  const minDays = Math.max(QUIET_DAYS, QUIET_TIMES_USUAL * usual);
   const posted = db.all<{ date: string }>(sql`
     select distinct date from transactions
     where account_id = ${accountId} and pending = 0 and date >= ${from} and date <= ${to}
@@ -115,7 +132,7 @@ function quietStretch(
     const end = addDays(marks[i]!, -1);
     const days =
       (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000 + 1;
-    if (days >= QUIET_DAYS && days > bestDays) {
+    if (days >= minDays && days > bestDays) {
       best = { from: start, to: end, reason: "quiet" };
       bestDays = days;
     }
@@ -270,7 +287,10 @@ function toRecord(row: typeof reconciliations.$inferSelect): ReconciliationRecor
   };
 }
 
-/** Saves a check: matched when the statement and the app agree to the cent, otherwise unresolved. */
+/**
+ * Saves a check: matched when the statement and the app agree to the cent and the records reach
+ * the statement day, otherwise unresolved. Returns the gaps so the reason can be shown.
+ */
 export function saveReconciliation(
   db: AppDb,
   input: {
@@ -280,13 +300,17 @@ export function saveReconciliation(
     note?: string | null;
   },
   now: string = new Date().toISOString(),
-): ReconciliationRecord {
+): ReconciliationRecord & { gaps: ReconcileGap[] } {
+  // Records that stop short of the statement day can't vouch for the figure, even if it agrees.
   const check = reconcileAccount(
     db,
     input.accountId,
     input.statementDate,
     input.statementBalanceMinor,
     now.slice(0, 10),
+  );
+  const unvouched = check.gaps.some(
+    (g) => g.reason === "not_synced" || g.reason === "no_longer_shared",
   );
   const row = db
     .insert(reconciliations)
@@ -295,13 +319,13 @@ export function saveReconciliation(
       statementDate: input.statementDate,
       statementBalanceMinor: input.statementBalanceMinor,
       appBalanceMinor: check.ledgerMinor,
-      status: check.differenceMinor === 0 ? "matched" : "unresolved",
+      status: check.differenceMinor === 0 && !unvouched ? "matched" : "unresolved",
       note: input.note ?? null,
       createdAt: now,
     })
     .returning()
     .get();
-  return toRecord(row);
+  return { ...toRecord(row), gaps: check.gaps };
 }
 
 /** An account's saved checks, newest statement first. */
