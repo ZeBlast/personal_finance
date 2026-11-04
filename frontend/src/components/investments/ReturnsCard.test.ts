@@ -29,6 +29,24 @@ describe("returnRows", () => {
     const rows = returnRows(periods, fmt);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.label).toBe("Since <2026-08-01>");
+    expect(rows[0]!.merged).toBe(true);
+  });
+
+  it("leaves rows unmerged, with their start dates shown, when only two start days match", () => {
+    const periods: PortfolioReturns["periods"] = [
+      period("ytd", "This year", "2026-01-01"),
+      period("year", "Last 12 months", "2026-01-01"),
+      period("all", "Since records began", "2025-09-01"),
+    ];
+    const rows = returnRows(periods, fmt);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => !r.merged)).toBe(true);
+    expect(rows[2]!.label).toBe("Since records began");
+  });
+
+  it("keeps an unmerged 'Since records began' row unmerged when it is alone", () => {
+    const rows = returnRows([period("all", "Since records began", "2026-08-01")], fmt);
+    expect(rows[0]).toMatchObject({ label: "Since records began", merged: false });
   });
 
   it("keeps every row when the start dates differ", () => {

@@ -138,6 +138,7 @@ function CredentialsForm({
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
+  const formId = useId();
 
   async function save(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -176,7 +177,7 @@ function CredentialsForm({
   return (
     <form
       onSubmit={(e) => void save(e)}
-      className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700"
+      className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700"
     >
       <p className="text-sm">
         {saved ? (
@@ -192,29 +193,30 @@ function CredentialsForm({
           They are stored encrypted on this computer and are never shown again.
         </span>
       </p>
-      <label className="block text-sm">
-        <span className="font-medium">Client ID</span>
+      <SettingRow id={`${formId}-client`} label="Client ID">
         <input
+          id={`${formId}-client`}
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className={`${inputClass} mt-1 w-full`}
+          className={`${inputClass} w-full`}
         />
-      </label>
-      <label className="block text-sm">
-        <span className="font-medium">
-          {environment === "sandbox" ? "Sandbox" : "Production"} secret
-        </span>
+      </SettingRow>
+      <SettingRow
+        id={`${formId}-secret`}
+        label={`${environment === "sandbox" ? "Sandbox" : "Production"} secret`}
+      >
         <input
+          id={`${formId}-secret`}
           type="password"
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className={`${inputClass} mt-1 w-full`}
+          className={`${inputClass} w-full`}
         />
-      </label>
+      </SettingRow>
       <div className="flex gap-2">
         <button
           type="submit"

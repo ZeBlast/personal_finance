@@ -44,13 +44,13 @@ type Period = PortfolioReturns["periods"][number];
 export function returnRows(
   periods: Period[],
   formatFrom: (day: string) => string,
-): Array<{ key: string; label: string; period: Period }> {
+): Array<{ key: string; label: string; period: Period; merged: boolean }> {
   const shown = periods.filter((p) => p.combined !== null);
   const all = shown.find((p) => p.key === "all");
   if (all && shown.length > 1 && shown.every((p) => p.from === all.from)) {
-    return [{ key: all.key, label: `Since ${formatFrom(all.from)}`, period: all }];
+    return [{ key: all.key, label: `Since ${formatFrom(all.from)}`, period: all, merged: true }];
   }
-  return shown.map((p) => ({ key: p.key, label: p.label, period: p }));
+  return shown.map((p) => ({ key: p.key, label: p.label, period: p, merged: false }));
 }
 
 /** Whether the records reach back more than a year before today, so "a year" rates mean something. */
@@ -104,12 +104,12 @@ export function ReturnsCard() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ key, label, period: p }) =>
+            {rows.map(({ key, label, period: p, merged }) =>
               p.combined ? (
                 <tr key={key} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="py-1.5">
                     {label}
-                    {!label.startsWith("Since ") && (
+                    {!merged && (
                       <span className="block text-xs text-slate-500">from {formatDay(p.from)}</span>
                     )}
                   </td>

@@ -177,21 +177,24 @@ function TaxWorkspace({
     const today = new Date();
     const found: SourceInput[] = data.sources.map((s) => {
       const answer = saved.get(s.key);
-      return {
-        key: s.key,
-        label: s.label,
-        kind: s.kind,
-        // A paycheck's schedule gives the best estimate: paid so far, plus the paydays left.
-        suggested: s.paycheck
-          ? s.paycheck.projectedYearMinor / 100
-          : suggestAnnual(s, data.year, today),
-        annualIncome: answer?.annualIncome ?? null,
-        // Only pay has FICA taken out; credits, interest, and money from people do not.
-        ficaExempt: answer?.ficaExempt ?? !(s.kind === "income" && s.wages),
-        pretaxRetirement: answer?.pretaxRetirement ?? 0,
-        pretaxBenefits: answer?.pretaxBenefits ?? 0,
-        excluded: answer?.excluded ?? false,
-      };
+      return forEstimate(
+        {
+          key: s.key,
+          label: s.label,
+          kind: s.kind,
+          // A paycheck's schedule gives the best estimate: paid so far, plus the paydays left.
+          suggested: s.paycheck
+            ? s.paycheck.projectedYearMinor / 100
+            : suggestAnnual(s, data.year, today),
+          annualIncome: answer?.annualIncome ?? null,
+          // Only pay has FICA taken out; credits, interest, and money from people do not.
+          ficaExempt: answer?.ficaExempt ?? !(s.kind === "income" && s.wages),
+          pretaxRetirement: answer?.pretaxRetirement ?? 0,
+          pretaxBenefits: answer?.pretaxBenefits ?? 0,
+          excluded: answer?.excluded ?? false,
+        },
+        isPaycheckSource({ kind: s.kind }, s),
+      );
     });
     const manual: SourceInput[] = profile.sources
       .filter((s) => s.key.startsWith("manual:"))
@@ -461,6 +464,14 @@ export function isPaycheckSource(
 ): boolean {
   if (s.kind === "manual") return true;
   return found?.kind === "income" && found.wages;
+}
+
+/**
+ * What the estimate sees for a source: a source that is not pay has no pre-tax deductions and no
+ * FICA taken out, whatever old answers are stored for it (they stay saved, just unused). Pure.
+ */
+export function forEstimate(s: SourceInput, paycheck: boolean): SourceInput {
+  return paycheck ? s : { ...s, pretaxRetirement: 0, pretaxBenefits: 0, ficaExempt: true };
 }
 
 function SourceRow({

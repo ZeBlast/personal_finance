@@ -9,16 +9,21 @@ describe("fitView", () => {
   });
 
   it("shrinks a wide map so every box lands inside the viewport", () => {
-    const boxes = [box(0, 0), box(1800, 400)];
+    const boxes = [box(0, 0), box(1400, 400)];
     const viewport = { w: 800, h: 600 };
     const v = fitView(boxes, viewport)!;
     expect(v.zoom).toBeLessThan(0.5);
+    expect(v.zoom).toBeGreaterThanOrEqual(0.4);
     for (const b of boxes) {
       expect(b.x * v.zoom + v.x).toBeGreaterThanOrEqual(0);
       expect((b.x + b.w) * v.zoom + v.x).toBeLessThanOrEqual(viewport.w);
       expect(b.y * v.zoom + v.y).toBeGreaterThanOrEqual(0);
       expect((b.y + b.h) * v.zoom + v.y).toBeLessThanOrEqual(viewport.h);
     }
+  });
+
+  it("stops shrinking at 0.4 so labels stay readable (the map can be panned)", () => {
+    expect(fitView([box(0, 0), box(5000, 0)], { w: 800, h: 600 })!.zoom).toBe(0.4);
   });
 
   it("does not blow a small map up past real size, and centres it", () => {

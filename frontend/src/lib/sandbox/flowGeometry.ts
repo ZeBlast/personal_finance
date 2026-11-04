@@ -139,7 +139,7 @@ export function fitView(
   boxes: Box[],
   viewport: { w: number; h: number },
   pad = 24,
-  minZoom = 0.15,
+  minZoom = 0.4,
 ): { x: number; y: number; zoom: number } | null {
   if (boxes.length === 0 || viewport.w <= 0 || viewport.h <= 0) return null;
   const left = Math.min(...boxes.map((b) => b.x));
