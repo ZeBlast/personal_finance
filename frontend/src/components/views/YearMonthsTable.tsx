@@ -1,4 +1,4 @@
-import { monthShort } from "../../lib/period";
+import { monthLabel, monthShort } from "../../lib/period";
 
 export interface YearMonthRow {
   month: string;
@@ -12,11 +12,27 @@ export interface YearMonthRow {
 }
 
 /**
+ * Splits off the months before the first one with any data, so a year that started partway through
+ * shows one line about them instead of rows of zeros. With no data at all, nothing is split off.
+ * Pure.
+ */
+export function splitLeadingEmpty(months: YearMonthRow[]): {
+  emptyBefore: string | null;
+  rest: YearMonthRow[];
+} {
+  const hasData = (m: YearMonthRow) =>
+    m.incomeMinor !== 0 || m.spendingMinor !== 0 || m.netWorthMinor !== null || m.capsCount > 0;
+  const first = months.findIndex(hasData);
+  if (first <= 0) return { emptyBefore: null, rest: months };
+  return { emptyBefore: months[first]!.month, rest: months.slice(first) };
+}
+
+/**
  * A year's months as rows, with income and spending as bars on one scale, so a table can be read for
  * exact figures and scanned for shape at once.
  */
 export function YearMonthsTable({
-  months,
+  months: allMonths,
   money,
   highest,
   lowest,
@@ -28,6 +44,10 @@ export function YearMonthsTable({
   lowest?: string | null;
   compact?: boolean;
 }) {
+  // Months before the first with data collapse into one line (the small dashboard version keeps all).
+  const { emptyBefore, rest: months } = compact
+    ? { emptyBefore: null, rest: allMonths }
+    : splitLeadingEmpty(allMonths);
   const top = Math.max(1, ...months.flatMap((m) => [m.incomeMinor, m.spendingMinor]));
   const showCaps = !compact && months.some((m) => m.capsCount > 0);
   const showNetWorth = !compact && months.some((m) => m.netWorthMinor !== null);
@@ -44,6 +64,13 @@ export function YearMonthsTable({
         </tr>
       </thead>
       <tbody>
+        {emptyBefore && (
+          <tr className="border-t border-slate-100 dark:border-slate-800">
+            <td colSpan={6} className="py-1 text-xs text-slate-500">
+              No data before {monthLabel(emptyBefore)}
+            </td>
+          </tr>
+        )}
         {months.map((m) => (
           <tr key={m.month} className="border-t border-slate-100 dark:border-slate-800">
             <td className="py-1 whitespace-nowrap">
@@ -80,7 +107,7 @@ export function YearMonthsTable({
             )}
             {showNetWorth && (
               <td className="py-1 text-right tabular-nums">
-                {m.netWorthMinor === null ? "None" : money(m.netWorthMinor)}
+                {m.netWorthMinor === null ? "—" : money(m.netWorthMinor)}
               </td>
             )}
           </tr>
