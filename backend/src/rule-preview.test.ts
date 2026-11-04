@@ -35,8 +35,8 @@ async function setup() {
       .send({ accountId: account, date, merchant, amountMinor: 500, direction: "out", categoryId })
       .expect(201);
   await add("Corner Coffee", "2026-09-01");
-  await add("Corner Coffee", "2026-09-08");
-  await add("Coffee Cart", "2026-09-15");
+  const second = (await add("Corner Coffee", "2026-09-08")).body.id as number;
+  const cart = (await add("Coffee Cart", "2026-09-15")).body.id as number;
   // Chosen by hand: rules never change it.
   await add("Coffee Cart", "2026-09-20", errands);
   await t.call("post", "/api/rules/apply").send({}).expect(200);
@@ -47,7 +47,29 @@ async function setup() {
         .send({ field: "merchant", operator: "contains", matchValue: "coffee", ...body })
         .expect(200)
     ).body;
-  return { treats, dining, existing, preview };
+  const coffeeRule = {
+    name: "Coffee spots",
+    field: "merchant",
+    operator: "contains",
+    matchValue: "coffee",
+  };
+  const cartRule = { ...coffeeRule, name: "Carts", matchValue: "cart" };
+  const categoryOf = async (id: number) =>
+    (await t.call("get", `/api/transactions/${id}`).expect(200)).body.category?.name ?? null;
+  return {
+    t,
+    treats,
+    dining,
+    errands,
+    existing,
+    preview,
+    add,
+    coffeeRule,
+    cartRule,
+    second,
+    cart,
+    categoryOf,
+  };
 }
 
 describe("previewing a rule's real effect", () => {
@@ -85,5 +107,81 @@ describe("previewing a rule's real effect", () => {
       matchCount: 4,
       sample: expect.any(Array),
     });
+  });
+
+  it("lists every change a page at a time, with what it does to each category's total", async () => {
+    const { dining, treats, preview } = await setup();
+    const p1 = await preview({ categoryId: dining, limit: 2 });
+    expect(p1).toMatchObject({ changeCount: 3, changes: [expect.anything(), expect.anything()] });
+    expect((await preview({ categoryId: dining, limit: 2, offset: 2 })).changes).toHaveLength(1);
+    expect(p1.totals).toEqual([
+      { categoryId: dining, name: "Dining", changeMinor: 1_500, count: 3 },
+      { categoryId: treats, name: "Treats", changeMinor: -1_500, count: 3 },
+    ]);
+  });
+
+  it("a rule for new transactions only leaves the past alone, even after Apply rules now", async () => {
+    const { t, dining, preview, cartRule, cart, categoryOf } = await setup();
+    await t
+      .call("post", "/api/rules")
+      .send({ ...cartRule, categoryId: dining, scope: "new" })
+      .expect(201);
+    expect(
+      (await preview({ matchValue: "cart", categoryId: dining, scope: "new" })).changeCount,
+    ).toBe(0);
+    await t.call("post", "/api/rules/apply").send({}).expect(200);
+    expect(await categoryOf(cart)).toBe("Treats");
+    expect((await t.call("get", "/api/rules/batches")).body).toEqual([]);
+    // Saved with no scope: today's behaviour, no start day.
+    const plain = await t
+      .call("post", "/api/rules")
+      .send({ ...cartRule, name: "Plain", categoryId: dining })
+      .expect(201);
+    expect(plain.body.appliesFrom).toBeNull();
+  });
+
+  it("saving for past transactions too records a batch that undo puts back, keeping later edits", async () => {
+    const { t, dining, errands, coffeeRule, second, cart, categoryOf } = await setup();
+    await t
+      .call("post", "/api/rules")
+      .send({ ...coffeeRule, categoryId: dining, scope: "all" })
+      .expect(201);
+    const [batch] = (await t.call("get", "/api/rules/batches")).body;
+    expect(batch).toMatchObject({ kind: "rule_saved", changeCount: 3, undoneAt: null });
+    await t.call("patch", `/api/transactions/${second}`).send({ categoryId: errands }).expect(200);
+    const undo = (await t.call("post", `/api/rules/batches/${batch.id}/undo`).expect(200)).body;
+    expect(undo.restored).toBe(2);
+    expect(undo.kept).toEqual([
+      expect.objectContaining({ date: "2026-09-08", category: "Errands" }),
+    ]);
+    expect(await categoryOf(cart)).toBe("Treats");
+    expect(await categoryOf(second)).toBe("Errands");
+    await t.call("post", `/api/rules/batches/${batch.id}/undo`).expect(409);
+    await t.call("post", "/api/rules/batches/9999/undo").expect(404);
+    expect((await t.call("get", "/api/rules/batches")).body[0].undoneAt).not.toBeNull();
+  });
+
+  it("keeps a newer batch's category when an older batch is undone", async () => {
+    const { t, dining, errands, coffeeRule, categoryOf, cart } = await setup();
+    const rule = (
+      await t
+        .call("post", "/api/rules")
+        .send({ ...coffeeRule, categoryId: dining, scope: "all" })
+        .expect(201)
+    ).body.id as number;
+    await t
+      .call("patch", `/api/rules/${rule}`)
+      .send({ categoryId: errands, apply: true })
+      .expect(200);
+    const [newer, older] = (await t.call("get", "/api/rules/batches")).body;
+    expect(newer.changeCount).toBe(3);
+    const undoA = (await t.call("post", `/api/rules/batches/${older.id}/undo`).expect(200)).body;
+    expect(undoA.restored).toBe(0);
+    expect(undoA.kept).toHaveLength(3);
+    expect(await categoryOf(cart)).toBe("Errands");
+    // The newer batch still undoes cleanly back to what the older one left.
+    const undoB = (await t.call("post", `/api/rules/batches/${newer.id}/undo`).expect(200)).body;
+    expect(undoB.restored).toBe(3);
+    expect(await categoryOf(cart)).toBe("Dining");
   });
 });

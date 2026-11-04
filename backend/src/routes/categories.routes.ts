@@ -12,12 +12,14 @@ import {
   applyRules,
   createRule,
   deleteRule,
+  listBatches,
   listRules,
   previewRule,
   reorderRules,
   RULE_DIRECTIONS,
   RULE_FIELDS,
   RULE_OPERATORS,
+  undoBatch,
   updateRule,
 } from "../services/rule.service.js";
 
@@ -52,9 +54,17 @@ const ruleFields = {
   categoryId: z.number().int().positive(),
   enabled: z.boolean().optional(),
 };
-const ruleCreateBody = z.object(ruleFields).strict();
+const ruleScope = z.enum(["new", "all"]);
+const ruleCreateBody = z.object({ ...ruleFields, scope: ruleScope.optional() }).strict();
 const rulePatchBody = z
-  .object(ruleFields)
+  .object({
+    ...ruleFields,
+    appliesFrom: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
+    apply: z.boolean(),
+  })
   .partial()
   .strict()
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change." });
@@ -67,6 +77,9 @@ const rulePreviewBody = z
     // With these, the preview also says what saving the rule would really change.
     categoryId: ruleFields.categoryId.optional(),
     ruleId: z.number().int().positive().optional(),
+    scope: ruleScope.optional(),
+    offset: z.number().int().min(0).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
   })
   .strict();
 
@@ -104,7 +117,23 @@ export function categoriesRoutes(db: AppDb): Router {
 
   // Fixed paths must come before /rules/:id so "apply" and "reorder" are not read as IDs.
   router.post("/rules/apply", (_req, res) => {
-    res.json(applyRules(db));
+    const result = db.transaction((tx) =>
+      applyRules(tx, undefined, {
+        kind: "rules_applied",
+        ruleId: null,
+        label: "Apply rules now",
+        now: new Date().toISOString(),
+      }),
+    );
+    res.json(result);
+  });
+
+  router.get("/rules/batches", (_req, res) => {
+    res.json(listBatches(db));
+  });
+
+  router.post("/rules/batches/:id/undo", (req, res) => {
+    res.json(undoBatch(db, idParam.parse(req.params["id"])));
   });
 
   router.post("/rules/reorder", (req, res) => {

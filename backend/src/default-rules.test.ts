@@ -29,6 +29,7 @@ function setup() {
 }
 
 const subject = (amountMinor: number) => ({
+  date: "2026-01-01",
   merchant: "Disney+",
   name: "$120 Disney Streaming Credit",
   recipient: null,

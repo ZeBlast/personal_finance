@@ -1,7 +1,9 @@
-import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import {
   appSettings,
   categories,
+  categoryChangeBatches,
+  categoryChangeItems,
   transactionRules,
   transactions,
 } from "../../../drizzle/schema.js";
@@ -19,10 +21,12 @@ export const RULE_DIRECTIONS = ["in", "out"] as const;
 export type RuleDirection = (typeof RULE_DIRECTIONS)[number];
 
 type Reader = Pick<AppDb, "select">;
-type Writer = Pick<AppDb, "select" | "update">;
+type Writer = Pick<AppDb, "select" | "update" | "insert">;
 
 /** What a rule needs to know about a transaction. Values are the ones the user sees. */
 export interface RuleSubject {
+  /** `YYYY-MM-DD`, compared with a rule's `appliesFrom`. */
+  date: string;
   merchant: string;
   name: string;
   recipient: string | null;
@@ -38,6 +42,8 @@ export interface RuleLike {
   operator: RuleOperator;
   matchValue: string;
   direction?: RuleDirection | null | undefined;
+  /** `YYYY-MM-DD`: the rule never matches a transaction dated before this day. */
+  appliesFrom?: string | null | undefined;
 }
 
 const norm = (text: string): string => text.trim().toLowerCase();
@@ -63,6 +69,7 @@ function candidates(field: RuleField, subject: RuleSubject): string[] {
 export function ruleMatches(rule: RuleLike, subject: RuleSubject): boolean {
   const wanted = norm(rule.matchValue);
   if (wanted === "") return false;
+  if (rule.appliesFrom && subject.date < rule.appliesFrom) return false;
   const amount = subject.amountMinor ?? 0;
   if (rule.direction === "out" && !(amount > 0)) return false;
   if (rule.direction === "in" && !(amount < 0)) return false;
@@ -106,6 +113,7 @@ export function activeRules(db: Reader): RuleRow[] {
       operator: transactionRules.operator,
       matchValue: transactionRules.matchValue,
       direction: transactionRules.direction,
+      appliesFrom: transactionRules.appliesFrom,
       categoryId: transactionRules.categoryId,
       priority: transactionRules.priority,
       enabled: transactionRules.enabled,
@@ -124,6 +132,7 @@ export function firstMatch(rules: RuleRow[], subject: RuleSubject): RuleRow | nu
 
 const subjectColumns = {
   id: transactions.id,
+  date: transactions.date,
   name: transactions.name,
   merchantName: transactions.merchantName,
   merchantNameUser: transactions.merchantNameUser,
@@ -188,6 +197,7 @@ export function splitCategory(
 }
 
 function toSubject(row: {
+  date: string;
   name: string;
   merchantName: string | null;
   merchantNameUser: string | null;
@@ -200,6 +210,7 @@ function toSubject(row: {
   amountMinor: number;
 }): RuleSubject {
   return {
+    date: row.date,
     merchant: row.merchantNameUser?.trim() || row.merchantName || row.name,
     name: row.name,
     recipient: row.recipientUser?.trim() || row.recipient,
@@ -208,6 +219,14 @@ function toSubject(row: {
     plaidDetailed: row.plaidDetailed,
     amountMinor: row.amountMinor,
   };
+}
+
+/** Asks `applyRules` to keep its changes as a batch that can be undone. */
+export interface BatchRecord {
+  kind: "rule_saved" | "rules_applied";
+  ruleId: number | null;
+  label: string;
+  now: string;
 }
 
 export interface ApplyResult {
@@ -222,9 +241,14 @@ export interface ApplyResult {
  *
  * Never touches a transaction the user categorized by hand. For all others the outcome is exactly
  * what the first matching rule says: a transaction whose rule no longer matches goes back to
- * uncategorized rather than keeping a stale category.
+ * uncategorized rather than keeping a stale category. With `record`, the changes are also saved
+ * as a batch (when there is at least one) so they can be undone.
  */
-export function applyRules(db: Writer, ids?: number[]): ApplyResult {
+export function applyRules(
+  db: Writer,
+  ids?: number[],
+  record?: BatchRecord,
+): ApplyResult & { batchId: number | null } {
   const rules = activeRules(db);
   const notManual = or(
     isNull(transactions.categorySource),
@@ -243,6 +267,7 @@ export function applyRules(db: Writer, ids?: number[]): ApplyResult {
 
   const split = getDiningSplit(db);
   let changed = 0;
+  const items: Array<Omit<typeof categoryChangeItems.$inferInsert, "batchId">> = [];
   for (const row of rows) {
     const match = firstMatch(rules, toSubject(row));
     const nextCategory = splitCategory(split, match?.categoryId ?? null, isOnline(row));
@@ -260,9 +285,38 @@ export function applyRules(db: Writer, ids?: number[]): ApplyResult {
       .where(eq(transactions.id, row.id))
       .run();
     changed += 1;
+    items.push({
+      transactionId: row.id,
+      fromCategoryId: row.categoryId,
+      fromRuleId: row.categoryRuleId,
+      fromSource: row.categorySource,
+      toCategoryId: nextCategory,
+      toRuleId: nextRule,
+      toSource: nextSource,
+    });
   }
   syncCategoryTransfers(db);
-  return { examined: rows.length, changed };
+  let batchId: number | null = null;
+  if (record && items.length > 0) {
+    const created = db
+      .insert(categoryChangeBatches)
+      .values({
+        kind: record.kind,
+        ruleId: record.ruleId,
+        label: record.label,
+        changeCount: items.length,
+        createdAt: record.now,
+      })
+      .returning({ id: categoryChangeBatches.id })
+      .get();
+    batchId = created.id;
+    for (let i = 0; i < items.length; i += 500) {
+      db.insert(categoryChangeItems)
+        .values(items.slice(i, i + 500).map((item) => ({ ...item, batchId: created.id })))
+        .run();
+    }
+  }
+  return { examined: rows.length, changed, batchId };
 }
 
 export interface RuleDto {
@@ -272,6 +326,7 @@ export interface RuleDto {
   operator: RuleOperator;
   matchValue: string;
   direction: RuleDirection | null;
+  appliesFrom: string | null;
   categoryId: number;
   categoryName: string;
   categoryActive: boolean;
@@ -286,6 +341,7 @@ const dtoColumns = {
   operator: transactionRules.operator,
   matchValue: transactionRules.matchValue,
   direction: transactionRules.direction,
+  appliesFrom: transactionRules.appliesFrom,
   categoryId: transactionRules.categoryId,
   categoryName: categories.name,
   categoryActive: categories.active,
@@ -331,46 +387,84 @@ export interface RuleInput {
   operator: RuleOperator;
   matchValue: string;
   direction?: RuleDirection | null | undefined;
+  /** `YYYY-MM-DD`, or null for every date. */
+  appliesFrom?: string | null | undefined;
   categoryId: number;
   enabled?: boolean | undefined;
 }
 
-export function createRule(db: AppDb, input: RuleInput): RuleDto {
+/**
+ * Saves a rule. `scope: "new"` makes it file only transactions from today on; `"all"` also files
+ * the past straight away, as a batch that can be undone. Without a scope nothing is applied.
+ */
+export function createRule(
+  db: AppDb,
+  input: Omit<RuleInput, "appliesFrom"> & { scope?: "new" | "all" | undefined },
+): RuleDto {
   requireActiveCategory(db, input.categoryId);
   const now = new Date().toISOString();
-  const lowest = db
-    .select({ priority: transactionRules.priority })
-    .from(transactionRules)
-    .orderBy(asc(transactionRules.priority))
-    .get();
-  // A new rule goes to the top, so the rule you just wrote wins over older and built-in ones.
-  const priority = lowest ? lowest.priority - 10 : 0;
-  const created = db
-    .insert(transactionRules)
-    .values({
-      name: input.name,
-      field: input.field,
-      operator: input.operator,
-      matchValue: input.matchValue,
-      direction: input.direction ?? null,
-      categoryId: input.categoryId,
-      priority,
-      enabled: input.enabled ?? true,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: transactionRules.id })
-    .get();
-  return getRule(db, created.id);
+  const id = db.transaction((tx) => {
+    const lowest = tx
+      .select({ priority: transactionRules.priority })
+      .from(transactionRules)
+      .orderBy(asc(transactionRules.priority))
+      .get();
+    // A new rule goes to the top, so the rule you just wrote wins over older and built-in ones.
+    const priority = lowest ? lowest.priority - 10 : 0;
+    const created = tx
+      .insert(transactionRules)
+      .values({
+        name: input.name,
+        field: input.field,
+        operator: input.operator,
+        matchValue: input.matchValue,
+        direction: input.direction ?? null,
+        appliesFrom: input.scope === "new" ? now.slice(0, 10) : null,
+        categoryId: input.categoryId,
+        priority,
+        enabled: input.enabled ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({ id: transactionRules.id })
+      .get();
+    if (input.scope === "all") {
+      applyRules(tx, undefined, {
+        kind: "rule_saved",
+        ruleId: created.id,
+        label: `Saved rule "${input.name}"`,
+        now,
+      });
+    }
+    return created.id;
+  });
+  return getRule(db, id);
 }
 
-export function updateRule(db: AppDb, id: number, patch: Partial<RuleInput>): RuleDto {
-  getRule(db, id);
+/** Changes a rule. With `apply`, the changed rule is also run over the past, as a batch. */
+export function updateRule(
+  db: AppDb,
+  id: number,
+  patch: Partial<RuleInput> & { apply?: boolean | undefined },
+): RuleDto {
+  const before = getRule(db, id);
   if (patch.categoryId !== undefined) requireActiveCategory(db, patch.categoryId);
-  db.update(transactionRules)
-    .set({ ...patch, updatedAt: new Date().toISOString() })
-    .where(eq(transactionRules.id, id))
-    .run();
+  const { apply, ...changes } = patch;
+  const now = new Date().toISOString();
+  db.transaction((tx) => {
+    tx.update(transactionRules)
+      .set({ ...changes, updatedAt: now })
+      .where(eq(transactionRules.id, id))
+      .run();
+    if (apply) {
+      applyRules(tx, undefined, {
+        kind: "rule_saved",
+        ruleId: id,
+        label: `Changed rule "${changes.name ?? before.name}"`,
+        now,
+      });
+    }
+  });
   return getRule(db, id);
 }
 
@@ -435,32 +529,55 @@ export interface RulePreview {
    * tried in and the categories chosen by hand (which rules never change).
    */
   changeCount?: number;
-  /** A few of those changes, newest first. */
+  /** One page of those changes, newest first. */
   changes?: RuleChange[];
+  /** The net money each category gains (+) or loses (-) from those changes, largest first. */
+  totals?: Array<{
+    categoryId: number | null;
+    name: string | null;
+    changeMinor: number;
+    count: number;
+  }>;
   /** Matching transactions whose category was chosen by hand, so stay as they are. */
   manualCount?: number;
 }
+
+const PREVIEW_PAGE = 50;
+const PREVIEW_MAX_PAGE = 200;
 
 /**
  * How many existing transactions a rule would match (any category state), with a few examples.
  * Given the category it files into (and, when editing, which rule it is), also what saving it
  * would really change: each transaction's category with the rule in its place among the others
- * (a new rule goes to the top), compared with what it has now.
+ * (a new rule goes to the top), compared with what it has now. `scope` says whether the rule would
+ * cover only transactions from `today` on ("new") or every date ("all"); when left out, an edited
+ * rule keeps the start day it has and a new one covers every date.
  */
 export function previewRule(
   db: AppDb,
-  rule: RuleLike & { categoryId?: number | undefined; ruleId?: number | undefined },
+  rule: RuleLike & {
+    categoryId?: number | undefined;
+    ruleId?: number | undefined;
+    scope?: "new" | "all" | undefined;
+    offset?: number | undefined;
+    limit?: number | undefined;
+  },
+  today: string = todayIso(),
 ): RulePreview {
   const rows = db
     .select({
       ...subjectColumns,
-      date: transactions.date,
     })
     .from(transactions)
     .all();
+  const existing =
+    rule.ruleId === undefined ? undefined : activeRules(db).find((r) => r.id === rule.ruleId);
+  const appliesFrom =
+    rule.scope === "new" ? today : rule.scope === "all" ? null : (existing?.appliesFrom ?? null);
+  const effective = { ...rule, appliesFrom };
   const newestFirst = (a: { date: string; id: number }, b: { date: string; id: number }) =>
     a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id;
-  const matches = rows.filter((row) => ruleMatches(rule, toSubject(row))).sort(newestFirst);
+  const matches = rows.filter((row) => ruleMatches(effective, toSubject(row))).sort(newestFirst);
   const preview: RulePreview = {
     matchCount: matches.length,
     sample: matches.slice(0, 5).map((row) => ({
@@ -474,8 +591,6 @@ export function previewRule(
 
   // The rules with this one in its place: replacing itself when edited, on top when new.
   const others = activeRules(db).filter((r) => r.id !== rule.ruleId);
-  const existing =
-    rule.ruleId === undefined ? undefined : activeRules(db).find((r) => r.id === rule.ruleId);
   const candidate: RuleRow = {
     id: rule.ruleId ?? -1,
     name: "preview",
@@ -483,6 +598,7 @@ export function previewRule(
     operator: rule.operator,
     matchValue: rule.matchValue,
     direction: rule.direction ?? null,
+    appliesFrom,
     categoryId: rule.categoryId,
     priority: existing?.priority ?? Math.min(0, ...others.map((r) => r.priority)) - 10,
     enabled: true,
@@ -496,16 +612,24 @@ export function previewRule(
       .all()
       .map((c) => [c.id, c.name]),
   );
+  const nameOf = (id: number | null): string | null =>
+    id === null ? null : (names.get(id) ?? null);
   const changes: RuleChange[] = [];
+  const totals = new Map<number | null, { changeMinor: number; count: number }>();
+  const bump = (id: number | null, amount: number) => {
+    const entry = totals.get(id) ?? { changeMinor: 0, count: 0 };
+    entry.changeMinor += amount;
+    entry.count += 1;
+    totals.set(id, entry);
+  };
   let manualCount = 0;
   for (const row of [...rows].sort(newestFirst)) {
     const subject = toSubject(row);
-    const touches =
-      ruleMatches(rule, subject) ||
-      (rule.ruleId !== undefined && row.categoryRuleId === rule.ruleId);
+    const matchesNow = ruleMatches(effective, subject);
+    const touches = matchesNow || (rule.ruleId !== undefined && row.categoryRuleId === rule.ruleId);
     if (!touches) continue;
     if (row.categorySource === "manual") {
-      if (ruleMatches(rule, subject)) manualCount += 1;
+      if (matchesNow) manualCount += 1;
       continue;
     }
     const match = firstMatch(ordered, subject);
@@ -516,14 +640,146 @@ export function previewRule(
       date: row.date,
       merchant: subject.merchant,
       amountMinor: row.amountMinor,
-      from: row.categoryId === null ? null : (names.get(row.categoryId) ?? null),
-      to: next === null ? null : (names.get(next) ?? null),
+      from: nameOf(row.categoryId),
+      to: nameOf(next),
     });
+    bump(next, row.amountMinor);
+    bump(row.categoryId, -row.amountMinor);
   }
+  const offset = Math.max(0, rule.offset ?? 0);
+  const limit = Math.min(PREVIEW_MAX_PAGE, Math.max(1, rule.limit ?? PREVIEW_PAGE));
   return {
     ...preview,
     changeCount: changes.length,
-    changes: changes.slice(0, 8),
+    changes: changes.slice(offset, offset + limit),
+    totals: [...totals]
+      .map(([categoryId, t]) => ({ categoryId, name: nameOf(categoryId), ...t }))
+      .sort(
+        (a, b) =>
+          Math.abs(b.changeMinor) - Math.abs(a.changeMinor) || b.changeMinor - a.changeMinor,
+      ),
     manualCount,
   };
 }
+
+// ---- Change batches: seeing what a rule did, and undoing it -------------------------------------
+
+export interface ChangeBatchDto {
+  id: number;
+  kind: "rule_saved" | "rules_applied";
+  label: string;
+  ruleId: number | null;
+  changeCount: number;
+  createdAt: string;
+  undoneAt: string | null;
+}
+
+/** The most recent batches, newest first (undone ones included, marked). */
+export function listBatches(db: Reader, limit = 10): ChangeBatchDto[] {
+  return db
+    .select({
+      id: categoryChangeBatches.id,
+      kind: categoryChangeBatches.kind,
+      label: categoryChangeBatches.label,
+      ruleId: categoryChangeBatches.ruleId,
+      changeCount: categoryChangeBatches.changeCount,
+      createdAt: categoryChangeBatches.createdAt,
+      undoneAt: categoryChangeBatches.undoneAt,
+    })
+    .from(categoryChangeBatches)
+    .orderBy(desc(categoryChangeBatches.id))
+    .limit(limit)
+    .all() as ChangeBatchDto[];
+}
+
+/**
+ * Puts a batch's transactions back as they were. A transaction is only restored if it still has
+ * exactly the category the batch gave it; one changed since (by hand, or by a newer batch) keeps
+ * its newer category and is reported in `kept`.
+ */
+export function undoBatch(
+  db: AppDb,
+  id: number,
+  now: string = new Date().toISOString(),
+): {
+  restored: number;
+  kept: Array<{ id: number; date: string; merchant: string; category: string | null }>;
+} {
+  const batch = db
+    .select({ undoneAt: categoryChangeBatches.undoneAt })
+    .from(categoryChangeBatches)
+    .where(eq(categoryChangeBatches.id, id))
+    .get();
+  if (!batch) throw notFound("That change");
+  if (batch.undoneAt !== null) {
+    throw new AppError(409, "already_undone", "That change has already been undone.");
+  }
+  return db.transaction((tx) => {
+    const items = tx
+      .select({
+        item: categoryChangeItems,
+        categoryId: transactions.categoryId,
+        categoryRuleId: transactions.categoryRuleId,
+        categorySource: transactions.categorySource,
+        date: transactions.date,
+        name: transactions.name,
+        merchantName: transactions.merchantName,
+        merchantNameUser: transactions.merchantNameUser,
+      })
+      .from(categoryChangeItems)
+      .innerJoin(transactions, eq(categoryChangeItems.transactionId, transactions.id))
+      .where(eq(categoryChangeItems.batchId, id))
+      .all();
+    const liveRules = new Set(
+      tx
+        .select({ id: transactionRules.id })
+        .from(transactionRules)
+        .all()
+        .map((r) => r.id),
+    );
+    const names = new Map(
+      tx
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .all()
+        .map((c) => [c.id, c.name]),
+    );
+    let restored = 0;
+    const kept: Array<{ id: number; date: string; merchant: string; category: string | null }> = [];
+    for (const row of items) {
+      const { item } = row;
+      const unchanged =
+        row.categoryId === item.toCategoryId &&
+        row.categoryRuleId === item.toRuleId &&
+        row.categorySource === item.toSource;
+      if (!unchanged) {
+        kept.push({
+          id: item.transactionId,
+          date: row.date,
+          merchant: row.merchantNameUser?.trim() || row.merchantName || row.name,
+          category: row.categoryId === null ? null : (names.get(row.categoryId) ?? null),
+        });
+        continue;
+      }
+      tx.update(transactions)
+        .set({
+          categoryId: item.fromCategoryId,
+          // A rule deleted since would leave a dangling pointer.
+          categoryRuleId:
+            item.fromRuleId !== null && liveRules.has(item.fromRuleId) ? item.fromRuleId : null,
+          categorySource: item.fromSource,
+        })
+        .where(eq(transactions.id, item.transactionId))
+        .run();
+      restored += 1;
+    }
+    syncCategoryTransfers(tx);
+    tx.update(categoryChangeBatches)
+      .set({ undoneAt: now })
+      .where(eq(categoryChangeBatches.id, id))
+      .run();
+    return { restored, kept };
+  });
+}
+
+const todayIso = (): string => new Date().toISOString().slice(0, 10);

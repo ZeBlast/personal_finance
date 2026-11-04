@@ -322,6 +322,7 @@ describe("one merchant, many spellings", () => {
     const { ruleMatches } = await import("./services/rule.service.js");
     const rule = { field: "merchant", operator: "same_merchant", matchValue: "Chipotle" } as const;
     const subject = (merchant: string) => ({
+      date: "2026-01-01",
       merchant,
       name: merchant,
       recipient: null,

@@ -333,9 +333,45 @@ export const transactionRules = sqliteTable("transaction_rules", {
     .references(() => categories.id, { onDelete: "cascade" }),
   priority: integer("priority").notNull(),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** `YYYY-MM-DD`: the rule only files transactions dated on or after this day; null means all. */
+  appliesFrom: text("applies_from"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/** One run of rule changes (a saved rule or "Apply rules now") that can be undone as a whole. */
+export const categoryChangeBatches = sqliteTable("category_change_batches", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** `rule_saved` or `rules_applied`. */
+  kind: text("kind").notNull(),
+  /** The rule involved, if any. No foreign key: the batch outlives a deleted rule. */
+  ruleId: integer("rule_id"),
+  label: text("label").notNull(),
+  changeCount: integer("change_count").notNull(),
+  createdAt: text("created_at").notNull(),
+  undoneAt: text("undone_at"),
+});
+
+/** What one transaction's category was before and after a batch. */
+export const categoryChangeItems = sqliteTable(
+  "category_change_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    batchId: integer("batch_id")
+      .notNull()
+      .references(() => categoryChangeBatches.id, { onDelete: "cascade" }),
+    transactionId: integer("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    fromCategoryId: integer("from_category_id"),
+    fromRuleId: integer("from_rule_id"),
+    fromSource: text("from_source"),
+    toCategoryId: integer("to_category_id"),
+    toRuleId: integer("to_rule_id"),
+    toSource: text("to_source"),
+  },
+  (table) => [index("category_change_items_batch_idx").on(table.batchId)],
+);
 
 /** A monthly spending limit for a category (and its subcategories). */
 export const budgets = sqliteTable(

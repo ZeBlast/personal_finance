@@ -249,6 +249,7 @@ describe("categories", () => {
 
 describe("rule matching", () => {
   const subject = (over: Partial<RuleSubject> = {}): RuleSubject => ({
+    date: "2026-01-01",
     merchant: "Whole Foods Market",
     name: "WHOLEFDS MKT 10234",
     recipient: null,
