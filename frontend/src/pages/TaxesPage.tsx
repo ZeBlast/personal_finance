@@ -13,7 +13,9 @@ import {
   type TaxInputs,
 } from "../lib/taxes/estimate";
 import { formatDay } from "../lib/time";
+import { HowThisWorks } from "../components/common/HowThisWorks";
 import { Select } from "../components/common/Select";
+import { taxesSentence } from "../lib/pageSummaries";
 import { Loading } from "../components/common/Loading";
 
 interface IncomeTx {
@@ -89,16 +91,29 @@ export function TaxesPage() {
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const { data, error, loading } = useApi<TaxData>(`/taxes/${year}`);
+  // The estimate is worked out inside the workspace (it follows what is typed); it reports its
+  // sentence up here for the page's subtitle.
+  const [summary, setSummary] = useState<{ year: number; text: string } | null>(null);
   return (
     <section className="max-w-6xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Taxes</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            An estimate of the year&apos;s taxes from your income and credits. Fill in what the
-            transactions can&apos;t tell: a source&apos;s full-year pay, pre-tax contributions, and
-            where you live. It is an estimate, not tax advice.
-          </p>
+          {summary?.year === year && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{summary.text}</p>
+          )}
+          <HowThisWorks>
+            <p>
+              An estimate of the year&apos;s taxes from your income and credits. Fill in what the
+              transactions can&apos;t tell: a source&apos;s full-year pay, pre-tax contributions,
+              and where you live. It is an estimate, not tax advice.
+            </p>
+            <p>
+              Income is found from money in that counts as income (pay, people paying you, and the
+              Transfers &gt; Credit category). Refunds are left out. Leave a source&apos;s annual
+              amount empty to use what the transactions point to for the whole year.
+            </p>
+          </HowThisWorks>
         </div>
         <label className="text-sm">
           Tax year
@@ -121,12 +136,18 @@ export function TaxesPage() {
         </p>
       )}
       {loading && <Loading />}
-      {data && data.year === year && <TaxWorkspace key={year} data={data} />}
+      {data && data.year === year && <TaxWorkspace key={year} data={data} onSummary={setSummary} />}
     </section>
   );
 }
 
-function TaxWorkspace({ data }: { data: TaxData }) {
+function TaxWorkspace({
+  data,
+  onSummary,
+}: {
+  data: TaxData;
+  onSummary: (summary: { year: number; text: string }) => void;
+}) {
   const [profile, setProfile] = useState<Profile>(() => ({
     ...DEFAULT_PROFILE,
     ...(data.profile ?? {}),
@@ -179,6 +200,8 @@ function TaxWorkspace({ data }: { data: TaxData }) {
   }, [data, profile.sources]);
 
   const estimate = estimateTaxes({ ...profile, year: data.year, sources });
+  const sentence = taxesSentence(data.year, estimate, usd);
+  useEffect(() => onSummary({ year: data.year, text: sentence }), [onSummary, data.year, sentence]);
 
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }));
   const setSource = (s: SourceInput, patch: Partial<SavedSource>) =>
@@ -232,11 +255,6 @@ function TaxWorkspace({ data }: { data: TaxData }) {
             </button>
           }
         >
-          <p className="mb-3 text-xs text-slate-500">
-            Found from money in that counts as income (pay, people paying you, and the Transfers
-            &gt; Credit category). Refunds are left out. Leave the annual amount empty to use what
-            the transactions point to for the whole year.
-          </p>
           {sources.length === 0 && (
             <p className="text-sm text-slate-500">
               No income found for {data.year}. Add a source by hand.

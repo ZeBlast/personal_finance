@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HowThisWorks } from "../components/common/HowThisWorks";
 import { RecurringSection } from "../components/insights/RecurringSection";
 import { primaryClass } from "../components/investments/styles";
 import { FoundSection } from "../components/subscriptions/FoundSection";
@@ -12,6 +13,7 @@ import {
 } from "../components/subscriptions/subscriptionDraft";
 import { TrackedSection } from "../components/subscriptions/TrackedSection";
 import { useApi } from "../hooks/useApi";
+import { subscriptionsSentence } from "../lib/pageSummaries";
 import { announceDataChanged } from "../lib/syncEvents";
 import type { SubscriptionReview, TrackedSubscriptionList } from "../types/planning";
 
@@ -33,15 +35,35 @@ export function SubscriptionsPage() {
     (tracked.data?.subscriptions ?? []).map((s) => s.recurringKey).filter(Boolean),
   );
 
+  const sentence =
+    tracked.data && review.data
+      ? subscriptionsSentence({
+          currency: review.data.currency,
+          tracked: {
+            count: tracked.data.totals.active,
+            monthlyMinor: tracked.data.totals.monthlyMinor,
+          },
+          found: {
+            count: review.data.subscriptions.length,
+            monthlyMinor: review.data.totals.monthlyMinor,
+          },
+        })
+      : null;
+
   return (
     <section className="max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Subscriptions</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            What you pay for again and again, when each charges next or ends, and the details of
-            each account. Upcoming charges of ones you add show on the calendar.
-          </p>
+          {sentence && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{sentence}</p>
+          )}
+          <HowThisWorks>
+            <p>
+              What you pay for again and again, when each charges next or ends, and the details of
+              each account. Upcoming charges of ones you add show on the calendar.
+            </p>
+          </HowThisWorks>
         </div>
         <button type="button" className={primaryClass} onClick={() => setEditing(emptyDraft())}>
           Add a subscription

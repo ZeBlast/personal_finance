@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { AgendaView } from "../components/calendar/AgendaView";
 import { FilterBar } from "../components/calendar/FilterBar";
 import { ALL_SHOWN, type CalendarFilters } from "../components/calendar/filters";
-import { spanTitle } from "../components/calendar/range";
+import { MONTH_NAMES, spanTitle, splitMonth } from "../components/calendar/range";
+import { HowThisWorks } from "../components/common/HowThisWorks";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { setDateBasis, useDateBasis } from "../hooks/useDateBasis";
 import { CalendarBoard } from "../components/calendar/CalendarBoard";
@@ -10,8 +11,10 @@ import { DayPanel } from "../components/calendar/DayPanel";
 import type { DaySpan } from "../components/calendar/range";
 import { useApi } from "../hooks/useApi";
 import { useCategories } from "../hooks/useCategories";
-import { today } from "../lib/period";
+import { calendarSentence } from "../lib/pageSummaries";
+import { firstOfMonth, lastOfMonth, monthOf, today } from "../lib/period";
 import type { Account } from "../types/api";
+import type { PeriodSummary } from "../types/calendar";
 import { Select } from "../components/common/Select";
 
 export function CalendarPage() {
@@ -25,6 +28,15 @@ export function CalendarPage() {
   const [filters, setFilters] = useState<CalendarFilters>(ALL_SHOWN);
   /** Days whose projected cash falls below this (cents) are marked. */
   const [lowCash, setLowCash] = usePersistentState<number>("pf.calendar.lowCash", 0);
+  // The month the calendar or agenda shows, which they report up for the subtitle.
+  const [month, setMonth] = useState(() => monthOf(todayDay));
+  const summaryQuery = new URLSearchParams({
+    from: firstOfMonth(month),
+    to: lastOfMonth(month),
+    dateBasis: basis,
+  });
+  if (accountId) summaryQuery.set("accountId", accountId);
+  const summary = useApi<PeriodSummary>(`/calendar/summary?${summaryQuery}`);
   const accountName = accountId
     ? ((accounts.data ?? []).find((a) => String(a.id) === accountId)?.name ?? null)
     : null;
@@ -53,10 +65,27 @@ export function CalendarPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Calendar</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            What happened each day, what you expect, and your notes. Click a day, or drag across
-            several, to see the balance and what changed.
+          <p className="mt-1 min-h-5 text-sm text-slate-500 dark:text-slate-400">
+            {summary.data &&
+              calendarSentence(summary.data, MONTH_NAMES[splitMonth(month).monthIndex]!)}
           </p>
+          <HowThisWorks>
+            <p>
+              What happened each day, what you expect, and your notes. Click a day, or drag across
+              several, to see the balance and what changed.
+            </p>
+            {view === "month" && (
+              <p>
+                Click a day, or press on one day and drag to another (or Shift+click), to total up
+                the days in between. Turn the mouse wheel to change month. With the keyboard: arrows
+                move, Shift+arrows stretch the span, Page Up and Page Down change month, Escape
+                clears. Click a chosen day&apos;s note box to write in it; press Enter or click away
+                to save. Dots on the left are the kinds of transactions that day (by category);
+                logos on the right are the banks involved. ↻ marks an expected transaction, ● a
+                pending one.
+              </p>
+            )}
+          </HowThisWorks>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div
@@ -152,6 +181,7 @@ export function CalendarPage() {
               onResetFilters={() => setFilters(ALL_SHOWN)}
               selection={selection}
               onSelect={setSelection}
+              onMonthChange={setMonth}
             />
           ) : (
             <CalendarBoard
@@ -161,6 +191,7 @@ export function CalendarPage() {
               lowCash={lowCash}
               selection={selection}
               onSelect={setSelection}
+              onMonthChange={setMonth}
             />
           )}
         </div>

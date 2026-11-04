@@ -150,6 +150,7 @@ export function CalendarBoard({
   lowCash,
   selection,
   onSelect,
+  onMonthChange,
 }: {
   accountId: string;
   accountName: string | null;
@@ -158,9 +159,12 @@ export function CalendarBoard({
   lowCash: number;
   selection: DaySpan | null;
   onSelect: (span: DaySpan | null) => void;
+  /** Told the shown month (`YYYY-MM`) when it opens and whenever it changes. */
+  onMonthChange: (month: string) => void;
 }) {
   const todayDay = today();
   const [month, setMonthState] = useState(() => monthOf(selection?.from ?? todayDay));
+  useEffect(() => onMonthChange(month), [onMonthChange, month]);
   const [direction, setDirection] = useState<"next" | "prev" | null>(null);
   const [dragging, setDragging] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -519,14 +523,6 @@ export function CalendarBoard({
           ))}
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Click a day, or press on one day and drag to another (or Shift+click), to total up the days
-        in between. Turn the mouse wheel to change month. With the keyboard: arrows move,
-        Shift+arrows stretch the span, Page Up and Page Down change month, Escape clears. Click a
-        chosen day's note box to write in it; press Enter or click away to save. Dots on the left
-        are the kinds of transactions that day (by category); logos on the right are the banks
-        involved. ↻ marks an expected transaction, ● a pending one.
-      </p>
     </div>
   );
 }

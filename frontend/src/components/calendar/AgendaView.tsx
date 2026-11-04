@@ -45,6 +45,7 @@ export function AgendaView({
   onResetFilters,
   selection,
   onSelect,
+  onMonthChange,
 }: {
   accountId: string;
   accountName: string | null;
@@ -52,9 +53,12 @@ export function AgendaView({
   onResetFilters: () => void;
   selection: DaySpan | null;
   onSelect: (span: DaySpan | null) => void;
+  /** Told the shown month (`YYYY-MM`) when it opens and whenever it changes. */
+  onMonthChange: (month: string) => void;
 }) {
   const todayDay = today();
   const [month, setMonth] = useState(() => monthOf(selection?.from ?? todayDay));
+  useEffect(() => onMonthChange(month), [onMonthChange, month]);
   const basis = useDateBasis();
   const from = firstOfMonth(month);
   const to = lastOfMonth(month);

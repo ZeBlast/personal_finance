@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, errorMessage } from "../api/client";
+import { HowThisWorks } from "../components/common/HowThisWorks";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
 import { UtilizationSection } from "../components/insights/UtilizationSection";
 import { NewAccountDialog } from "../components/accounts/ManualAccountsSection";
 import { AccountCardsView } from "../components/accounts/cards/AccountCardsView";
 import { ConnectButton } from "../components/plaid/ConnectButton";
 import { announceDataChanged, announceSyncFinished, useSyncFinishedCount } from "../lib/syncEvents";
+import { useApi } from "../hooks/useApi";
+import { accountsSentence } from "../lib/pageSummaries";
 import { timeAgo } from "../lib/time";
-import type { ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
+import type { Account, ItemStatus, PlaidItem, PlaidStatus } from "../types/api";
 import { toast } from "../lib/toast";
 
 type Notice = { kind: "info" | "error"; text: string };
@@ -30,6 +33,7 @@ const STATUS_LABEL: Record<ItemStatus, { text: string; className: string }> = {
 
 export function AccountsPage() {
   const [items, setItems] = useState<PlaidItem[] | null>(null);
+  const accounts = useApi<Account[]>("/accounts");
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [disconnecting, setDisconnecting] = useState<PlaidItem | null>(null);
@@ -317,14 +321,18 @@ export function AccountsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Accounts</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Click a card to turn it over for its details and what you can do. Each bank&apos;s
-            connection is managed in the strip below.
-            {status &&
-              (demo
-                ? " Demo mode: connections use built-in sample data; switch to Plaid Sandbox or Production in Settings."
-                : ` Connected through Plaid (${status.environment}).`)}
-          </p>
+          {accounts.data && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {accountsSentence(accounts.data)}
+            </p>
+          )}
+          <HowThisWorks>
+            <p>
+              Click a card to turn it over for its details and what you can do. Each bank&apos;s
+              connection is managed in the strip below.
+              {status && !demo && ` Connected through Plaid (${status.environment}).`}
+            </p>
+          </HowThisWorks>
           {status &&
             status.environment !== "fake" &&
             !status.credentialsSaved[status.environment] && (

@@ -12,6 +12,7 @@ import { api } from "../api/client";
 import { FlowMap } from "../components/sandbox/FlowMap";
 import { SavedMaps } from "../components/sandbox/SavedMaps";
 import { formatMinor } from "../lib/money";
+import { scenarioSentence } from "../lib/pageSummaries";
 import { lastOfMonth, monthOf, shiftMonth, today } from "../lib/period";
 import { VIRGINIA_VEHICLE_LOCALITIES } from "../lib/sandbox/dmvTaxes";
 import {
@@ -34,6 +35,7 @@ import {
   type SandboxNode,
   type ValueFormat,
 } from "../lib/sandbox/graph";
+import { HowThisWorks } from "../components/common/HowThisWorks";
 import { Select } from "../components/common/Select";
 import { Loading } from "../components/common/Loading";
 import { askConfirm } from "../components/common/ConfirmHost";
@@ -216,12 +218,19 @@ function MathSandbox() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">What-if calculator</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Try out ideas: add nodes on the left, drag from an output (right side) to an input (left
-            side) to wire them. Nodes snap to the grid as you drag them (hold Alt to place one
-            freely). Drag the background to move around, scroll to zoom, Delete removes what is
-            selected. Money is yearly; spending is yellow.
-          </p>
+          {graph && result && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {scenarioSentence(graph, result, money)}
+            </p>
+          )}
+          <HowThisWorks>
+            <p>
+              Try out ideas: add nodes on the left, drag from an output (right side) to an input
+              (left side) to wire them. Nodes snap to the grid as you drag them (hold Alt to place
+              one freely). Drag the background to move around, scroll to zoom, Delete removes what
+              is selected. Money is yearly; spending is yellow.
+            </p>
+          </HowThisWorks>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-xs text-slate-500" aria-live="polite">
