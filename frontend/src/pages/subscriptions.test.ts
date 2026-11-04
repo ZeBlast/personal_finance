@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RecurringChange, RenewalItem, Subscription } from "../types/planning";
-import { splitChanges } from "../components/subscriptions/FoundSection";
+import { rowBadges, splitChanges } from "../components/subscriptions/FoundSection";
 import { buildSubscription, draftFromSeries } from "../components/subscriptions/subscriptionDraft";
 import { billingText, renewalWhen } from "../components/subscriptions/subscriptionText";
 
@@ -115,6 +115,24 @@ describe("recent changes next to the found charges", () => {
     );
     expect(byKey.get("a")?.map((c) => c.kind)).toEqual(["new", "price_up"]);
     expect(other.map((c) => c.key)).toEqual(["b"]);
+  });
+
+  const lapsed = {
+    key: "a",
+    merchant: "a",
+    chargedAfterCancel: true,
+    lastDate: "2026-09-01",
+    lastAmountMinor: 1000,
+  };
+
+  it("still warns about a charge after cancelling on a row with no change (a lapsed one)", () => {
+    expect(rowBadges(lapsed, []).map((c) => c.kind)).toEqual(["charged_after_cancel"]);
+  });
+
+  it("does not repeat the warning when a change already says it", () => {
+    const changes = [change("a", "charged_after_cancel"), change("a", "new")];
+    expect(rowBadges(lapsed, changes)).toEqual(changes);
+    expect(rowBadges({ ...lapsed, chargedAfterCancel: false }, [])).toEqual([]);
   });
 
   it("leaves nothing for the box when every change has a row", () => {

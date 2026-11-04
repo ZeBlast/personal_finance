@@ -324,7 +324,7 @@ function BalanceChart({
   const minimumsEnd = x(Math.min(minimums.length, length) - 1);
   // Each label sits just above the baseline at the end of its line; the second goes higher if close.
   const planOnLeft = planEnd > width - CHART.right - CHART.labelWidth;
-  const crowded = minimumsEnd - planEnd < CHART.labelWidth * 1.5;
+  const crowded = minimumsEnd - planEnd < CHART.labelWidth * 2 + 8;
   const now = today();
   const axisText = "fill-slate-500 text-[11px] dark:fill-slate-400";
   const endText =

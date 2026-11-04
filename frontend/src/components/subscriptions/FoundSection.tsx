@@ -116,9 +116,9 @@ export function FoundSection({
                       {cash(s.priceChange.toMinor)} on {formatDay(s.priceChange.date)}
                     </div>
                   )}
-                  {(changesByKey.get(s.key) ?? []).length > 0 && (
+                  {rowBadges(s, changesByKey.get(s.key) ?? []).length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      {changesByKey.get(s.key)!.map((c) => (
+                      {rowBadges(s, changesByKey.get(s.key) ?? []).map((c) => (
                         <ChangeBadge key={c.kind} change={c} money={cash} />
                       ))}
                     </div>
@@ -205,6 +205,32 @@ export function splitChanges(
     else other.push(c);
   }
   return { byKey, other };
+}
+
+/**
+ * The badges for one row: its changes, plus "still charged after you cancelled it" when the row
+ * says so but no change does (changes are only made for active ones, and lapsed rows can be
+ * shown). Pure.
+ */
+export function rowBadges(
+  s: Pick<Subscription, "key" | "merchant" | "chargedAfterCancel" | "lastDate" | "lastAmountMinor">,
+  changes: RecurringChange[],
+): RecurringChange[] {
+  if (!s.chargedAfterCancel || changes.some((c) => c.kind === "charged_after_cancel")) {
+    return changes;
+  }
+  return [
+    ...changes,
+    {
+      key: s.key,
+      merchant: s.merchant,
+      kind: "charged_after_cancel",
+      date: s.lastDate,
+      fromMinor: null,
+      toMinor: s.lastAmountMinor,
+      yearlyDeltaMinor: 0,
+    },
+  ];
 }
 
 /** What happened to a charge, as a small badge with what it does to the year. */
