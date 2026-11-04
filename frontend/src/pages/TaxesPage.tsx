@@ -209,16 +209,11 @@ function TaxWorkspace({
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }));
   const setSource = (s: SourceInput, patch: Partial<SavedSource>) =>
     setProfile((p) => {
-      const current: SavedSource = {
-        key: s.key,
-        label: s.label,
-        annualIncome: s.annualIncome,
-        ficaExempt: s.ficaExempt,
-        pretaxRetirement: s.pretaxRetirement,
-        pretaxBenefits: s.pretaxBenefits,
-        excluded: s.excluded,
-      };
-      const next = { ...current, ...patch };
+      const next = editedSource(
+        p.sources.find((x) => x.key === s.key),
+        s,
+        patch,
+      );
       // Keep each source in its place (sources added by hand are listed in this order).
       return p.sources.some((x) => x.key === s.key)
         ? { ...p, sources: p.sources.map((x) => (x.key === s.key ? next : x)) }
@@ -464,6 +459,28 @@ export function isPaycheckSource(
 ): boolean {
   if (s.kind === "manual") return true;
   return found?.kind === "income" && found.wages;
+}
+
+/**
+ * A source's saved answers after an edit. Starts from what is already saved, so answers hidden
+ * for a source that is not pay survive an edit to its income; the displayed source (which has
+ * been through `forEstimate`) is used only when nothing is saved yet. Pure.
+ */
+export function editedSource(
+  saved: SavedSource | undefined,
+  shown: SourceInput,
+  patch: Partial<SavedSource>,
+): SavedSource {
+  const current: SavedSource = saved ?? {
+    key: shown.key,
+    label: shown.label,
+    annualIncome: shown.annualIncome,
+    ficaExempt: shown.ficaExempt,
+    pretaxRetirement: shown.pretaxRetirement,
+    pretaxBenefits: shown.pretaxBenefits,
+    excluded: shown.excluded,
+  };
+  return { ...current, ...patch };
 }
 
 /**

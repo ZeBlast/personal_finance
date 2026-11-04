@@ -1,6 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { estimateTaxes, type SourceInput } from "../lib/taxes/estimate";
-import { forEstimate, isPaycheckSource } from "./TaxesPage";
+import { editedSource, forEstimate, isPaycheckSource } from "./TaxesPage";
+
+describe("editedSource", () => {
+  const stored = {
+    key: "income:bank",
+    label: "Bank interest",
+    annualIncome: null,
+    ficaExempt: false,
+    pretaxRetirement: 5_000,
+    pretaxBenefits: 1_000,
+    excluded: false,
+  };
+  const shown: SourceInput = {
+    ...stored,
+    kind: "income",
+    suggested: 0,
+    ficaExempt: true,
+    pretaxRetirement: 0,
+    pretaxBenefits: 0,
+  };
+
+  it("keeps stored answers hidden from a non-paycheck source when its income is edited", () => {
+    expect(editedSource(stored, shown, { annualIncome: 900 })).toEqual({
+      ...stored,
+      annualIncome: 900,
+    });
+  });
+
+  it("builds from the shown source when nothing is saved yet", () => {
+    expect(editedSource(undefined, shown, { annualIncome: 900 })).toMatchObject({
+      annualIncome: 900,
+      pretaxRetirement: 0,
+      ficaExempt: true,
+    });
+  });
+});
 
 describe("forEstimate", () => {
   const base: SourceInput = {
