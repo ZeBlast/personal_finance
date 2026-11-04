@@ -528,6 +528,30 @@ describe("was the best card used", () => {
     expect(by.get("Zelle")).toBeNull();
   });
 
+  it("leaves out bank purchases in a category for income, refunds, or moving your own money", async () => {
+    const { t, plain, checking } = await wallet();
+    for (const treatment of ["income", "refund", "transfer"]) {
+      const id = await category(t, `Treated as ${treatment}`);
+      await t
+        .call("patch", `/api/categories/${id}`)
+        .send({ incomeTreatment: treatment })
+        .expect(200);
+      await buy(t, checking, `Bank ${treatment}`, 1000, id);
+      await buy(t, plain, `Card ${treatment}`, 10000, id);
+    }
+    await buy(t, checking, "Bank plain", 1000);
+    const by = new Map((await listed(t)).map((x) => [x.merchant, x.cashback]));
+    for (const treatment of ["income", "refund", "transfer"]) {
+      expect(by.get(`Bank ${treatment}`)).toBeNull();
+      // A card purchase still earns whatever the card pays for it (moving your own money never
+      // earns, on a card or off it, because it is a transfer).
+      if (treatment !== "transfer") {
+        expect(by.get(`Card ${treatment}`)).toMatchObject({ status: "best", cashbackMinor: 100 });
+      }
+    }
+    expect(by.get("Bank plain")).toMatchObject({ status: "missed", bestRateBps: 100 });
+  });
+
   it("never adds cashback to a balance", async () => {
     const { t, good, groceries } = await wallet();
     await buy(t, good, "Market", 10000, groceries);
