@@ -367,6 +367,7 @@ export function SettingsPage() {
           >
             <Select
               id="plaid-environment"
+              aria-describedby="plaid-environment-help"
               value={settings.plaidEnvironment}
               disabled={saving}
               onChange={(e) => void save({ plaidEnvironment: e.target.value as PlaidEnvironment })}
