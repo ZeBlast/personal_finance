@@ -33,16 +33,24 @@ const pairKey = (a: number, b: number): string => `${Math.min(a, b)}:${Math.max(
 const MERCHANT = sql`lower(coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name))`;
 
 /** Pairs of transaction ids that may be the same transaction twice (smaller id first). */
-export function duplicatePairs(db: AppDb, today: string): Array<[number, number]> {
+export function duplicatePairs(
+  db: AppDb,
+  today: string,
+  scope: { accountId?: number; from?: string; to?: string } = {},
+): Array<[number, number]> {
   const environment = getSettings(db).plaidEnvironment;
-  const since = addDays(today, -DUPLICATE_LOOKBACK_DAYS);
+  const since = scope.from ?? addDays(today, -DUPLICATE_LOOKBACK_DAYS);
   const rows = db.all<{ a: number; b: number }>(sql`
     with t as (
       select t.*, ${MERCHANT} as merchant_key
       from transactions t
         join accounts acc on acc.id = t.account_id
         left join plaid_items p on p.id = acc.plaid_item_id
-      where t.date >= ${since} and t.pending = 0 and t.amount_minor <> 0 and acc.hidden = 0
+      where t.date >= ${since} and t.pending = 0 and t.amount_minor <> 0
+        -- Looking at one account asks about it even when it is hidden.
+        and (acc.hidden = 0 or ${scope.accountId ?? null} is not null)
+        and (${scope.accountId ?? null} is null or t.account_id = ${scope.accountId ?? null})
+        and (${scope.to ?? null} is null or t.date <= ${scope.to ?? null})
         and (p.environment = ${environment} or acc.plaid_item_id is null)
     )
     select x.id as a, y.id as b

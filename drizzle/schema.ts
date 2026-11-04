@@ -1012,6 +1012,27 @@ export const accountYields = sqliteTable("account_yields", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** A statement check the user saved: what the statement said against what the app had that day. */
+export const reconciliations = sqliteTable(
+  "reconciliations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** The statement's closing day, `YYYY-MM-DD`. */
+    statementDate: text("statement_date").notNull(),
+    statementBalanceMinor: integer("statement_balance_minor").notNull(),
+    /** The app's figure for that day when the check was saved. */
+    appBalanceMinor: integer("app_balance_minor").notNull(),
+    /** `matched` or `unresolved`. */
+    status: text("status").notNull(),
+    note: text("note"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("reconciliations_account_idx").on(table.accountId, table.statementDate)],
+);
+
 export const goals = sqliteTable("goals", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),

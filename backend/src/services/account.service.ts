@@ -1,5 +1,10 @@
 import { asc, eq } from "drizzle-orm";
-import { accounts, balanceSnapshots, plaidItems } from "../../../drizzle/schema.js";
+import {
+  accounts,
+  balanceSnapshots,
+  plaidItems,
+  reconciliations,
+} from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { countsInTotals } from "./account-scope.js";
 import type { GatewayAccount } from "../plaid/gateway.js";
@@ -69,6 +74,8 @@ export interface AccountSummary {
   statementDueDay: number | null;
   /** When Plaid stopped reporting this connected account (so its balance stopped updating). */
   noLongerSharedAt: string | null;
+  /** The newest saved statement check, or null when there is none. */
+  lastReconciled: { statementDate: string; status: "matched" | "unresolved" } | null;
 }
 
 const summaryColumns = {
@@ -111,6 +118,23 @@ export function listAccounts(
     .leftJoin(plaidItems, eq(accounts.plaidItemId, plaidItems.id));
   const rows = itemId === undefined ? query : query.where(eq(accounts.plaidItemId, itemId));
   const today = new Date().toISOString().slice(0, 10);
+  const latest = new Map<number, { statementDate: string; status: "matched" | "unresolved" }>();
+  const checks = db
+    .select({
+      accountId: reconciliations.accountId,
+      statementDate: reconciliations.statementDate,
+      status: reconciliations.status,
+    })
+    .from(reconciliations)
+    .orderBy(asc(reconciliations.statementDate), asc(reconciliations.id))
+    .all();
+  // Oldest first, so the newest check for each account is the one left in the map.
+  for (const r of checks) {
+    latest.set(r.accountId, {
+      statementDate: r.statementDate,
+      status: r.status === "matched" ? "matched" : "unresolved",
+    });
+  }
   return rows
     .orderBy(asc(accounts.id))
     .all()
@@ -120,6 +144,7 @@ export function listAccounts(
       countsInTotals: countsInTotals(row),
       creditLimitMinor:
         row.type === "credit" ? (currentCreditLimit(db, row.id, today)?.limitMinor ?? null) : null,
+      lastReconciled: latest.get(row.id) ?? null,
     }));
 }
 

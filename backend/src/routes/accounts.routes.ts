@@ -36,7 +36,13 @@ import {
   MAX_APY_BPS,
   setAccountYield,
 } from "../services/interest.service.js";
-import { reconcileAccount } from "../services/reconcile.service.js";
+import {
+  deleteReconciliation,
+  listReconciliations,
+  reconcileAccount,
+  saveReconciliation,
+  updateReconciliationNote,
+} from "../services/reconcile.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { importBankCsv } from "../services/bank-csv-import.service.js";
 import { setStatementSettings, statements } from "../services/statement.service.js";
@@ -48,6 +54,7 @@ const idParam = z.coerce.number().int().positive();
 const limitMinor = z.number().int().min(1).max(100_000_000_000);
 const effectiveDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 const note = z.string().max(200).nullable();
+const reconciliationNote = z.string().max(500).nullable();
 
 const addBody = z.object({ limitMinor, effectiveDate, note: note.optional() }).strict();
 const editBody = z
@@ -246,6 +253,33 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
     res.json(
       reconcileAccount(db, idParam.parse(req.params["id"]), q.date, q.statementMinor ?? null),
     );
+  });
+
+  router.get("/accounts/:id/reconciliations", (req, res) => {
+    res.json(listReconciliations(db, idParam.parse(req.params["id"])));
+  });
+
+  router.post("/accounts/:id/reconciliations", (req, res) => {
+    const body = z
+      .object({
+        statementDate: day,
+        statementBalanceMinor: z.number().int().min(-100_000_000_000).max(100_000_000_000),
+        note: reconciliationNote.optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const accountId = idParam.parse(req.params["id"]);
+    res.status(201).json(saveReconciliation(db, { accountId, ...body }));
+  });
+
+  router.patch("/reconciliations/:id", (req, res) => {
+    const body = z.object({ note: reconciliationNote }).strict().parse(req.body);
+    res.json(updateReconciliationNote(db, idParam.parse(req.params["id"]), body.note));
+  });
+
+  router.delete("/reconciliations/:id", (req, res) => {
+    deleteReconciliation(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
   });
 
   router.get("/accounts/:id/statements", (req, res) => {
