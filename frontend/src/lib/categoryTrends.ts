@@ -155,6 +155,17 @@ export function summarizeSeries(
   };
 }
 
+/**
+ * The first period with any activity in any line, so a chart can start there instead of with
+ * empty periods. 0 when nothing has any (the whole range is shown). Pure.
+ */
+export function firstActiveBucket(trends: Pick<Trends, "series">): number {
+  const first = trends.series
+    .map((s) => s.values.findIndex((v, i) => v !== 0 || s.counts[i] !== 0))
+    .filter((i) => i >= 0);
+  return first.length === 0 ? 0 : Math.min(...first);
+}
+
 /** Rounded "nice" axis steps covering 0..max. */
 /**
  * Where each series sits in a stacked chart: values above zero (money out) pile up from zero,

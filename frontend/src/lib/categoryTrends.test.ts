@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { measureValues, niceTicks, rangeFor, stackLayers, summarizeSeries } from "./categoryTrends";
+import {
+  firstActiveBucket,
+  measureValues,
+  niceTicks,
+  rangeFor,
+  stackLayers,
+  summarizeSeries,
+} from "./categoryTrends";
 
 describe("stacking money out and money in", () => {
   it("piles money out up from zero and money in down from it", () => {
@@ -65,6 +72,17 @@ describe("category explorer figures", () => {
     expect(rangeFor("3m", now)).toEqual({ from: "2026-08-01", to: "2026-10-11" });
     expect(rangeFor("ytd", now)).toEqual({ from: "2026-01-01", to: "2026-10-11" });
     expect(rangeFor("2y", now)).toEqual({ from: "2024-11-01", to: "2026-10-11" });
+  });
+
+  it("start the chart at the first period with any activity", () => {
+    const line = (values: number[], counts: number[]) => ({ ...s, values, counts });
+    expect(
+      firstActiveBucket({
+        series: [line([0, 0, 0, 5], [0, 0, 0, 1]), line([0, 0, 7, 0], [0, 0, 2, 0])],
+      }),
+    ).toBe(2);
+    // With nothing at all, the whole range still shows.
+    expect(firstActiveBucket({ series: [] })).toBe(0);
   });
 
   it("make round axis steps from zero", () => {

@@ -4,6 +4,7 @@ import { useApi } from "../../hooks/useApi";
 import { useCategories } from "../../hooks/useCategories";
 import { colorAt } from "../charts/palette";
 import {
+  firstActiveBucket,
   measureLabel,
   stackLayers,
   MEASURES,
@@ -18,6 +19,7 @@ import {
   type RangePreset,
   type Trends,
 } from "../../lib/categoryTrends";
+import { childNames, rolledUpTitle } from "../../lib/categoryRollup";
 import { formatMinor } from "../../lib/money";
 import type { Account, Category } from "../../types/api";
 import { Select } from "../common/Select";
@@ -33,15 +35,14 @@ interface Options {
   measure: Measure;
   chart: ChartKind;
   cumulative: boolean;
+  /** Also show the money coming in (off: spending only). */
+  income: boolean;
   average: boolean;
   compare: boolean;
   pending: boolean;
   accounts: number[];
   hidden: string[];
 }
-
-/** The chart shows every transaction: each category's money out and money in as its own line. */
-const FLOW = "all";
 
 const DEFAULTS: Options = {
   categories: [],
@@ -50,8 +51,9 @@ const DEFAULTS: Options = {
   ...rangeFor("12m"),
   interval: "month",
   measure: "spending",
-  chart: "line",
+  chart: "stacked",
   cumulative: false,
+  income: false,
   average: true,
   compare: false,
   pending: true,
@@ -253,6 +255,9 @@ export function CategoryExplorer() {
     }
   }, [o]);
 
+  // Spending only, unless money coming in is switched on: then every transaction, each category's
+  // money out and money in as its own line.
+  const flow = o.income ? "all" : "out";
   const query = new URLSearchParams({
     from: o.from,
     to: o.to,
@@ -261,7 +266,7 @@ export function CategoryExplorer() {
     accounts: o.accounts.join(","),
     split: o.split ? "1" : "0",
     pending: o.pending ? "1" : "0",
-    flow: FLOW,
+    flow,
   });
   const valid =
     /^\d{4}-\d{2}-\d{2}$/.test(o.from) && /^\d{4}-\d{2}-\d{2}$/.test(o.to) && o.from <= o.to;
@@ -280,6 +285,8 @@ export function CategoryExplorer() {
       hidden: [],
     });
 
+  // The chart starts at the first period with any activity, not at months with nothing in them.
+  const start = useMemo(() => (data ? firstActiveBucket(data) : 0), [data]);
   const series = useMemo(() => {
     if (!data) return [];
     const used = new Map<string, number>();
@@ -291,18 +298,24 @@ export function CategoryExplorer() {
       return {
         ...s,
         color,
-        shown: measureValues(s, o.measure, data.allSpending, o.cumulative),
-        summary: summarizeSeries(s, data.buckets, data.allSpending),
+        shown: measureValues(s, o.measure, data.allSpending, o.cumulative).slice(start),
+        counts: s.counts.slice(start),
+        summary: summarizeSeries(
+          { ...s, values: s.values.slice(start), counts: s.counts.slice(start) },
+          data.buckets.slice(start),
+          data.allSpending.slice(start),
+        ),
       };
     });
-  }, [data, o.measure, o.cumulative]);
+  }, [data, o.measure, o.cumulative, start]);
   const visible = series.filter((s) => !o.hidden.includes(s.key));
 
   // Chart geometry.
   const W = 760;
   const H = 280;
   const pad = { l: 56, r: 30, t: 12, b: 34 };
-  const buckets = data?.buckets ?? [];
+  const allBuckets = data?.buckets ?? [];
+  const buckets = allBuckets.slice(start);
   const n = buckets.length;
   const stacked = o.chart === "stacked" || o.chart === "area";
   // Stacks grow up from zero for money out and down for money in (negative), each its own pile.
@@ -316,7 +329,11 @@ export function CategoryExplorer() {
     : visible.flatMap((s) => s.shown.filter((v): v is number => v !== null));
   const previousLines =
     o.compare && !o.cumulative && o.measure === "spending" && n > 0
-      ? visible.map((s) => ({ key: s.key, color: s.color, value: Math.round(s.previousTotal / n) }))
+      ? visible.map((s) => ({
+          key: s.key,
+          color: s.color,
+          value: Math.round(s.previousTotal / allBuckets.length),
+        }))
       : [];
   const all = [...values, ...previousLines.map((p) => p.value), 0];
   const ticks = niceTicks(Math.min(...all), Math.max(...all, 1));
@@ -348,6 +365,11 @@ export function CategoryExplorer() {
     );
   }
 
+  // Without "Split into subcategories", a line is a main category with its subcategories added in.
+  const rolledUp = !o.split && series.some((s) => childNames(cats, s.label).length > 0);
+  const titleFor = (label: string) =>
+    o.split ? label : rolledUpTitle(label, childNames(cats, label));
+
   const chosenLabel =
     o.categories.length === 0
       ? "All categories"
@@ -360,11 +382,14 @@ export function CategoryExplorer() {
       <div>
         <h2 className="text-lg font-semibold">Transactions by category over time</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Every transaction, by category: each category&apos;s money out and money in are lines of
-          their own (“· out” and “· in”), income and transfers between your accounts included.
-          Spending counts up from zero and money coming in counts down below it. Hover a period for
-          its figures, click it to see its transactions, and click a row below to hide or show its
-          line.
+          {o.income
+            ? "Every transaction, by category: each category's money out and money in are lines of their own (“· out” and “· in”), income and transfers between your accounts included. Spending counts up from zero and money coming in counts down below it. "
+            : "Spending by category over time, starting from the first period with any. "}
+          {o.split
+            ? ""
+            : "Shown by parent category: hover a name below to see the subcategories added into it. "}
+          Hover a period for its figures, click it to see its transactions, and click a row below to
+          hide or show its line.
         </p>
       </div>
 
@@ -516,7 +541,7 @@ export function CategoryExplorer() {
         >
           {MEASURES.map((m) => (
             <option key={m.id} value={m.id}>
-              {measureLabel(m.id, FLOW)}
+              {measureLabel(m.id, flow)}
             </option>
           ))}
         </Select>
@@ -531,21 +556,39 @@ export function CategoryExplorer() {
           ]}
           onChange={(v) => set({ chart: v })}
         />
-        <Toggle
-          label="Running total"
-          checked={o.cumulative}
-          onChange={(v) => set({ cumulative: v })}
-          title="Add each period to the ones before it"
-        />
-        <Toggle label="Average line" checked={o.average} onChange={(v) => set({ average: v })} />
-        <Toggle
-          label="Compare with the period before"
-          checked={o.compare}
-          onChange={(v) => set({ compare: v })}
-          title="Dashed: the period before's average per step (amount spent only)"
-        />
-        <Toggle label="Include pending" checked={o.pending} onChange={(v) => set({ pending: v })} />
       </div>
+
+      <details className="text-xs text-slate-500 dark:text-slate-400">
+        <summary className="cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-300">
+          Chart options
+        </summary>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-slate-900 dark:text-slate-100">
+          <Toggle
+            label="Show money coming in"
+            checked={o.income}
+            onChange={(v) => set({ income: v, hidden: [] })}
+            title="Add income and refunds, counted down below zero"
+          />
+          <Toggle
+            label="Running total"
+            checked={o.cumulative}
+            onChange={(v) => set({ cumulative: v })}
+            title="Add each period to the ones before it"
+          />
+          <Toggle label="Average line" checked={o.average} onChange={(v) => set({ average: v })} />
+          <Toggle
+            label="Compare with the period before"
+            checked={o.compare}
+            onChange={(v) => set({ compare: v })}
+            title="Dashed: the period before's average per step (amount spent only)"
+          />
+          <Toggle
+            label="Include pending"
+            checked={o.pending}
+            onChange={(v) => set({ pending: v })}
+          />
+        </div>
+      </details>
 
       {!valid && <p className="text-sm text-amber-700">Choose a start date before the end date.</p>}
       {trends.error && (
@@ -560,7 +603,7 @@ export function CategoryExplorer() {
             viewBox={`0 0 ${W} ${H}`}
             className="h-auto w-full select-none"
             role="img"
-            aria-label={`${measureLabel(o.measure, FLOW)} by ${o.interval}, ${data.from} to ${data.to}`}
+            aria-label={`${measureLabel(o.measure, flow)} by ${o.interval}, ${data.from} to ${data.to}`}
             onPointerLeave={() => setHover(null)}
           >
             {ticks.map((t) => (
@@ -745,7 +788,7 @@ export function CategoryExplorer() {
                 <div key={s.key} className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-                    {s.label}
+                    <span title={titleFor(s.label)}>{s.label}</span>
                   </span>
                   <span className="tabular-nums">
                     {s.shown[hover] === null ? "—" : fmt(s.shown[hover]!)}
@@ -772,7 +815,7 @@ export function CategoryExplorer() {
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr>
-                <th className="py-1 pr-2">Category</th>
+                <th className="py-1 pr-2">{rolledUp ? "Parent category" : "Category"}</th>
                 <th className="py-1 pr-2 text-right">Spent</th>
                 <th className="py-1 pr-2 text-right">Per {o.interval}</th>
                 <th className="py-1 pr-2 text-right">Transactions</th>
@@ -807,7 +850,7 @@ export function CategoryExplorer() {
                           className="h-2.5 w-2.5 rounded-full"
                           style={{ backgroundColor: s.color }}
                         />
-                        {s.label}
+                        <span title={titleFor(s.label)}>{s.label}</span>
                         <button
                           type="button"
                           className="text-xs text-slate-500 hover:underline"
