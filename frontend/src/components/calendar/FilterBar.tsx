@@ -51,7 +51,7 @@ export function FilterBar({
               : "border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400"
           }`}
         >
-          {filters[key] && <Check aria-hidden="true" className="h-3 w-3" />}
+          <Check aria-hidden="true" className={`h-3 w-3 ${filters[key] ? "" : "invisible"}`} />
           {label}
         </button>
       ))}

@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { formatMinor } from "../lib/money";
 import { monthOf, today } from "../lib/period";
 import { fakeBackend } from "../test/fakeBackend";
 import type { Budget } from "../types/analytics";
@@ -55,6 +56,7 @@ describe("the widget", () => {
 
   it("shows the caps total, the tightest cap and the next income", async () => {
     fakeBackend({
+      "/settings": { currency: "USD" },
       [capsPath]: {
         month: monthOf(today()),
         budgets: [cap({ categoryName: "Groceries", status: "over", remainingMinor: -500 })],
@@ -75,6 +77,7 @@ describe("the widget", () => {
 
   it("still shows the caps when the next income is not known", async () => {
     fakeBackend({
+      "/settings": { currency: "USD" },
       [capsPath]: {
         month: monthOf(today()),
         budgets: [cap({})],
@@ -87,8 +90,24 @@ describe("the widget", () => {
     expect(screen.queryByText(/Next income/)).toBeNull();
   });
 
+  it("formats in the user's currency and never shows dollars first", async () => {
+    fakeBackend({
+      "/settings": { currency: "EUR" },
+      [capsPath]: {
+        month: monthOf(today()),
+        budgets: [cap({})],
+        totals: { budgetedMinor: 155000, spentMinor: 23590, remainingMinor: 131410 },
+        unbudgetedSpendingMinor: 0,
+      },
+    });
+    show();
+    expect(await screen.findByText(formatMinor(23_590, "EUR"), { exact: false })).toBeTruthy();
+    expect(screen.queryByText(/\$/)).toBeNull();
+  });
+
   it("offers to set a cap when there are none", async () => {
     fakeBackend({
+      "/settings": { currency: "USD" },
       [capsPath]: {
         month: monthOf(today()),
         budgets: [],

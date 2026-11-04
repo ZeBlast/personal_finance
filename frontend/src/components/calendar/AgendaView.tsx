@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useApi } from "../../hooks/useApi";
+import { useApi, type ApiState } from "../../hooks/useApi";
 import { useDateBasis } from "../../hooks/useDateBasis";
 import { formatMinor } from "../../lib/money";
 import { firstOfMonth, lastOfMonth, monthOf, shiftMonth, today } from "../../lib/period";
 import type { Transaction } from "../../types/api";
-import type { CalendarEvent } from "../../types/calendar";
+import type { CalendarEvent, PeriodSummary } from "../../types/calendar";
 import { LoadMore, PAGE_SIZE } from "./LoadMore";
 import { MONTH_NAMES, splitMonth, type DaySpan } from "./range";
 import { usePagedTransactions } from "./usePagedTransactions";
@@ -41,6 +41,7 @@ interface AgendaDay {
 export function AgendaView({
   accountId,
   accountName,
+  summary,
   filters,
   onResetFilters,
   selection,
@@ -49,6 +50,8 @@ export function AgendaView({
 }: {
   accountId: string;
   accountName: string | null;
+  /** The shown month's summary, loaded once by the page. */
+  summary: ApiState<PeriodSummary>;
   filters: CalendarFilters;
   onResetFilters: () => void;
   selection: DaySpan | null;
@@ -161,7 +164,7 @@ export function AgendaView({
           </button>
         </div>
       </div>
-      <MonthOverview month={month} accountId={accountId} accountName={accountName} />
+      <MonthOverview month={month} summary={summary} accountName={accountName} />
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}

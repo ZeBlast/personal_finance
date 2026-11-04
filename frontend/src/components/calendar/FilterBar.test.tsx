@@ -26,6 +26,19 @@ describe("calendar Show chips", () => {
     expect(off.getAttribute("aria-pressed")).toBe("false");
     expect(off.className).not.toContain("bg-blue-600");
     expect(off.className).toContain("border-slate-300");
-    expect(off.querySelector("svg")).toBeNull();
+  });
+
+  it("keeps an off chip as wide as an on chip", () => {
+    render(
+      <FilterBar
+        filters={{ ...ALL_SHOWN, pending: false }}
+        onChange={vi.fn()}
+        lowCash={0}
+        onLowCash={vi.fn()}
+        searchable={false}
+      />,
+    );
+    const off = screen.getByRole("button", { name: "Pending" });
+    expect(off.querySelector("svg")?.getAttribute("class")).toContain("invisible");
   });
 });

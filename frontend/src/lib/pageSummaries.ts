@@ -37,6 +37,13 @@ export function accountsSentence(accounts: Account[]): string {
   return `${parts.join(", ")}.`;
 }
 
+/** The month's name for a sentence: "November", or "December 2025" when it is not in this year. */
+export function monthTitle(month: string, today: string): string {
+  const [year, mon] = month.split("-").map(Number) as [number, number];
+  const name = new Date(year, mon - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  return month.slice(0, 4) === today.slice(0, 4) ? name : `${name} ${year}`;
+}
+
 /** Calendar: the shown month's spending and where cash minus cards ends up. */
 export function calendarSentence(s: PeriodSummary, monthName: string): string {
   if (s.spendingMinor === 0 && s.incomeMinor === 0 && s.expected.count === 0) {

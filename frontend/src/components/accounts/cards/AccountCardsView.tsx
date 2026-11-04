@@ -874,7 +874,7 @@ function AccountCard({
           {/* A cue that the card turns over: on hover and keyboard focus, not on touch screens. */}
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute top-0.5 right-2 hidden items-center gap-0.5 text-[10px] leading-none text-slate-400 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:hover)]:flex dark:text-slate-500"
+            className="pointer-events-none absolute top-0.5 right-2 hidden items-center gap-0.5 text-[10px] leading-none text-slate-500 opacity-0 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100 [@media(hover:hover)]:flex dark:text-slate-400"
           >
             Details
             <svg viewBox="0 0 16 16" className="h-2.5 w-2.5" fill="none" stroke="currentColor">
@@ -1011,7 +1011,7 @@ function AccountCard({
                 )}
               </>
             )}
-            {hasInterest && interest.data && (
+            {hasInterest && (interest.data || interest.error) && (
               <>
                 <dt className="text-slate-500">Interest</dt>
                 <dd className="text-right">
@@ -1024,7 +1024,9 @@ function AccountCard({
                     onKeyDown={(e) => e.stopPropagation()}
                     className="rounded text-blue-600 hover:underline dark:text-blue-400"
                   >
-                    {interest.data.apyBps !== null && interest.data.monthlyMinor !== null
+                    {interest.data &&
+                    interest.data.apyBps !== null &&
+                    interest.data.monthlyMinor !== null
                       ? `${formatApy(interest.data.apyBps)} APY · ${money(a, interest.data.monthlyMinor)} a month`
                       : "Set APY"}
                   </button>

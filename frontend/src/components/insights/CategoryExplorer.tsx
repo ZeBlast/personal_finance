@@ -237,6 +237,8 @@ export function CategoryExplorer() {
   const id = useId();
   const navigate = useNavigate();
   const { categories } = useCategories();
+  // The roll-up tooltips also name archived subcategories, whose past spending still counts.
+  const { categories: allCategories } = useCategories(true);
   const accounts = useApi<Account[]>("/accounts");
   const [o, setO] = useState<Options>(load);
   const [catSearch, setCatSearch] = useState("");
@@ -361,9 +363,10 @@ export function CategoryExplorer() {
   }
 
   // Without "Split into subcategories", a line is a main category with its subcategories added in.
-  const rolledUp = !o.split && series.some((s) => childNames(cats, s.label).length > 0);
+  const everyCat = allCategories ?? [];
+  const rolledUp = !o.split && series.some((s) => childNames(everyCat, s.label).length > 0);
   const titleFor = (label: string) =>
-    o.split ? label : rolledUpTitle(label, childNames(cats, label));
+    o.split ? label : rolledUpTitle(label, childNames(everyCat, label));
 
   const chosenLabel =
     o.categories.length === 0

@@ -70,6 +70,7 @@ function trendsPath(flow: "out" | "all"): string {
 function setup() {
   return fakeBackend({
     "GET /categories": categories,
+    "GET /categories?includeInactive=1": categories,
     "GET /accounts": [],
     [trendsPath("out")]: trends,
     [trendsPath("all")]: trends,

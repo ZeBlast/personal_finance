@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AgendaView } from "../components/calendar/AgendaView";
 import { FilterBar } from "../components/calendar/FilterBar";
 import { ALL_SHOWN, type CalendarFilters } from "../components/calendar/filters";
-import { MONTH_NAMES, spanTitle, splitMonth } from "../components/calendar/range";
+import { spanTitle } from "../components/calendar/range";
 import { HowThisWorks } from "../components/common/HowThisWorks";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { setDateBasis, useDateBasis } from "../hooks/useDateBasis";
@@ -11,7 +11,7 @@ import { DayPanel } from "../components/calendar/DayPanel";
 import type { DaySpan } from "../components/calendar/range";
 import { useApi } from "../hooks/useApi";
 import { useCategories } from "../hooks/useCategories";
-import { calendarSentence } from "../lib/pageSummaries";
+import { calendarSentence, monthTitle } from "../lib/pageSummaries";
 import { firstOfMonth, lastOfMonth, monthOf, today } from "../lib/period";
 import type { Account } from "../types/api";
 import type { PeriodSummary } from "../types/calendar";
@@ -66,8 +66,7 @@ export function CalendarPage() {
         <div>
           <h1 className="text-2xl font-semibold">Calendar</h1>
           <p className="mt-1 min-h-5 text-sm text-slate-500 dark:text-slate-400">
-            {summary.data &&
-              calendarSentence(summary.data, MONTH_NAMES[splitMonth(month).monthIndex]!)}
+            {summary.data && calendarSentence(summary.data, monthTitle(month, todayDay))}
           </p>
           <HowThisWorks>
             <p>
@@ -177,6 +176,7 @@ export function CalendarPage() {
             <AgendaView
               accountId={accountId}
               accountName={accountName}
+              summary={summary}
               filters={filters}
               onResetFilters={() => setFilters(ALL_SHOWN)}
               selection={selection}
@@ -187,6 +187,7 @@ export function CalendarPage() {
             <CalendarBoard
               accountId={accountId}
               accountName={accountName}
+              summary={summary}
               filters={filters}
               lowCash={lowCash}
               selection={selection}

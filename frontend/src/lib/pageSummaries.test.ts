@@ -5,6 +5,7 @@ import type { MonthReport } from "../types/planning";
 import {
   accountsSentence,
   calendarSentence,
+  monthTitle,
   scenarioSentence,
   spendingSentence,
   subscriptionsSentence,
@@ -150,5 +151,12 @@ describe("scenarioSentence", () => {
     expect(scenarioSentence(graph, ev, usd)).toBe(
       `Take-home: $${yearly} a year, $${yearly! / 12} a month.`,
     );
+  });
+});
+
+describe("monthTitle", () => {
+  it("names the year only when the month is not in this year", () => {
+    expect(monthTitle("2026-11", "2026-11-03")).toBe("November");
+    expect(monthTitle("2025-12", "2026-11-03")).toBe("December 2025");
   });
 });

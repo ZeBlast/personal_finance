@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { api, errorMessage } from "../../api/client";
 import { useDateBasis } from "../../hooks/useDateBasis";
-import { useApi } from "../../hooks/useApi";
+import { useApi, type ApiState } from "../../hooks/useApi";
 import { useInstitutions, type Institution } from "../../hooks/useInstitutions";
 import { formatMinor } from "../../lib/money";
 import { firstOfMonth, lastOfMonth, monthOf, shiftMonth, today } from "../../lib/period";
 import { announceDataChanged } from "../../lib/syncEvents";
 import { formatDay } from "../../lib/time";
 import type { CalendarDay, CalendarMonth } from "../../types/analytics";
-import type { CalendarForecast, CalendarOverlay } from "../../types/calendar";
+import type { CalendarForecast, CalendarOverlay, PeriodSummary } from "../../types/calendar";
 import {
   fullMonthGrid,
   inSpan,
@@ -146,6 +146,7 @@ function useMonths(month: string, accountId: string, basis: string) {
 export function CalendarBoard({
   accountId,
   accountName,
+  summary,
   filters,
   lowCash,
   selection,
@@ -154,6 +155,8 @@ export function CalendarBoard({
 }: {
   accountId: string;
   accountName: string | null;
+  /** The shown month's summary, loaded once by the page. */
+  summary: ApiState<PeriodSummary>;
   filters: CalendarFilters;
   /** Projected cash below this (cents) marks a day. */
   lowCash: number;
@@ -444,7 +447,7 @@ export function CalendarBoard({
         </div>
       </div>
 
-      <MonthOverview month={month} accountId={accountId} accountName={accountName} />
+      <MonthOverview month={month} summary={summary} accountName={accountName} />
       {!data.loading &&
         !data.failed.has(month) &&
         ![...data.days.values()].some((d) => monthOf(d.date) === month && d.count > 0) &&

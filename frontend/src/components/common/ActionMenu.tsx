@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MoreHorizontal } from "lucide-react";
-import { buttonClass } from "../investments/styles";
+import { buttonClass } from "./styles";
 
 const itemClass =
   "block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none dark:hover:bg-slate-700 dark:focus:bg-slate-700";

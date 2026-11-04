@@ -187,6 +187,21 @@ describe("the account cards", () => {
       ).toBe(false);
     });
 
+    it("offers Set APY when the interest figure cannot load", async () => {
+      fakeBackend({
+        "/accounts?includeHidden=1": [account(4, "Savings", { subtype: "savings" })],
+        "/categories": [],
+      });
+      render(
+        <MemoryRouter>
+          <AccountCardsView items={[item]} />
+        </MemoryRouter>,
+      );
+      const savings = await card("Savings");
+      await userEvent.click(savings);
+      expect(await within(savings).findByRole("button", { name: "Set APY" })).toBeTruthy();
+    });
+
     it("asks for the interest only when the card is turned over", async () => {
       const calls = fakeBackend({
         "/accounts?includeHidden=1": [account(4, "Savings", { subtype: "savings" })],

@@ -3,7 +3,7 @@ import { Navigate, useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
 import { Modal } from "../components/common/Modal";
-import { buttonClass, inputClass, primaryClass } from "../components/investments/styles";
+import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
 import { AnnotatedForecast } from "../components/views/AnnotatedForecast";
 import { useApi } from "../hooks/useApi";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
@@ -25,7 +25,7 @@ export function legacyPlanningPath(view: string | null): string | null {
   return null;
 }
 
-/** Where your cash is heading (the Planning area's first page; its other pages are tabs). */
+/** The Cash forecast page, at /planning: the first of the Planning tabs. */
 export function PlanningPage() {
   const [params] = useSearchParams();
   const moved = legacyPlanningPath(params.get("view"));
@@ -38,7 +38,7 @@ export function PlanningPage() {
           Where the money in your bank accounts is heading.
         </p>
       </div>
-      <ForecastTab />
+      <ForecastView />
     </section>
   );
 }
@@ -53,7 +53,7 @@ export function CardBillsPage() {
           What each credit card will ask for, and when.
         </p>
       </div>
-      <BillsTab />
+      <BillsView />
     </section>
   );
 }
@@ -66,7 +66,7 @@ export function PaychecksPage() {
         <h1 className="text-2xl font-semibold">Paychecks</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">What you are paid.</p>
       </div>
-      <PaychecksTab />
+      <PaychecksView />
     </section>
   );
 }
@@ -82,7 +82,7 @@ const SOURCE_LABEL = {
   interest: "Interest (from the APY)",
 };
 
-function ForecastTab() {
+function ForecastView() {
   const [days, setDays] = useState(60);
   const { data, error, loading } = useApi<Forecast>(`/forecast?days=${days}`);
   if (error)
@@ -227,7 +227,7 @@ const STATUS: Record<BillStatus, { text: string; className: string }> = {
   nothing_due: { text: "Nothing due", className: "bg-slate-200 text-slate-700" },
 };
 
-function BillsTab() {
+function BillsView() {
   const bills = useApi<CardBill[]>("/bills");
   const [editing, setEditing] = useState<CardBill | null>(null);
   if (bills.error)
@@ -460,7 +460,7 @@ function BillDialog({ bill, onClose }: { bill: CardBill; onClose: (saved: boolea
 // ---- Paychecks ---------------------------------------------------------------------------------
 
 /** Regular pay found in the income, with what it adds up to this year. */
-function PaychecksTab() {
+function PaychecksView() {
   const pay = useApi<Paycheck[]>("/paychecks");
   if (pay.error)
     return (

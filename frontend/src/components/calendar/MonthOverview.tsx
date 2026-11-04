@@ -1,33 +1,27 @@
-import { useApi } from "../../hooks/useApi";
+import type { ApiState } from "../../hooks/useApi";
 import { useDateBasis } from "../../hooks/useDateBasis";
 import { formatMinor } from "../../lib/money";
-import { firstOfMonth, lastOfMonth } from "../../lib/period";
+import { monthTitle } from "../../lib/pageSummaries";
+import { today } from "../../lib/period";
 import type { PeriodSummary } from "../../types/calendar";
-import { MONTH_NAMES, splitMonth } from "./range";
 
 /**
  * The shown month at a glance: what was spent and earned, what is still expected, and where cash
  * minus cards ends up. Only the month's own days count (not the neighbouring days in the grid),
- * and the display filters never change it.
+ * and the display filters never change it. The page loads the summary, so the subtitle and this
+ * strip always agree.
  */
 export function MonthOverview({
   month,
-  accountId,
+  summary,
   accountName,
 }: {
   month: string;
-  accountId: string;
+  summary: ApiState<PeriodSummary>;
   accountName: string | null;
 }) {
   const basis = useDateBasis();
-  const q = new URLSearchParams({
-    from: firstOfMonth(month),
-    to: lastOfMonth(month),
-    dateBasis: basis,
-  });
-  if (accountId) q.set("accountId", accountId);
-  const { data: s, error } = useApi<PeriodSummary>(`/calendar/summary?${q}`);
-  const { monthIndex } = splitMonth(month);
+  const { data: s, error } = summary;
   const scope = `${accountName ?? "All accounts"} · by ${basis === "posted" ? "posted" : "transaction"} date`;
 
   if (error) {
@@ -42,7 +36,7 @@ export function MonthOverview({
   const end = s.balance.endMinor;
   return (
     <section
-      aria-label={`${MONTH_NAMES[monthIndex]} overview`}
+      aria-label={`${monthTitle(month, today())} overview`}
       className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm dark:border-slate-700"
     >
       <Item label="Spent" value={formatMinor(s.spendingMinor, c)} />
@@ -71,7 +65,7 @@ export function MonthOverview({
         className="ml-auto text-xs text-slate-500 dark:text-slate-400"
         title="The overview counts everything in this scope; display filters do not change it."
       >
-        {MONTH_NAMES[monthIndex]} · {scope}
+        {monthTitle(month, today())} · {scope}
       </span>
     </section>
   );

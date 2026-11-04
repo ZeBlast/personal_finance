@@ -17,13 +17,17 @@ const list = [
   cat(1, "Food & Drink", null),
   cat(2, "Dining Out", 1),
   cat(3, "Groceries", 1),
-  cat(4, "Old place", 1, false),
+  cat(4, "Takeout", 1, false),
   cat(5, "Transportation", null),
 ];
 
 describe("category roll-up helpers", () => {
-  it("lists the active subcategories of a main category by name", () => {
-    expect(childNames(list, "Food & Drink")).toEqual(["Dining Out", "Groceries"]);
+  it("lists every subcategory of a main category by name, marking archived ones", () => {
+    expect(childNames(list, "Food & Drink")).toEqual([
+      "Dining Out",
+      "Groceries",
+      "Takeout (archived)",
+    ]);
   });
 
   it("gives nothing for a category without subcategories or an unknown name", () => {

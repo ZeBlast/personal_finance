@@ -13,7 +13,7 @@ import type { Summary } from "../types/analytics";
 export function CashFlowPage() {
   const [month, setMonth] = useState(() => shiftMonth(monthOf(today()), -1));
   const { data, error, loading } = useApi<Summary>(cashFlowPath(month));
-  const { categories } = useCategories();
+  const { categories } = useCategories(true);
   const money = (n: number) => formatMinor(n, "USD");
   const model = data ? cashFlowModel(data.rows) : null;
   const left = model ? model.incomeMinor - model.spendingMinor : 0;

@@ -4,6 +4,7 @@ import { formatMinor } from "../lib/money";
 import { monthLabel, monthOf, today } from "../lib/period";
 import { formatDay } from "../lib/time";
 import type { Budget, BudgetMonth } from "../types/analytics";
+import type { Settings } from "../types/api";
 import type { DailyBrief } from "./DailyBriefWidget";
 import { WidgetState } from "./WidgetFrame";
 import { defineWidget } from "./types";
@@ -45,15 +46,18 @@ export default defineWidget({
     const caps = useApi<BudgetMonth>(`/budgets?month=${month}&today=${day}`);
     // The next pay is a nice-to-have: a brief that fails to load never hides the caps.
     const brief = useApi<DailyBrief>("/brief?bufferMinor=0");
-    const money = (n: number) => formatMinor(n, brief.data?.currency ?? "USD");
+    // Amounts wait for the user's own currency, so dollars never flash up first.
+    const settings = useApi<Settings>("/settings");
+    const currency = settings.data?.currency;
+    const money = (n: number) => (currency ? formatMinor(n, currency) : "");
     const data = caps.data;
     const worst = data ? worstCap(data.budgets, money) : null;
     const income = brief.data?.nextIncome ?? null;
 
     return (
       <WidgetState
-        loading={caps.loading}
-        error={caps.error}
+        loading={caps.loading || settings.data === null}
+        error={caps.error ?? settings.error}
         empty={data !== null && data.budgets.length === 0}
         emptyText={`No spending caps for ${monthLabel(month, "long")} yet, so there is nothing to be on track for.`}
         emptyAction={{ to: "/planning/budgets", label: "Set a cap" }}
