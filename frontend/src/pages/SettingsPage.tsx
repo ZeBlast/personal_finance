@@ -1,5 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, browserTabUrl, errorMessage, insideTauri } from "../api/client";
 import type { Health, PlaidEnvironment, PlaidStatus, Settings } from "../types/api";
@@ -17,7 +17,37 @@ const ENVIRONMENT_HELP: Record<PlaidEnvironment, string> = {
 };
 
 const inputClass =
-  "mt-1 block rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-800";
+  "block rounded border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-800";
+
+/**
+ * One layout for every setting: the label on its own line, then the control, then helper text
+ * below it, with even gaps. The label is a real <label> for the control with the given id.
+ */
+function SettingRow({
+  id,
+  label,
+  help,
+  children,
+}: {
+  id: string;
+  label: string;
+  help?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-2 text-sm">
+      <label htmlFor={id} className="font-medium">
+        {label}
+      </label>
+      {children}
+      {help && (
+        <div id={`${id}-help`} className="space-y-2 text-xs text-slate-500">
+          {help}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * A whole-number setting. It saves when you press Enter or click away (not on every keystroke,
@@ -58,11 +88,20 @@ function NumberSetting({
 
   const id = useId();
   return (
-    <div className="text-sm">
-      {/* The label holds only the name; the help text is attached as a description. */}
-      <label htmlFor={id} className="block font-medium">
-        {label}
-      </label>
+    <SettingRow
+      id={id}
+      label={label}
+      help={
+        <>
+          {problem && (
+            <p role="alert" className="text-red-600">
+              {problem}
+            </p>
+          )}
+          <p>{help}</p>
+        </>
+      }
+    >
       <input
         id={id}
         type="number"
@@ -81,15 +120,7 @@ function NumberSetting({
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
         className={`${inputClass} w-32`}
       />
-      {problem && (
-        <span role="alert" className="block text-xs text-red-600">
-          {problem}
-        </span>
-      )}
-      <span id={`${id}-help`} className="block text-xs text-slate-500">
-        {help}
-      </span>
-    </div>
+    </SettingRow>
   );
 }
 
@@ -168,7 +199,7 @@ function CredentialsForm({
           onChange={(e) => setClientId(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className={`${inputClass} w-full`}
+          className={`${inputClass} mt-1 w-full`}
         />
       </label>
       <label className="block text-sm">
@@ -181,7 +212,7 @@ function CredentialsForm({
           onChange={(e) => setSecret(e.target.value)}
           autoComplete="off"
           spellCheck={false}
-          className={`${inputClass} w-full`}
+          className={`${inputClass} mt-1 w-full`}
         />
       </label>
       <div className="flex gap-2">
@@ -319,9 +350,21 @@ export function SettingsPage() {
             <PlaidGuide />
           )}
 
-          <label className="block text-sm">
-            <span className="font-medium">Where your bank data comes from</span>
+          <SettingRow
+            id="plaid-environment"
+            label="Where your bank data comes from"
+            help={
+              <>
+                <p>{ENVIRONMENT_HELP[settings.plaidEnvironment]}</p>
+                <p>
+                  Each choice keeps its own connections. Switching hides the others but does not
+                  delete them.
+                </p>
+              </>
+            }
+          >
             <Select
+              id="plaid-environment"
               value={settings.plaidEnvironment}
               disabled={saving}
               onChange={(e) => void save({ plaidEnvironment: e.target.value as PlaidEnvironment })}
@@ -331,14 +374,7 @@ export function SettingsPage() {
               <option value="production">My real banks (through Plaid)</option>
               <option value="sandbox">Plaid's test banks (for developers)</option>
             </Select>
-            <span className="text-xs text-slate-500">
-              {ENVIRONMENT_HELP[settings.plaidEnvironment]}
-            </span>
-            <span className="mt-1 block text-xs text-slate-500">
-              Each choice keeps its own connections. Switching hides the others but does not delete
-              them.
-            </span>
-          </label>
+          </SettingRow>
 
           {settings.plaidEnvironment !== "fake" && (
             <CredentialsForm
@@ -355,9 +391,9 @@ export function SettingsPage() {
       {settings && (
         <div className="space-y-4">
           <h2 className="text-lg font-medium">Appearance</h2>
-          <label className="block text-sm">
-            <span className="font-medium">Theme</span>
+          <SettingRow id="theme" label="Theme">
             <Select
+              id="theme"
               value={settings.theme}
               disabled={saving}
               onChange={(e) => void save({ theme: e.target.value as Settings["theme"] })}
@@ -367,7 +403,7 @@ export function SettingsPage() {
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </Select>
-          </label>
+          </SettingRow>
         </div>
       )}
 

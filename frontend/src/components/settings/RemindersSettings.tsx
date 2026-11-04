@@ -66,7 +66,7 @@ export function RemindersSettings({
           />
           <span>
             <span className="font-medium">{c.label}</span>
-            <span className="block text-slate-500 dark:text-slate-400">{c.help}</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">{c.help}</span>
           </span>
         </label>
       ))}
