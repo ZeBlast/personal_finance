@@ -450,6 +450,19 @@ function TaxWorkspace({
   );
 }
 
+/**
+ * Whether a source is pay, which is where pre-tax contributions and FICA apply. Interest,
+ * dividends, money from people and credits get only the annual income. A source added by hand
+ * could be anything, so it keeps every field. Pure.
+ */
+export function isPaycheckSource(
+  s: Pick<SourceInput, "kind">,
+  found: Pick<IncomeSource, "kind" | "wages"> | undefined,
+): boolean {
+  if (s.kind === "manual") return true;
+  return found?.kind === "income" && found.wages;
+}
+
 function SourceRow({
   s,
   year,
@@ -463,6 +476,7 @@ function SourceRow({
   onChange: (patch: Partial<SavedSource>) => void;
   onRemove: (() => void) | undefined;
 }) {
+  const paycheck = isPaycheckSource(s, found);
   return (
     <div
       className={`rounded-md border border-slate-200 p-3 dark:border-slate-700 ${s.excluded ? "opacity-60" : ""}`}
@@ -529,7 +543,7 @@ function SourceRow({
           )}
         </div>
       </div>
-      <div className="mt-2 grid gap-3 sm:grid-cols-4">
+      <div className={`mt-2 grid gap-3 ${paycheck ? "sm:grid-cols-4" : "sm:grid-cols-1"}`}>
         <label className="text-sm">
           Annual income ($)
           <input
@@ -547,44 +561,52 @@ function SourceRow({
             </span>
           )}
         </label>
-        <label className="text-sm">
-          401(k) / TSP, pre-tax ($)
-          <input
-            type="number"
-            min={0}
-            value={s.pretaxRetirement || ""}
-            onChange={(e) => onChange({ pretaxRetirement: num(e.target.value) ?? 0 })}
-            className={inputClass}
-          />
-          <span className="mt-0.5 block text-xs text-slate-500">Lowers income tax, not FICA</span>
-        </label>
-        <label className="text-sm">
-          Health, HSA, FSA, pre-tax ($)
-          <input
-            type="number"
-            min={0}
-            value={s.pretaxBenefits || ""}
-            onChange={(e) => onChange({ pretaxBenefits: num(e.target.value) ?? 0 })}
-            className={inputClass}
-          />
-          <span className="mt-0.5 block text-xs text-slate-500">Lowers income tax and FICA</span>
-        </label>
-        <label className="flex items-start gap-2 pt-6 text-sm">
-          <input
-            type="checkbox"
-            checked={s.ficaExempt}
-            onChange={(e) => onChange({ ficaExempt: e.target.checked })}
-            className="mt-0.5"
-          />
-          <span>
-            Exempt from FICA
-            <span className="block text-xs text-slate-500">
-              No Social Security or Medicare (credits, some student or government jobs)
-            </span>
-          </span>
-        </label>
+        {paycheck && (
+          <>
+            <label className="text-sm">
+              401(k) / TSP, pre-tax ($)
+              <input
+                type="number"
+                min={0}
+                value={s.pretaxRetirement || ""}
+                onChange={(e) => onChange({ pretaxRetirement: num(e.target.value) ?? 0 })}
+                className={inputClass}
+              />
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Lowers income tax, not FICA
+              </span>
+            </label>
+            <label className="text-sm">
+              Health, HSA, FSA, pre-tax ($)
+              <input
+                type="number"
+                min={0}
+                value={s.pretaxBenefits || ""}
+                onChange={(e) => onChange({ pretaxBenefits: num(e.target.value) ?? 0 })}
+                className={inputClass}
+              />
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Lowers income tax and FICA
+              </span>
+            </label>
+            <label className="flex items-start gap-2 pt-6 text-sm">
+              <input
+                type="checkbox"
+                checked={s.ficaExempt}
+                onChange={(e) => onChange({ ficaExempt: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                Exempt from FICA
+                <span className="block text-xs text-slate-500">
+                  No Social Security or Medicare (credits, some student or government jobs)
+                </span>
+              </span>
+            </label>
+          </>
+        )}
       </div>
-      {annualOf(s) > 0 && s.pretaxRetirement + s.pretaxBenefits > annualOf(s) && (
+      {paycheck && annualOf(s) > 0 && s.pretaxRetirement + s.pretaxBenefits > annualOf(s) && (
         <p className="mt-1 text-xs text-amber-700">
           Pre-tax contributions are more than this source pays; only up to its income counts.
         </p>
