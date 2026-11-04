@@ -44,7 +44,8 @@ export function SubscriptionsPage() {
             monthlyMinor: tracked.data.totals.monthlyMinor,
           },
           found: {
-            count: review.data.subscriptions.length,
+            // The same ones the Found table shows before you ask for the stopped ones.
+            count: review.data.subscriptions.filter((x) => x.status === "active").length,
             monthlyMinor: review.data.totals.monthlyMinor,
           },
         })

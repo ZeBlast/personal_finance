@@ -245,7 +245,10 @@ export function AccountCardsView({ items }: { items: PlaidItem[] }) {
               setMore(a);
             }}
             terms={termsOf.get(a.id)}
-            onHiddenChanged={() => accounts.reload()}
+            onHiddenChanged={() => {
+              accounts.reload();
+              announceDataChanged();
+            }}
           />
         </div>
       );

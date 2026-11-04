@@ -552,6 +552,20 @@ describe("was the best card used", () => {
     expect(by.get("Bank plain")).toMatchObject({ status: "missed", bestRateBps: 100 });
   });
 
+  it("leaves out rent and utilities paid from the bank, but not on a card", async () => {
+    const { t, plain, checking } = await wallet();
+    await buy(t, checking, "Bank rent", 100000);
+    await buy(t, plain, "Card rent", 10000);
+    t.sqlite
+      .prepare(
+        "UPDATE transactions SET plaid_category_primary = 'RENT_AND_UTILITIES' WHERE name IN ('Bank rent', 'Card rent')",
+      )
+      .run();
+    const by = new Map((await listed(t)).map((x) => [x.merchant, x.cashback]));
+    expect(by.get("Bank rent")).toBeNull();
+    expect(by.get("Card rent")).toMatchObject({ status: "best", cashbackMinor: 100 });
+  });
+
   it("never adds cashback to a balance", async () => {
     const { t, good, groceries } = await wallet();
     await buy(t, good, "Market", 10000, groceries);

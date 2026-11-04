@@ -88,6 +88,8 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
               className={`${itemClass} ${item.danger ? "text-red-600 dark:text-red-400" : ""}`}
               onClick={() => {
                 setOpen(false);
+                // The menu is about to unmount the focused item: keep focus on the button.
+                buttonRef.current?.focus();
                 item.onSelect();
               }}
             >

@@ -78,14 +78,36 @@ export const DEFAULT_PLAN: readonly PlannedWidget[] = [
 
 /**
  * The default dashboard as it was before "This month" joined it. Dashboards made from it and left
- * alone are still ready-made (see `isReadyMade`), so they keep fitting the window. Never changed.
+ * alone are still ready-made (see `isReadyMade`), so they keep fitting the window. Never changed:
+ * its rows are written out in full, so a change to `tile()` cannot alter it.
  */
 export const LEGACY_DEFAULT_PLAN: readonly PlannedWidget[] = [
   { widgetType: "home-summary", x: 0, y: 0, w: 12, h: 2, config: { _hideHeader: true } },
-  { ...tile("net-worth", 0), y: 2 },
-  { ...tile("summary-number", 3, { metric: "spending" }), y: 2 },
-  { ...tile("summary-number", 6, { metric: "income" }), y: 2 },
-  { ...tile("summary-number", 9, { metric: "net" }), y: 2 },
+  { widgetType: "net-worth", x: 0, y: 2, w: 3, h: 2, config: { _hideHeader: true } },
+  {
+    widgetType: "summary-number",
+    x: 3,
+    y: 2,
+    w: 3,
+    h: 2,
+    config: { metric: "spending", _hideHeader: true },
+  },
+  {
+    widgetType: "summary-number",
+    x: 6,
+    y: 2,
+    w: 3,
+    h: 2,
+    config: { metric: "income", _hideHeader: true },
+  },
+  {
+    widgetType: "summary-number",
+    x: 9,
+    y: 2,
+    w: 3,
+    h: 2,
+    config: { metric: "net", _hideHeader: true },
+  },
   { widgetType: "cash-forecast", x: 0, y: 4, w: 8, h: 5 },
   { widgetType: "account-balances", x: 8, y: 4, w: 4, h: 5 },
   { widgetType: "spending-by-category", x: 0, y: 9, w: 6, h: 4 },

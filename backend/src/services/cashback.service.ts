@@ -372,7 +372,8 @@ export function transactionCashback(db: AppDb, ids: number[]): Map<number, Trans
       and ${EARNS}
       and coalesce(t.plaid_category_primary, '') not in ('TRANSFER_OUT', 'TRANSFER_IN', 'LOAN_PAYMENTS', 'INCOME')
       and (a.type = 'credit' or coalesce(t.recipient_user, t.recipient) is null)
-      and (a.type = 'credit' or c.income_treatment is null)`);
+      and (a.type = 'credit' or c.income_treatment is null)
+      and (a.type = 'credit' or coalesce(t.plaid_category_primary, '') <> 'RENT_AND_UTILITIES')`);
   if (rows.length === 0) return result;
   const cards = currentCards(db);
   const rules = loadRules(

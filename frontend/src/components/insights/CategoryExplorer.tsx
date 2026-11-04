@@ -20,7 +20,7 @@ import {
   type Trends,
 } from "../../lib/categoryTrends";
 import { childNames, rolledUpTitle } from "../../lib/categoryRollup";
-import { formatMinor } from "../../lib/money";
+import { formatAxisMoney, formatMinor } from "../../lib/money";
 import type { Account, Category } from "../../types/api";
 import { Select } from "../common/Select";
 
@@ -223,14 +223,9 @@ const formatFor = (measure: Measure) => (v: number) =>
     : measure === "share"
       ? `${v.toFixed(v < 10 ? 1 : 0)}%`
       : money(v);
-const axisFor = (measure: Measure) => (v: number) =>
-  measure === "count"
-    ? String(v)
-    : measure === "share"
-      ? `${v}%`
-      : Math.abs(v) >= 100_000
-        ? `$${Math.round(v / 100_000) / 10}k`
-        : `$${Math.round(v / 100)}`;
+/** Axis labels. Money values are cents, so $5,000 is 500_000 and reads "$5k". */
+export const axisFor = (measure: Measure) => (v: number) =>
+  measure === "count" ? String(v) : measure === "share" ? `${v}%` : formatAxisMoney(v);
 
 /**
  * Spending by category over time, the way the user wants to see it: which categories (or their

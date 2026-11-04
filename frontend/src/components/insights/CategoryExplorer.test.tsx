@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rangeFor } from "../../lib/categoryTrends";
 import { fakeBackend } from "../../test/fakeBackend";
-import { CategoryExplorer } from "./CategoryExplorer";
+import { axisFor, CategoryExplorer } from "./CategoryExplorer";
 
 beforeEach(() => localStorage.clear());
 afterEach(() => {
@@ -121,5 +121,20 @@ describe("spending explorer defaults", () => {
     const calls = setup();
     renderExplorer();
     await waitFor(() => expect(calls.some((c) => c.path.includes("flow=all"))).toBe(true));
+  });
+});
+
+describe("axisFor", () => {
+  it("reads money in cents: $5,000 is $5k, $450 is $450", () => {
+    const money = axisFor("spending");
+    expect(money(500_000)).toBe("$5k");
+    expect(money(123_000)).toBe("$1.2k");
+    expect(money(45_000)).toBe("$450");
+    expect(money(0)).toBe("$0");
+  });
+
+  it("labels counts and shares plainly", () => {
+    expect(axisFor("count")(3)).toBe("3");
+    expect(axisFor("share")(40)).toBe("40%");
   });
 });

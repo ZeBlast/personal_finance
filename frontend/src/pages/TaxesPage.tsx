@@ -193,7 +193,7 @@ function TaxWorkspace({
           pretaxBenefits: answer?.pretaxBenefits ?? 0,
           excluded: answer?.excluded ?? false,
         },
-        isPaycheckSource({ kind: s.kind }, s),
+        isPaycheckSource({ kind: s.kind }, s, answer),
       );
     });
     const manual: SourceInput[] = profile.sources
@@ -265,6 +265,7 @@ function TaxWorkspace({
                 s={s}
                 year={data.year}
                 found={data.sources.find((x) => x.key === s.key)}
+                saved={profile.sources.find((x) => x.key === s.key)}
                 onChange={(patch) => setSource(s, patch)}
                 onRemove={s.kind === "manual" ? () => removeSource(s.key) : undefined}
               />
@@ -451,14 +452,20 @@ function TaxWorkspace({
 /**
  * Whether a source is pay, which is where pre-tax contributions and FICA apply. Interest,
  * dividends, money from people and credits get only the annual income. A source added by hand
- * could be anything, so it keeps every field. Pure.
+ * could be anything, so it keeps every field. So does one the app did not recognise as pay but
+ * that has pre-tax or FICA answers you entered. Pure.
  */
 export function isPaycheckSource(
   s: Pick<SourceInput, "kind">,
   found: Pick<IncomeSource, "kind" | "wages"> | undefined,
+  saved?: Pick<SavedSource, "pretaxRetirement" | "pretaxBenefits" | "ficaExempt">,
 ): boolean {
   if (s.kind === "manual") return true;
-  return found?.kind === "income" && found.wages;
+  if (found?.kind === "income" && found.wages) return true;
+  return (
+    saved !== undefined &&
+    (saved.pretaxRetirement > 0 || saved.pretaxBenefits > 0 || saved.ficaExempt === false)
+  );
 }
 
 /**
@@ -495,16 +502,18 @@ function SourceRow({
   s,
   year,
   found,
+  saved,
   onChange,
   onRemove,
 }: {
   s: SourceInput;
   year: number;
   found: IncomeSource | undefined;
+  saved: SavedSource | undefined;
   onChange: (patch: Partial<SavedSource>) => void;
   onRemove: (() => void) | undefined;
 }) {
-  const paycheck = isPaycheckSource(s, found);
+  const paycheck = isPaycheckSource(s, found, saved);
   return (
     <div
       className={`rounded-md border border-slate-200 p-3 dark:border-slate-700 ${s.excluded ? "opacity-60" : ""}`}

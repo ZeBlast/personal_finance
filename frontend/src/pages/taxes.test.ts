@@ -83,6 +83,17 @@ describe("isPaycheckSource", () => {
     expect(isPaycheckSource({ kind: "credit" }, { kind: "credit", wages: false })).toBe(false);
   });
 
+  it("keeps the fields for unrecognised pay that has entered answers", () => {
+    const none = { pretaxRetirement: 0, pretaxBenefits: 0, ficaExempt: true };
+    const found = { kind: "income" as const, wages: false };
+    expect(isPaycheckSource({ kind: "income" }, found, none)).toBe(false);
+    expect(isPaycheckSource({ kind: "income" }, found, { ...none, pretaxRetirement: 500 })).toBe(
+      true,
+    );
+    expect(isPaycheckSource({ kind: "income" }, found, { ...none, pretaxBenefits: 1 })).toBe(true);
+    expect(isPaycheckSource({ kind: "income" }, found, { ...none, ficaExempt: false })).toBe(true);
+  });
+
   it("keeps every field for a source added by hand", () => {
     expect(isPaycheckSource({ kind: "manual" }, undefined)).toBe(true);
   });

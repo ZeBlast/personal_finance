@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
 import { formatAxisMoney, formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
-import { lowestOf, withExtraSpend } from "../../lib/views";
+import { lowestOf, lowestTile, withExtraSpend } from "../../lib/views";
 import type { Forecast } from "../../types/planning";
 
 const PAD = { left: 56, right: 12, top: 26, bottom: 24 };
@@ -43,10 +43,13 @@ export function AnnotatedForecast({
   const x = (i: number) => PAD.left + (i / Math.max(1, days.length - 1)) * plotWidth;
   const y = (v: number) => PAD.top + ((top - v) / span) * (height - PAD.top - PAD.bottom);
   const line = stepLine(days.map((d, i) => ({ x: x(i), y: y(d.balanceMinor) })));
-  const lowAt = days.findIndex((d) => d.date === forecast.lowest.date);
+  // The same point the Planning tile names: when the lowest is today, the lowest after it.
+  const low = lowestTile(forecast);
+  const lowName = low.afterToday ? "Lowest after today" : "Lowest";
+  const lowAt = days.findIndex((d) => d.date === low.date);
   const lowOnRight = lowAt >= 0 && x(lowAt) > width - 200;
   // Always above the line, and at least 8px clear of the axis or baseline under it.
-  const lowLabelY = y(forecast.lowest.balanceMinor) - 8;
+  const lowLabelY = y(low.balanceMinor) - 8;
   // Top and zero, then the bottom or the middle, whichever has room for its label.
   const ticks = [...new Set([top, 0, Math.abs(y(bottom) - y(0)) > 16 ? bottom : top / 2])];
   const shown = hover === null ? null : days[hover]!;
@@ -58,7 +61,7 @@ export function AnnotatedForecast({
       <div ref={ref} className="relative">
         <svg
           role="img"
-          aria-label={`Cash over the next ${days.length} days, from ${money(forecast.startBalanceMinor)} to ${money(forecast.endBalanceMinor)}. Lowest ${money(forecast.lowest.balanceMinor)} on ${formatDay(forecast.lowest.date)}. The table below lists each day money moves.`}
+          aria-label={`Cash over the next ${days.length} days, from ${money(forecast.startBalanceMinor)} to ${money(forecast.endBalanceMinor)}. ${lowName} ${money(low.balanceMinor)} on ${formatDay(low.date)}. The table below lists each day money moves.`}
           width={width}
           height={height}
           className="block"
@@ -146,7 +149,7 @@ export function AnnotatedForecast({
               style={{ paintOrder: "stroke" }}
               className="pf-fade-late fill-slate-900 stroke-white text-xs font-semibold tabular-nums dark:fill-slate-100 dark:stroke-slate-900"
             >
-              Lowest {money(forecast.lowest.balanceMinor)}, {formatDay(forecast.lowest.date)}
+              {lowName} {money(low.balanceMinor)}, {formatDay(low.date)}
             </text>
           )}
           {hover !== null && (
