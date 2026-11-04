@@ -136,4 +136,90 @@ describe("cap hold-back in the forecast", () => {
       { categoryName: "Dining", heldMinor: 15_000, alreadyForecastMinor: 5_000 },
     ]);
   });
+
+  /** A $300 Dining cap for October with $100 spent, hold-back on, and a checking and a Visa. */
+  async function capped(capMonth = "2026-10") {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const account = async (name: string, kind: string) =>
+      (
+        await t
+          .call("post", "/api/accounts/manual")
+          .send({ name, kind, openingBalanceMinor: 500_000 })
+          .expect(201)
+      ).body.id as number;
+    const checking = await account("Checking", "checking");
+    const card = await account("Visa", "credit_card");
+    await t
+      .call("put", `/api/accounts/${card}/bill`)
+      .send({ closingDay: 25, dueDay: 20 })
+      .expect(200);
+    const dining = (await t.call("post", "/api/categories").send({ name: "Dining" }).expect(201))
+      .body.id as number;
+    await t
+      .call("post", "/api/budgets")
+      .send({ categoryId: dining, month: capMonth, amountMinor: 30_000 })
+      .expect(201);
+    await t
+      .call("post", "/api/transactions")
+      .send({
+        accountId: checking,
+        date: "2026-10-05",
+        merchant: "Bistro",
+        amountMinor: 10_000,
+        direction: "out",
+        categoryId: dining,
+      })
+      .expect(201);
+    await t.call("patch", "/api/settings").send({ forecastHoldCaps: true }).expect(200);
+    const forecast = async (query: string) =>
+      (await t.call("get", `/api/forecast?${query}`).expect(200)).body;
+    return { t, card, dining, forecast };
+  }
+
+  it("reports only what falls inside a short look-ahead, matching the forecast's events", async () => {
+    const { forecast } = await capped();
+    // 2026-10-10 + 7 days reaches Oct 17; $200 over the 21 days left is $9.52 a day.
+    const f = await forecast("days=7&today=2026-10-10");
+    const held = f.days
+      .flatMap((d: { events: Array<{ source: string; amountMinor: number }> }) => d.events)
+      .filter((e: { source: string }) => e.source === "cap_holdback")
+      .reduce((n: number, e: { amountMinor: number }) => n + -e.amountMinor, 0);
+    expect(held).toBe(7 * 952);
+    expect(f.capHoldBack.totalMinor).toBe(held);
+    expect(f.capHoldBack.caps).toEqual([
+      { categoryName: "Dining", heldMinor: held, alreadyForecastMinor: 0 },
+    ]);
+  });
+
+  it("counts a card charge in the category once, whether its bill falls inside the window or after it", async () => {
+    const { t, card, dining, forecast } = await capped();
+    await t
+      .call("post", "/api/planned")
+      .send({
+        merchant: "Steakhouse",
+        amountMinor: 4_000,
+        direction: "out",
+        accountId: card,
+        categoryId: dining,
+        startDate: "2026-10-12",
+        frequency: "once",
+      })
+      .expect(201);
+    // Charged Oct 12, on the statement that closes Oct 25 and is due Nov 20.
+    for (const days of [60, 30]) {
+      const f = await forecast(`days=${days}&today=2026-10-10`);
+      expect(f.capHoldBack.caps).toEqual([
+        { categoryName: "Dining", heldMinor: expect.any(Number), alreadyForecastMinor: 4_000 },
+      ]);
+    }
+    const whole = await forecast("days=60&today=2026-10-10");
+    expect(whole.capHoldBack.totalMinor).toBe(16_000);
+  });
+
+  it("ignores a cap for another month", async () => {
+    const { forecast } = await capped("2026-11");
+    const f = await forecast("days=30&today=2026-10-10");
+    expect(f.capHoldBack).toEqual({ included: true, totalMinor: 0, caps: [] });
+  });
 });

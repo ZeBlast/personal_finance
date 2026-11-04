@@ -212,7 +212,14 @@ export function cashForecast(
   // An overdue pending entry is still outstanding: project it on the first future day.
   const pendingDate = (date: string): string => (date > today ? date : addDays(today, 1));
   const projectedPending = pending.map((t) => ({ ...t, date: pendingDate(t.date) }));
+  // Spending in a category (what a spending cap counts), by the day the charge is made, even when a
+  // card charge's bill is paid after the forecast ends. Goal and interest events have no category.
+  const spending: Array<{ date: string; categoryId: number; amountMinor: number }> = [];
   const add = (date: string, e: ForecastEvent): void => {
+    const madeOn = e.chargedOn ?? date;
+    if (e.categoryId !== undefined && e.amountMinor < 0 && madeOn > today && madeOn <= end) {
+      spending.push({ date: madeOn, categoryId: e.categoryId, amountMinor: -e.amountMinor });
+    }
     if (date <= today || date > end || e.amountMinor === 0) return;
     events.set(date, [...(events.get(date) ?? []), e]);
   };
@@ -378,13 +385,6 @@ export function cashForecast(
   let capHold: Forecast["capHoldBack"] = { included: false, totalMinor: 0, caps: [] };
   if (hold) {
     const month = today.slice(0, 7);
-    const forecastOut = [...events].flatMap(([date, list]) =>
-      list.flatMap((e) =>
-        e.categoryId !== undefined && e.amountMinor < 0
-          ? [{ date: e.chargedOn ?? date, categoryId: e.categoryId, amountMinor: -e.amountMinor }]
-          : [],
-      ),
-    );
     const parentOf = new Map(
       db
         .select({ id: categories.id, parentId: categories.parentId })
@@ -396,7 +396,8 @@ export function cashForecast(
       today,
       caps: budgetMonth(db, month, settings.plaidEnvironment, { today }).budgets,
       parentOf,
-      forecastOut,
+      forecastOut: spending,
+      through: end,
     });
     const label = `Spending caps (rest of ${MONTH_NAME[Number(month.slice(5)) - 1]})`;
     for (const d of r.days) {

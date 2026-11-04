@@ -27,6 +27,11 @@ export function capHoldBack(input: {
   caps: Array<Pick<BudgetDto, "categoryId" | "categoryName" | "remainingMinor">>;
   parentOf: Map<number, number | null>;
   forecastOut: Array<{ date: string; categoryId: number; amountMinor: number }>;
+  /**
+   * The last day the forecast reaches. The daily amounts do not depend on it, but the total and
+   * each cap's figure count only the days up to it (the rest are outside the forecast).
+   */
+  through?: string;
 }): {
   days: Array<{ date: string; amountMinor: number }>;
   caps: Array<{ categoryName: string; heldMinor: number; alreadyForecastMinor: number }>;
@@ -66,13 +71,27 @@ export function capHoldBack(input: {
     }
   }
 
-  const totalMinor = held.reduce((n, c) => n + c.heldMinor, 0);
-  const each = Math.floor(totalMinor / dates.length);
+  const wholeMinor = held.reduce((n, c) => n + c.heldMinor, 0);
+  const each = Math.floor(wholeMinor / dates.length);
   const days = dates
     .map((date, i) => ({
       date,
-      amountMinor: i === dates.length - 1 ? totalMinor - each * (dates.length - 1) : each,
+      amountMinor: i === dates.length - 1 ? wholeMinor - each * (dates.length - 1) : each,
     }))
     .filter((d) => d.amountMinor > 0);
-  return { days, caps: held, totalMinor };
+  const through = input.through;
+  if (through === undefined || through >= last) return { days, caps: held, totalMinor: wholeMinor };
+
+  // Only the days inside the forecast count; share that out over the caps in proportion.
+  const totalMinor = days.filter((d) => d.date <= through).reduce((n, d) => n + d.amountMinor, 0);
+  let shared = 0;
+  const inside = held.map((c, i) => {
+    const part =
+      i === held.length - 1
+        ? totalMinor - shared
+        : Math.floor((c.heldMinor * totalMinor) / wholeMinor);
+    shared += part;
+    return { ...c, heldMinor: part };
+  });
+  return { days, caps: inside, totalMinor };
 }

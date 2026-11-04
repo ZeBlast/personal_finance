@@ -84,13 +84,30 @@ const SOURCE_LABEL = {
   cap_holdback: "Spending caps",
 };
 
+/** Where the held-back caps reach: the rest of the month, or only as far as the forecast does. */
+function holdRange(f: Forecast): string {
+  const [y, m] = f.today.split("-").map(Number) as [number, number];
+  const end = f.days.at(-1)?.date ?? f.today;
+  const monthEnd = `${f.today.slice(0, 8)}${new Date(Date.UTC(y, m, 0)).getUTCDate()}`;
+  if (end < monthEnd) return `through ${formatDay(end)}, as far as this forecast reaches`;
+  const month = new Date(`${f.today}T12:00:00`).toLocaleString("en-US", { month: "long" });
+  return `spread over the rest of ${month}`;
+}
+
 function ForecastView() {
   const [days, setDays] = useState(60);
   const { data, error, loading, reload } = useApi<Forecast>(`/forecast?days=${days}`);
+  const [holdError, setHoldError] = useState<string | null>(null);
   async function holdCaps(on: boolean): Promise<void> {
-    await api("/settings", { method: "PATCH", body: JSON.stringify({ forecastHoldCaps: on }) });
-    reload();
-    announceDataChanged();
+    setHoldError(null);
+    try {
+      await api("/settings", { method: "PATCH", body: JSON.stringify({ forecastHoldCaps: on }) });
+      reload();
+      announceDataChanged();
+    } catch (e) {
+      // The box shows what the forecast says, so it stays as it was.
+      setHoldError(errorMessage(e));
+    }
   }
   if (error)
     return (
@@ -152,7 +169,12 @@ function ForecastView() {
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {data.capHoldBack.caps.length === 0
               ? "Nothing to hold back: no cap has money left that is not already forecast."
-              : `${money(data.capHoldBack.totalMinor)} held back across ${data.capHoldBack.caps.length} cap${data.capHoldBack.caps.length === 1 ? "" : "s"}, spread over the rest of ${new Date(`${data.today}T12:00:00`).toLocaleString("en-US", { month: "long" })}.`}
+              : `${money(data.capHoldBack.totalMinor)} held back across ${data.capHoldBack.caps.length} cap${data.capHoldBack.caps.length === 1 ? "" : "s"}, ${holdRange(data)}.`}
+          </p>
+        )}
+        {holdError && (
+          <p role="alert" className="mt-1 text-xs text-red-600">
+            {holdError}
           </p>
         )}
       </div>
