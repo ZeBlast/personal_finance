@@ -121,6 +121,19 @@ describe("the widget", () => {
     expect(link.getAttribute("href")).toBe("/planning/budgets");
   });
 
+  it("says so, rather than loading forever, when the currency cannot be loaded", async () => {
+    fakeBackend({
+      [capsPath]: {
+        month: monthOf(today()),
+        budgets: [cap({})],
+        totals: { budgetedMinor: 10000, spentMinor: 1000, remainingMinor: 9000 },
+        unbudgetedSpendingMinor: 0,
+      },
+    });
+    show();
+    await screen.findByRole("alert");
+  });
+
   it("says when the caps cannot be loaded", async () => {
     fakeBackend({});
     show();

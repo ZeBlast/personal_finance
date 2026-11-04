@@ -52,7 +52,8 @@ export function YearPage() {
   const day = today();
   const [year, setYear] = useState(Number(day.slice(0, 4)));
   const { data, error, loading } = useApi<YearReport>(`/reports/year?year=${year}&today=${day}`);
-  const { categories } = useCategories();
+  // Only for the roll-up tooltips, which also name archived subcategories.
+  const { categories } = useCategories(true);
   const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
 
   return (
