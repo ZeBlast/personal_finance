@@ -7,7 +7,15 @@ import type { Transaction } from "./api";
 export interface ForecastEvent {
   label: string;
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "interest" | "goal";
+  source:
+    | "expected"
+    | "recurring"
+    | "card_bill"
+    | "pending"
+    | "debt_plan"
+    | "interest"
+    | "goal"
+    | "cap_holdback";
   /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
   card?: string;
   chargedOn?: string;
@@ -21,6 +29,11 @@ export interface Forecast {
   days: Array<{ date: string; balanceMinor: number; changeMinor: number; events: ForecastEvent[] }>;
   lowest: { date: string; balanceMinor: number };
   endBalanceMinor: number;
+  capHoldBack: {
+    included: boolean;
+    totalMinor: number;
+    caps: Array<{ categoryName: string; heldMinor: number; alreadyForecastMinor: number }>;
+  };
 }
 
 export type BillStatus = "paid" | "partial" | "due" | "overdue" | "nothing_due";

@@ -18,6 +18,7 @@ const sub = (over: Partial<Subscription>): Subscription => ({
   accountNames: ["Card"],
   priceChange: null,
   dismissed: false,
+  categoryId: null,
   yearlyMinor: 1_549 * 12,
   review: null,
   chargedAfterCancel: false,

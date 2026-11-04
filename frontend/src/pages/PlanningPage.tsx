@@ -81,11 +81,17 @@ const SOURCE_LABEL = {
   debt_plan: "Debt plan",
   interest: "Interest (from the APY)",
   goal: "Goal",
+  cap_holdback: "Spending caps",
 };
 
 function ForecastView() {
   const [days, setDays] = useState(60);
-  const { data, error, loading } = useApi<Forecast>(`/forecast?days=${days}`);
+  const { data, error, loading, reload } = useApi<Forecast>(`/forecast?days=${days}`);
+  async function holdCaps(on: boolean): Promise<void> {
+    await api("/settings", { method: "PATCH", body: JSON.stringify({ forecastHoldCaps: on }) });
+    reload();
+    announceDataChanged();
+  }
   if (error)
     return (
       <p role="alert" className="text-sm text-red-600">
@@ -133,6 +139,23 @@ function ForecastView() {
         </p>
       )}
       <AnnotatedForecast forecast={data} />
+      <div className="text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={data.capHoldBack.included}
+            onChange={(e) => void holdCaps(e.target.checked)}
+          />
+          Hold back the rest of this month&apos;s spending caps
+        </label>
+        {data.capHoldBack.included && (
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {data.capHoldBack.caps.length === 0
+              ? "Nothing to hold back: no cap has money left that is not already forecast."
+              : `${money(data.capHoldBack.totalMinor)} held back across ${data.capHoldBack.caps.length} cap${data.capHoldBack.caps.length === 1 ? "" : "s"}, spread over the rest of ${new Date(`${data.today}T12:00:00`).toLocaleString("en-US", { month: "long" })}.`}
+          </p>
+        )}
+      </div>
       <p className="text-xs text-slate-500">
         From the balances of {data.accountsCounted} bank account
         {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,

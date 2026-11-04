@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
-import { subscriptionReviews, trackedSubscriptions } from "../../../drizzle/schema.js";
+import { categories, subscriptionReviews, trackedSubscriptions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, isRealDate } from "../utils/dates.js";
+import { budgetMonth } from "./budget.service.js";
+import { capHoldBack } from "./cap-holdback.js";
 import { debtOverview } from "./debt.service.js";
 import { listGoals, type GoalDto } from "./goal.service.js";
 import { AppError } from "../utils/errors.js";
@@ -36,6 +38,8 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  * - Goals whose monthly contribution the user chose to count: that amount on the chosen day of each
  *   month, until the goal is met. It lowers the line even when the money stays in a savings account
  *   that is counted, since money set aside is no longer free to spend.
+ * - When the user chose to, what is left of this month's spending caps, less what is already
+ *   forecast in their categories, spread over the days left in the month.
  *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
  */
@@ -46,7 +50,15 @@ export interface ForecastEvent {
   label: string;
   /** Positive is money coming in, negative going out. */
   amountMinor: number;
-  source: "expected" | "recurring" | "card_bill" | "pending" | "debt_plan" | "interest" | "goal";
+  source:
+    | "expected"
+    | "recurring"
+    | "card_bill"
+    | "pending"
+    | "debt_plan"
+    | "interest"
+    | "goal"
+    | "cap_holdback";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
@@ -54,6 +66,9 @@ export interface ForecastEvent {
   accountId?: number;
   /** A goal contribution: the goal. */
   goalId?: number;
+  /** An expected or recurring charge: its category (what a spending cap counts), and for an expected one, its plan. */
+  categoryId?: number;
+  plannedId?: number;
   /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
   card?: string;
   chargedOn?: string;
@@ -74,7 +89,28 @@ export interface Forecast {
   days: ForecastDay[];
   lowest: { date: string; balanceMinor: number };
   endBalanceMinor: number;
+  /** The rest of this month's spending caps held back (when asked for), and which caps. */
+  capHoldBack: {
+    included: boolean;
+    totalMinor: number;
+    caps: Array<{ categoryName: string; heldMinor: number; alreadyForecastMinor: number }>;
+  };
 }
+
+const MONTH_NAME = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 const norm = (s: string): string => s.trim().toLowerCase();
 
@@ -145,7 +181,12 @@ export function goalEvents(
 
 export function cashForecast(
   db: AppDb,
-  options: { days?: number | undefined; today?: string | undefined } = {},
+  options: {
+    days?: number | undefined;
+    today?: string | undefined;
+    /** Overrides the setting that holds back the rest of the month's caps. */
+    holdCaps?: boolean | undefined;
+  } = {},
 ): Forecast {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   if (!isRealDate(today)) throw new AppError(400, "invalid_date", "Use a real day.");
@@ -209,6 +250,8 @@ export function cashForecast(
       label: o.merchant,
       amountMinor: o.direction === "in" ? amount : -amount,
       source: "expected",
+      plannedId: o.plannedId,
+      ...(o.categoryId !== null ? { categoryId: o.categoryId } : {}),
     };
     if (o.accountType === null || o.accountType === "depository") {
       if (matchesPendingManual(projectedPending, o)) continue;
@@ -258,6 +301,7 @@ export function cashForecast(
         source: "recurring",
         seriesKey: s.key,
         cadence: s.cadence,
+        ...(s.categoryId !== null ? { categoryId: s.categoryId } : {}),
       };
       if (bill) addCharge(bill, d, event);
       else add(d, event);
@@ -328,6 +372,39 @@ export function cashForecast(
   // 6. Money set aside for goals.
   for (const { date, event } of goalEvents(listGoals(db, today), today, end)) add(date, event);
 
+  // 7. The rest of this month's spending caps, less what the steps above already forecast in them
+  // (goal and interest events carry no category, so they never count as spending).
+  const hold = options.holdCaps ?? settings.forecastHoldCaps;
+  let capHold: Forecast["capHoldBack"] = { included: false, totalMinor: 0, caps: [] };
+  if (hold) {
+    const month = today.slice(0, 7);
+    const forecastOut = [...events].flatMap(([date, list]) =>
+      list.flatMap((e) =>
+        e.categoryId !== undefined && e.amountMinor < 0
+          ? [{ date: e.chargedOn ?? date, categoryId: e.categoryId, amountMinor: -e.amountMinor }]
+          : [],
+      ),
+    );
+    const parentOf = new Map(
+      db
+        .select({ id: categories.id, parentId: categories.parentId })
+        .from(categories)
+        .all()
+        .map((c) => [c.id, c.parentId] as const),
+    );
+    const r = capHoldBack({
+      today,
+      caps: budgetMonth(db, month, settings.plaidEnvironment, { today }).budgets,
+      parentOf,
+      forecastOut,
+    });
+    const label = `Spending caps (rest of ${MONTH_NAME[Number(month.slice(5)) - 1]})`;
+    for (const d of r.days) {
+      add(d.date, { label, amountMinor: -d.amountMinor, source: "cap_holdback" });
+    }
+    capHold = { included: true, totalMinor: r.totalMinor, caps: r.caps };
+  }
+
   const days: ForecastDay[] = [];
   let balance = start;
   let lowest = { date: today, balanceMinor: start };
@@ -346,6 +423,7 @@ export function cashForecast(
     days,
     lowest,
     endBalanceMinor: balance,
+    capHoldBack: capHold,
   };
 }
 

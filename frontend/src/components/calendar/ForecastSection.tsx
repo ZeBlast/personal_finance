@@ -16,6 +16,7 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   debt_plan: "Debt payoff plan",
   interest: "Interest (estimated from the APY)",
   goal: "Goal contribution",
+  cap_holdback: "Spending caps (held back)",
 };
 
 const smallButton =

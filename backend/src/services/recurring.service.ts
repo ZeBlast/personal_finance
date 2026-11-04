@@ -142,6 +142,8 @@ export interface RecurringSeries {
   accountNames: string[];
   priceChange: { fromMinor: number; toMinor: number; date: string } | null;
   dismissed: boolean;
+  /** The category of the series' latest transaction, or null. */
+  categoryId: number | null;
 }
 
 export interface RecurringReport {
@@ -172,6 +174,7 @@ interface Row {
   merchant: string | null;
   amount_minor: number;
   account: string;
+  category_id?: number | null;
 }
 
 export function buildSeries(rows: Row[], today: string, dismissed: Set<string>): RecurringSeries[] {
@@ -244,6 +247,8 @@ export function buildSeries(rows: Row[], today: string, dismissed: Set<string>):
       accountNames: [...accounts].sort(),
       priceChange,
       dismissed: dismissed.has(key),
+      categoryId:
+        [...group.items].sort((a, b) => b.date.localeCompare(a.date))[0]!.category_id ?? null,
     });
   }
   return result.sort(
@@ -266,7 +271,8 @@ export function recurringReport(
            t.name AS key_name,
            coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name) AS merchant,
            t.amount_minor AS amount_minor,
-           a.name AS account
+           a.name AS account,
+           t.category_id AS category_id
     FROM transactions t
     JOIN accounts a ON a.id = t.account_id
     LEFT JOIN plaid_items p ON p.id = a.plaid_item_id

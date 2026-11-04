@@ -46,6 +46,11 @@ export const settingsSchema = z.object({
    * (and so in safe-to-spend) until the plan pays the debts off. 0: not counted.
    */
   debtExtraInForecastMinor: z.number().int().min(0).max(100_000_000_000),
+  /**
+   * Hold back what is left of this month's spending caps in the cash forecast (and so in
+   * safe-to-spend), spread over the rest of the month.
+   */
+  forecastHoldCaps: z.boolean(),
   /** The user said they saved the recovery key somewhere safe (asked until they do). */
   recoveryKeySaved: z.boolean(),
   /** The user closed the first-run welcome. */
@@ -78,6 +83,7 @@ export const DEFAULT_SETTINGS: Settings = {
   navHidden: [],
   ownNames: [],
   debtExtraInForecastMinor: 0,
+  forecastHoldCaps: false,
   recoveryKeySaved: false,
   welcomeDismissed: false,
   dashboardViewsAdded: false,

@@ -22,6 +22,8 @@ export interface Settings {
   ownNames: string[];
   /** The debt plan's extra monthly payment counted in the cash forecast (0: not counted). */
   debtExtraInForecastMinor: number;
+  /** Hold back the rest of this month's spending caps in the cash forecast. */
+  forecastHoldCaps: boolean;
   /** The user said they saved the recovery key somewhere safe. */
   recoveryKeySaved: boolean;
   /** The user closed the first-run welcome. */

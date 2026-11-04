@@ -141,6 +141,7 @@ describe("settings", () => {
       navHidden: [],
       ownNames: [],
       debtExtraInForecastMinor: 0,
+      forecastHoldCaps: false,
       recoveryKeySaved: false,
       welcomeDismissed: false,
       dashboardViewsAdded: false,

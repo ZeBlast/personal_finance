@@ -49,6 +49,7 @@ const forecast: Forecast = {
   ],
   lowest: { date: "2026-11-02", balanceMinor: 40_000 },
   endBalanceMinor: 40_000,
+  capHoldBack: { included: false, totalMinor: 0, caps: [] },
 };
 
 describe("the forecast's lowest tile", () => {

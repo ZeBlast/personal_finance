@@ -172,6 +172,7 @@ export interface PlannedOccurrence {
   accountId: number | null;
   accountName: string | null;
   accountType: string | null;
+  categoryId: number | null;
   categoryName: string | null;
   person: string | null;
   repeats: string;
@@ -472,6 +473,7 @@ export function listOccurrences(
         accountId: r.row.accountId,
         accountName: r.accountName,
         accountType: r.accountType,
+        categoryId: r.row.categoryId,
         categoryName: r.categoryName,
         person: r.row.person,
         repeats: describeRule(rule),
