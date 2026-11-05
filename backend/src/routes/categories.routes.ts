@@ -16,6 +16,7 @@ import {
   listRules,
   previewRule,
   reorderRules,
+  resolveToday,
   RULE_DIRECTIONS,
   RULE_FIELDS,
   RULE_OPERATORS,
@@ -55,7 +56,14 @@ const ruleFields = {
   enabled: z.boolean().optional(),
 };
 const ruleScope = z.enum(["new", "all"]);
-const ruleCreateBody = z.object({ ...ruleFields, scope: ruleScope.optional() }).strict();
+// The client's own date, for "only new transactions" (checked against the server's in the service).
+const clientToday = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional();
+const ruleCreateBody = z
+  .object({ ...ruleFields, scope: ruleScope.optional(), today: clientToday })
+  .strict();
 const rulePatchBody = z
   .object({
     ...ruleFields,
@@ -78,6 +86,7 @@ const rulePreviewBody = z
     categoryId: ruleFields.categoryId.optional(),
     ruleId: z.number().int().positive().optional(),
     scope: ruleScope.optional(),
+    today: clientToday,
     offset: z.number().int().min(0).optional(),
     limit: z.number().int().min(1).max(200).optional(),
   })
@@ -145,7 +154,8 @@ export function categoriesRoutes(db: AppDb): Router {
   });
 
   router.post("/rules/preview", (req, res) => {
-    res.json(previewRule(db, rulePreviewBody.parse(req.body)));
+    const { today, ...body } = rulePreviewBody.parse(req.body);
+    res.json(previewRule(db, body, resolveToday(today, new Date().toISOString())));
   });
 
   router.patch("/rules/:id", (req, res) => {

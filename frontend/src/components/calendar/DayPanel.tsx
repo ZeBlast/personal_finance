@@ -998,9 +998,7 @@ export function DayPanel({
             setDetailTx(null);
             setNotice({
               kind: "info",
-              text: rule
-                ? `Rule “${rule.name}” created. ${rule.changed} transaction${rule.changed === 1 ? "" : "s"} recategorized.`
-                : `${updated.merchant} was saved.`,
+              text: rule ? `Rule “${rule.name}” created.` : `${updated.merchant} was saved.`,
             });
             announceDataChanged();
           }}

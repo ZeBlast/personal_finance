@@ -6,7 +6,8 @@ import { Attachments } from "./Attachments";
 import { TagEditor } from "./TagEditor";
 import { formatMinor } from "../../lib/money";
 import { categoryLabel, formatDay } from "../../lib/time";
-import type { Category, Rule, RulePreview, Transaction } from "../../types/api";
+import type { Category, RulePreview, SavedRule, Transaction } from "../../types/api";
+import { announceMoved } from "../categories/ruleBatches";
 import { Modal } from "../common/Modal";
 import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
@@ -159,7 +160,8 @@ export function TransactionDetail({
       let ruleResult: { name: string; changed: number } | undefined;
       if (makeRule && categoryId !== "") {
         const name = `${shownMerchant} → ${chosenName ?? "category"}`;
-        const rule = await api<Rule>("/rules", {
+        // Saved for past transactions too, as a batch the toast can undo.
+        const rule = await api<SavedRule>("/rules", {
           method: "POST",
           body: JSON.stringify({
             name,
@@ -167,13 +169,11 @@ export function TransactionDetail({
             operator: "equals",
             matchValue: shownMerchant,
             categoryId: Number(categoryId),
+            scope: "all",
           }),
         });
-        const applied = await api<{ changed: number }>("/rules/apply", {
-          method: "POST",
-          body: "{}",
-        });
-        ruleResult = { name: rule.name, changed: applied.changed };
+        ruleResult = { name: rule.name, changed: rule.changeCount };
+        announceMoved(rule);
         updated = await api<Transaction>(`/transactions/${t.id}`);
       }
       onSaved(updated, ruleResult);

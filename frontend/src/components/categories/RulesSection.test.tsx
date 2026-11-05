@@ -63,12 +63,46 @@ describe("rule changes", () => {
     expect((await screen.findByText("Moved 3 transactions.")).textContent).toBeTruthy();
     expect(calls.find((c) => c.method === "POST" && c.path === "/rules")?.body).toMatchObject({
       scope: "all",
+      today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     });
     expect(changes()).toBe(1);
 
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(await screen.findByText("Put back 3 transactions.")).toBeTruthy();
     expect(changes()).toBe(2);
+  });
+
+  it("shows no amounts until the currency is known", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    fakeBackend({
+      "GET /rules": [],
+      "GET /rules/batches": [],
+      // No settings: the currency never arrives.
+      "POST /rules/preview": {
+        matchCount: 1,
+        sample: [],
+        changeCount: 1,
+        changes: [
+          {
+            id: 1,
+            date: "2026-10-02",
+            merchant: "Pizza",
+            amountMinor: 1250,
+            from: null,
+            to: "Dining",
+          },
+        ],
+        totals: [{ categoryId: 3, name: "Dining", changeMinor: 1250, count: 1 }],
+        manualCount: 0,
+      },
+    });
+    render(<RulesSection categories={categories} />);
+    await userEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    await userEvent.type(screen.getByLabelText(/This text/), "pizza");
+    await userEvent.click(screen.getByLabelText("Use this category"));
+    await userEvent.click(await screen.findByRole("option", { name: "Dining" }));
+    expect(await screen.findByText("Pizza")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("$");
   });
 
   it("undoes a batch from Recent changes and says what stayed", async () => {

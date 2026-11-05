@@ -12,6 +12,7 @@ import { IS_INCOME, NOT_TRANSFER } from "./analytics.service.js";
 import { syncCategoryTransfers } from "./transfer.service.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { merchantKey } from "../utils/merchant.js";
+import { isRealDate } from "../utils/dates.js";
 
 export const RULE_FIELDS = ["merchant", "name", "recipient", "sender", "plaid_category"] as const;
 export const RULE_OPERATORS = ["equals", "contains", "starts_with", "same_merchant"] as const;
@@ -432,15 +433,38 @@ function withBatch(db: AppDb, ruleId: number, batchId: number | null): SavedRule
 }
 
 /**
- * Saves a rule. `scope: "new"` makes it file only transactions from today on; `"all"` also files
- * the past straight away, as a batch that can be undone. Without a scope nothing is applied.
+ * The day "today" means for a rule: the client's own date when it sends one (the server's UTC date
+ * can be a day ahead or behind), as long as it is a real day within a day of the server's.
+ */
+export function resolveToday(clientToday: string | undefined, now: string): string {
+  const server = now.slice(0, 10);
+  if (clientToday === undefined) return server;
+  const gap = Math.abs(Date.parse(`${clientToday}T00:00:00Z`) - Date.parse(`${server}T00:00:00Z`));
+  if (!isRealDate(clientToday) || gap > 86_400_000) {
+    throw new AppError(
+      400,
+      "invalid_date",
+      "Your computer's date doesn't look right. Check its clock and try again.",
+    );
+  }
+  return clientToday;
+}
+
+/**
+ * Saves a rule. `scope: "new"` makes it file only transactions from today on (`today` is the
+ * client's local date); `"all"` also files the past straight away, as a batch that can be undone.
+ * Without a scope nothing is applied.
  */
 export function createRule(
   db: AppDb,
-  input: Omit<RuleInput, "appliesFrom"> & { scope?: "new" | "all" | undefined },
+  input: Omit<RuleInput, "appliesFrom"> & {
+    scope?: "new" | "all" | undefined;
+    today?: string | undefined;
+  },
 ): SavedRule {
   requireActiveCategory(db, input.categoryId);
   const now = new Date().toISOString();
+  const today = resolveToday(input.today, now);
   let batchId: number | null = null;
   const id = db.transaction((tx) => {
     const lowest = tx
@@ -458,7 +482,7 @@ export function createRule(
         operator: input.operator,
         matchValue: input.matchValue,
         direction: input.direction ?? null,
-        appliesFrom: input.scope === "new" ? now.slice(0, 10) : null,
+        appliesFrom: input.scope === "new" ? today : null,
         categoryId: input.categoryId,
         priority,
         enabled: input.enabled ?? true,

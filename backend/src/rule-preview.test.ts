@@ -121,6 +121,28 @@ describe("previewing a rule's real effect", () => {
     ]);
   });
 
+  it("starts a new-only rule on the client's own day, within a day of the server's", async () => {
+    const { t, dining, cartRule } = await setup();
+    const server = new Date();
+    const day = (shift: number) =>
+      new Date(server.getTime() + shift * 86_400_000).toISOString().slice(0, 10);
+    const made = await t
+      .call("post", "/api/rules")
+      .send({ ...cartRule, categoryId: dining, scope: "new", today: day(-1) })
+      .expect(201);
+    expect(made.body.appliesFrom).toBe(day(-1));
+    for (const bad of [day(3), "2026-02-30", "not a day"]) {
+      await t
+        .call("post", "/api/rules")
+        .send({ ...cartRule, name: "Bad", categoryId: dining, scope: "new", today: bad })
+        .expect(400);
+    }
+    await t
+      .call("post", "/api/rules/preview")
+      .send({ field: "merchant", operator: "contains", matchValue: "cart", today: day(3) })
+      .expect(400);
+  });
+
   it("a rule for new transactions only leaves the past alone, even after Apply rules now", async () => {
     const { t, dining, preview, cartRule, cart, categoryOf } = await setup();
     await t

@@ -309,9 +309,8 @@ export function TransactionsPage() {
         // Beside the table the saved row stays open; a dialog closes.
         setSelected(variant === "panel" ? updated : null);
         if (rule) {
-          setNotice(
-            `Rule “${rule.name}” created. ${rule.changed} transaction${rule.changed === 1 ? "" : "s"} recategorized.`,
-          );
+          // How many it moved, and the way to undo that, are in the toast.
+          setNotice(`Rule “${rule.name}” created.`);
           // Reload the list so every recategorized row shows its new category.
           setFilters((f) => ({ ...f }));
         }

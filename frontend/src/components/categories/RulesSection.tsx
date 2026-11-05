@@ -3,11 +3,10 @@ import { api, ApiError, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { categoryOptions } from "../../hooks/useCategories";
 import { formatMinor } from "../../lib/money";
+import { today } from "../../lib/period";
 import { announceDataChanged } from "../../lib/syncEvents";
-import { toast } from "../../lib/toast";
 import type {
   ApplyResult,
-  BatchUndoResult,
   Category,
   ChangeBatch,
   Rule,
@@ -22,13 +21,8 @@ import type {
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { Select } from "../common/Select";
 import { OwnNamesSection } from "./OwnNamesSection";
-import {
-  batchUndoText,
-  FIELD_LABEL,
-  OPERATOR_LABEL,
-  ruleEffectText,
-  ruleTotalsText,
-} from "./ruleText";
+import { announceMoved, undoBatch } from "./ruleBatches";
+import { FIELD_LABEL, OPERATOR_LABEL, ruleEffectText, ruleTotalsText } from "./ruleText";
 import { buttonClass, inputClass, primaryClass, type Notice } from "./shared";
 
 // ---------------------------------------------------------------------------------------
@@ -36,18 +30,6 @@ import { buttonClass, inputClass, primaryClass, type Notice } from "./shared";
 // ---------------------------------------------------------------------------------------
 
 const PAGE = 50;
-
-/** Puts a batch back and says what happened, in a toast; other views then reload. */
-async function undoBatch(id: number, then?: () => void): Promise<void> {
-  try {
-    const result = await api<BatchUndoResult>(`/rules/batches/${id}/undo`, { method: "POST" });
-    toast(batchUndoText(result));
-    announceDataChanged();
-  } catch (e) {
-    toast(errorMessage(e, "Could not undo that."), { kind: "error" });
-  }
-  then?.();
-}
 
 export function RuleForm({
   rule,
@@ -76,7 +58,8 @@ export function RuleForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const options = categoryOptions(categories.filter((c) => c.active));
-  const currency = useApi<Settings>("/settings").data?.currency ?? "USD";
+  // Amounts wait for the user's own currency, so dollars never flash up first.
+  const currency = useApi<Settings>("/settings").data?.currency;
 
   // What the preview asks about: the same things saving would use.
   const previewBody = useMemo(
@@ -87,7 +70,7 @@ export function RuleForm({
       direction: direction || null,
       // With a category (and the rule being edited), it also says what would really change.
       ...(categoryId ? { categoryId: Number(categoryId) } : {}),
-      ...(rule ? { ruleId: rule.id } : { scope }),
+      ...(rule ? { ruleId: rule.id } : { scope, today: today() }),
     }),
     [field, operator, matchValue, direction, categoryId, rule, scope],
   );
@@ -138,16 +121,6 @@ export function RuleForm({
     }
   }
 
-  // After a save that moved transactions: say how many, with a way to put them back.
-  function announceMoved(saved: { batchId: number | null; changeCount: number }): void {
-    if (saved.batchId === null) return;
-    announceDataChanged();
-    const batchId = saved.batchId;
-    toast(`Moved ${saved.changeCount} transaction${saved.changeCount === 1 ? "" : "s"}.`, {
-      action: { label: "Undo", run: () => undoBatch(batchId) },
-    });
-  }
-
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
     setBusy(true);
@@ -173,7 +146,7 @@ export function RuleForm({
         announceMoved(
           await api<SavedRule>("/rules", {
             method: "POST",
-            body: JSON.stringify({ ...body, scope }),
+            body: JSON.stringify({ ...body, scope, today: today() }),
           }),
         );
         onDone("Rule added at the top of the list.");
@@ -331,7 +304,7 @@ export function RuleForm({
             <p className="font-medium text-slate-700 dark:text-slate-200">
               {ruleEffectText(preview)}
             </p>
-            {preview.totals && preview.totals.length > 0 && (
+            {currency && preview.totals && preview.totals.length > 0 && (
               <p className="mt-1 text-slate-600 dark:text-slate-300">
                 Change to spending: {ruleTotalsText(preview.totals, currency)}
               </p>
@@ -353,7 +326,7 @@ export function RuleForm({
                         <td className="py-0.5 pr-2 whitespace-nowrap">{c.date}</td>
                         <td className="max-w-40 truncate py-0.5 pr-2">{c.merchant}</td>
                         <td className="py-0.5 pr-2 text-right whitespace-nowrap">
-                          {formatMinor(c.amountMinor, currency)}
+                          {currency ? formatMinor(c.amountMinor, currency) : ""}
                         </td>
                         <td className="py-0.5">
                           {c.from ?? "Uncategorized"} → {c.to ?? "Uncategorized"}
