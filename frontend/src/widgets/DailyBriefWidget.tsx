@@ -105,7 +105,12 @@ export function briefSteps(b: DailyBrief): BriefStep[] {
     steps.push({ label: "Set aside for goals", amountMinor: sum(setAside), note: note(setAside) });
   }
   if (held.length > 0) {
-    steps.push({ label: "Held back for spending caps", amountMinor: sum(held), note: note(held) });
+    // The hold-back is one obligation per remaining day: one line, not a list of days.
+    steps.push({
+      label: "Held back for spending caps",
+      amountMinor: sum(held),
+      note: `Over ${held.length} day${held.length === 1 ? "" : "s"}, through ${formatDay(held[held.length - 1]!.date)}`,
+    });
   }
   // Everything above ends at the lowest balance: money arriving before the lowest day adds to
   // it, and what goes out after it does not count, so this step makes the lines add up.
@@ -241,7 +246,7 @@ export default defineWidget({
                 money in.{" "}
                 <button
                   type="button"
-                  className="text-blue-600 underline"
+                  className="text-blue-600 underline dark:text-blue-400"
                   onClick={() => void pickIncome("")}
                 >
                   Use the next income

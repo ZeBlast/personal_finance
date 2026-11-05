@@ -56,8 +56,13 @@ export function AnnotatedForecast({
   const lowName = low.afterToday ? "Lowest after today" : "Lowest";
   const lowAt = days.findIndex((d) => d.date === low.date);
   const lowOnRight = lowAt >= 0 && x(lowAt) > width - 200;
-  // Always above the line, and at least 8px clear of the axis or baseline under it.
-  const lowLabelY = y(low.balanceMinor) - 8;
+  // Above whichever line is higher at that day (the scenario's dashed one may be), 8px clear of
+  // it, and never off the top of the chart.
+  const scenarioAtLow = lowAt >= 0 ? other?.days[lowAt]?.balanceMinor : undefined;
+  const lowLabelY = Math.max(
+    12,
+    y(Math.max(low.balanceMinor, scenarioAtLow ?? low.balanceMinor)) - 8,
+  );
   // Top and zero, then the bottom or the middle, whichever has room for its label.
   const ticks = [...new Set([top, 0, Math.abs(y(bottom) - y(0)) > 16 ? bottom : top / 2])];
   const shown = hover === null ? null : days[hover]!;
@@ -145,8 +150,12 @@ export function AnnotatedForecast({
             strokeWidth={2}
             className="pf-draw stroke-blue-600 dark:stroke-blue-400"
           />
-          {days.map((d, i) =>
-            d.events.length === 0 ? null : (
+          {days.map((d, i) => {
+            // The daily cap hold-back shapes the line but is not an event: no dot for it.
+            const real = d.events.filter((e) => e.source !== "cap_holdback");
+            if (real.length === 0) return null;
+            const change = real.reduce((n, e) => n + e.amountMinor, 0);
+            return (
               <circle
                 key={d.date}
                 data-testid="event-mark"
@@ -154,10 +163,10 @@ export function AnnotatedForecast({
                 cy={y(d.balanceMinor)}
                 r={4}
                 strokeWidth={2}
-                className={`pf-fade-late stroke-white dark:stroke-slate-900 ${d.changeMinor < 0 ? "fill-red-600 dark:fill-red-400" : "fill-green-600 dark:fill-green-400"}`}
+                className={`pf-fade-late stroke-white dark:stroke-slate-900 ${change < 0 ? "fill-red-600 dark:fill-red-400" : "fill-green-600 dark:fill-green-400"}`}
               />
-            ),
-          )}
+            );
+          })}
           {lowAt >= 0 && (
             <text
               x={lowOnRight ? x(lowAt) - 6 : x(lowAt) + 6}

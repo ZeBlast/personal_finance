@@ -2,6 +2,34 @@ import type { Forecast } from "../types/planning";
 import type { DailyBrief } from "../widgets/DailyBriefWidget";
 import { formatDay } from "./time";
 
+/**
+ * The spending caps held back, which the forecast spreads over every remaining day: the total, how
+ * many days it covers and the last of them, or null when nothing is held back. Pure.
+ */
+export function holdBackSummary(
+  days: Forecast["days"],
+): { totalMinor: number; days: number; through: string } | null {
+  let totalMinor = 0;
+  let count = 0;
+  let through = "";
+  for (const d of days) {
+    const held = d.events.filter((e) => e.source === "cap_holdback");
+    if (held.length === 0) continue;
+    totalMinor += held.reduce((n, e) => n - e.amountMinor, 0);
+    count += 1;
+    through = d.date;
+  }
+  return count === 0 ? null : { totalMinor, days: count, through };
+}
+
+/** The one line that stands for the daily cap hold-back in lists. Pure. */
+export function holdBackLine(
+  s: { totalMinor: number; days: number; through: string },
+  money: (n: number) => string,
+): string {
+  return `Spending caps held back: ${money(s.totalMinor)} over ${s.days} day${s.days === 1 ? "" : "s"} (through ${formatDay(s.through)})`;
+}
+
 /** Forecast days with an extra purchase on one day, carried through every day after it. Pure. */
 export function withExtraSpend(
   days: Forecast["days"],

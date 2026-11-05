@@ -6,11 +6,14 @@ import { flowPath } from "../components/views/CashFlowMap";
 import { yearSentence, type YearReport } from "../pages/YearPage";
 import type { Forecast } from "../types/planning";
 import { hasFrame, readAppearance, appearanceConfig } from "../widgets/appearance";
+import { formatDay } from "./time";
 import type { DailyBrief } from "../widgets/DailyBriefWidget";
 import {
   attentionItems,
   cashFlowModel,
   heatmapWeeks,
+  holdBackLine,
+  holdBackSummary,
   lowestOf,
   lowestTile,
   merchantChange,
@@ -258,5 +261,28 @@ describe("a widget's border", () => {
     const saved = appearanceConfig({ title: "", hideHeader: false, accent: "", frame: "never" });
     expect(readAppearance(saved).frame).toBe("never");
     expect(readAppearance({ _frame: "sideways" }).frame).toBe("auto");
+  });
+});
+
+describe("the cap hold-back summary", () => {
+  it("stands for every held-back day in one line", () => {
+    const held = (date: string, amountMinor: number) => ({
+      date,
+      balanceMinor: 0,
+      changeMinor: amountMinor,
+      events: [{ label: "Spending caps", amountMinor, source: "cap_holdback" as const }],
+    });
+    const days = [
+      ...forecast.days,
+      held("2026-11-04", -2_500),
+      held("2026-11-05", -2_500),
+      held("2026-11-06", -2_501),
+    ];
+    const s = holdBackSummary(days)!;
+    expect(s).toEqual({ totalMinor: 7_501, days: 3, through: "2026-11-06" });
+    expect(holdBackLine(s, money)).toBe(
+      `Spending caps held back: $75.01 over 3 days (through ${formatDay("2026-11-06")})`,
+    );
+    expect(holdBackSummary(forecast.days)).toBeNull();
   });
 });

@@ -29,6 +29,35 @@ describe("annotated forecast", () => {
     expect(screen.queryByTestId("scenario-line")).toBeNull();
   });
 
+  it("keeps the Lowest label above a scenario line that runs higher", () => {
+    const higher = days.map((d) => ({ ...d, balanceMinor: d.balanceMinor + 30_000 }));
+    render(<AnnotatedForecast forecast={forecast} compare={{ label: "Raise", days: higher }} />);
+    const label = screen.getByText(/^Lowest \$/);
+    const path = screen.getByTestId("scenario-line").getAttribute("d")!;
+    const scenarioY = Number([...path.matchAll(/V([\d.]+)/g)].at(-1)![1]);
+    expect(Number(label.getAttribute("y"))).toBeLessThanOrEqual(scenarioY - 8);
+  });
+
+  it("marks only the days something real happens, not the daily cap hold-back", () => {
+    const held = days.map((d, i) => ({
+      ...d,
+      events:
+        i === 1
+          ? [
+              {
+                label: "Spending caps (rest of November)",
+                amountMinor: -5_000,
+                source: "cap_holdback" as const,
+              },
+            ]
+          : i === 2
+            ? [{ label: "Rent", amountMinor: -10_000, source: "recurring" as const }]
+            : [],
+    }));
+    render(<AnnotatedForecast forecast={{ ...forecast, days: held }} />);
+    expect(screen.getAllByTestId("event-mark")).toHaveLength(1);
+  });
+
   it("draws a scenario line and names it in the legend when comparing", () => {
     const lower = days.map((d) => ({ ...d, balanceMinor: d.balanceMinor - 5_000 }));
     render(

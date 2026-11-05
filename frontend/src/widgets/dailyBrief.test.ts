@@ -73,7 +73,8 @@ describe("how safe-to-spend is worked out", () => {
       obligations: [
         ...brief.obligations,
         { label: "Trip", date: "2026-10-14", amountMinor: -20_000, source: "goal" },
-        { label: "Spending caps", date: "2026-10-13", amountMinor: -5_000, source: "cap_holdback" },
+        { label: "Spending caps", date: "2026-10-13", amountMinor: -2_500, source: "cap_holdback" },
+        { label: "Spending caps", date: "2026-10-14", amountMinor: -2_500, source: "cap_holdback" },
       ],
       obligationsMinor: -175_000,
       lowest: { date: "2026-10-14", balanceMinor: 425_000 },
@@ -91,6 +92,8 @@ describe("how safe-to-spend is worked out", () => {
     expect(steps[1]!.note).toBe("City Apartments $1,500.00");
     expect(steps[2]!.amountMinor).toBe(-20_000);
     expect(steps[3]!.amountMinor).toBe(-5_000);
+    // Two days of hold-back are one line, not one per day.
+    expect(steps[3]!.note).toMatch(/^Over 2 days, through /);
   });
 });
 

@@ -17,7 +17,7 @@ import {
 } from "../lib/scenarios";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
-import { lowestTile } from "../lib/views";
+import { holdBackLine, holdBackSummary, lowestTile } from "../lib/views";
 import { CADENCE_LABEL } from "../lib/insights";
 import type {
   BillStatus,
@@ -146,7 +146,11 @@ function ForecastView() {
     );
   if (!data) return loading ? <Loading lines={5} /> : null;
   const money = (n: number) => formatMinor(n, data.currency);
-  const upcoming = data.days.filter((d) => d.events.length > 0);
+  // The daily cap hold-back would fill the table, so it gets one summary row below the rest.
+  const upcoming = data.days
+    .map((d) => ({ ...d, events: d.events.filter((e) => e.source !== "cap_holdback") }))
+    .filter((d) => d.events.length > 0);
+  const held = holdBackSummary(data.days);
   const low = lowestTile(data);
   const altLow = compared ? lowestTile(compared.alt) : null;
 
@@ -338,7 +342,16 @@ function ForecastView() {
               </tr>
             )),
           )}
-          {upcoming.length === 0 && (
+          {held && (
+            <tr className="border-t border-slate-100 dark:border-slate-800">
+              <td colSpan={2} className="py-1 text-slate-600 dark:text-slate-300">
+                {holdBackLine(held, money)}
+              </td>
+              <td className="py-1 text-right tabular-nums">{money(-held.totalMinor)}</td>
+              <td />
+            </tr>
+          )}
+          {upcoming.length === 0 && !held && (
             <tr>
               <td colSpan={4} className="py-3 text-slate-500">
                 Nothing expected yet. Add expected transactions on the calendar, or set your card
