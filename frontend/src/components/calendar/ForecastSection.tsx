@@ -15,8 +15,9 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   recurring: "Found recurring",
   debt_plan: "Debt payoff plan",
   interest: "Interest (estimated from the APY)",
-  goal: "Goal contribution",
+  goal: "Set aside for a goal",
   cap_holdback: "Spending caps (held back)",
+  instalment: "Instalment payment",
   scenario: "What-if",
 };
 

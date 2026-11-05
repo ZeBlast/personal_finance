@@ -90,8 +90,9 @@ const SOURCE_LABEL = {
   pending: "Pending",
   debt_plan: "Debt plan",
   interest: "Interest (from the APY)",
-  goal: "Goal",
-  cap_holdback: "Spending caps",
+  goal: "Set aside for a goal",
+  cap_holdback: "Spending caps (held back)",
+  instalment: "Instalment payment",
   scenario: "What-if",
 };
 

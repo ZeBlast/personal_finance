@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { categories, subscriptionReviews, trackedSubscriptions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, isRealDate } from "../utils/dates.js";
@@ -27,6 +27,7 @@ import type { ScenarioAdjustment } from "./scenario.service.js";
  *   continued on their schedule. One the user marked cancelled, as a subscription or in the
  *   subscription review, is left out. A recurring item with the same merchant as an expected
  *   transaction is counted once.
+ * - The payments still to come on purchases paid in instalments, from the repayments linked so far.
  * - Credit card bills, for cards whose statement dates are set: what is left of the latest statement
  *   on its due day, and the next statement (as charged so far) on the following due day.
  * - Expected and recurring charges to such a card: on the due day of the bill they will be on, since
@@ -64,6 +65,7 @@ export interface ForecastEvent {
     | "interest"
     | "goal"
     | "cap_holdback"
+    | "instalment"
     | "scenario";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
@@ -183,6 +185,91 @@ export function goalEvents(
     }
   }
   return out;
+}
+
+/** How far apart repayments are taken to be when only one has been made yet (Pay in 4 is fortnightly). */
+const DEFAULT_INSTALMENT_GAP = 14;
+
+export interface InstalmentPlan {
+  merchant: string;
+  instalments: number;
+  purchaseMinor: number;
+  /** The repayments already linked, oldest first. */
+  repayments: Array<{ date: string; amountMinor: number; accountId: number }>;
+}
+
+/**
+ * The payments still to come on purchases paid in instalments: what is left of the purchase split
+ * over the payments left (the remainder on the last), on the rhythm of the repayments so far
+ * (their median gap), after the latest one and from its account. A plan that is fully paid, or has
+ * no repayment yet, projects nothing. Pure.
+ */
+export function instalmentEvents(
+  plans: InstalmentPlan[],
+  end: string,
+): Array<{ date: string; accountId: number; event: ForecastEvent }> {
+  const out: Array<{ date: string; accountId: number; event: ForecastEvent }> = [];
+  for (const p of plans) {
+    const latest = p.repayments[p.repayments.length - 1];
+    const payments = p.instalments - p.repayments.length;
+    const left = p.purchaseMinor - p.repayments.reduce((n, r) => n + r.amountMinor, 0);
+    if (!latest || payments <= 0 || left <= 0) continue;
+    const gaps = p.repayments
+      .slice(1)
+      .map((r, i) =>
+        Math.round((Date.parse(r.date) - Date.parse(p.repayments[i]!.date)) / 86_400_000),
+      )
+      .filter((g) => g > 0)
+      .sort((a, b) => a - b);
+    const mid = Math.floor(gaps.length / 2);
+    const gap =
+      gaps.length === 0
+        ? DEFAULT_INSTALMENT_GAP
+        : Math.max(
+            1,
+            Math.round(gaps.length % 2 === 1 ? gaps[mid]! : (gaps[mid - 1]! + gaps[mid]!) / 2),
+          );
+    const each = Math.floor(left / payments);
+    for (let k = 1; k <= payments; k += 1) {
+      const date = addDays(latest.date, gap * k);
+      if (date > end) break;
+      out.push({
+        date,
+        accountId: latest.accountId,
+        event: {
+          label: `Instalment for ${p.merchant}`,
+          amountMinor: -(k === payments ? left - each * (payments - 1) : each),
+          source: "instalment",
+        },
+      });
+    }
+  }
+  return out;
+}
+
+function instalmentPlans(db: AppDb, currency: string): InstalmentPlan[] {
+  const purchases = db.all<{
+    id: number;
+    instalments: number;
+    amount: number;
+    merchant: string;
+  }>(sql`
+    select ip.transaction_id as id, ip.instalments, t.amount_minor as amount,
+      coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name) as merchant
+    from instalment_purchases ip join transactions t on t.id = ip.transaction_id
+    where t.currency = ${currency}`);
+  const repayments = db.all<{ of: number; day: string; amount: number; account: number }>(sql`
+    select instalment_of_id as "of", coalesce(authorized_date, date) as day,
+      amount_minor as amount, account_id as account
+    from transactions where instalment_of_id is not null order by day, id`);
+  return purchases.map((p) => ({
+    merchant: p.merchant,
+    instalments: p.instalments,
+    purchaseMinor: p.amount,
+    repayments: repayments
+      .filter((r) => r.of === p.id)
+      .map((r) => ({ date: r.day, amountMinor: r.amount, accountId: r.account })),
+  }));
 }
 
 export function cashForecast(
@@ -357,6 +444,20 @@ export function cashForecast(
       if (!changed) continue;
       if (bill) addCharge(bill, d, changed);
       else add(d, changed);
+    }
+  }
+
+  // 2b. What is left to pay on purchases paid in instalments. The repayments already made are
+  // transfers, so step 2 never sees their series: this is the only place the rest is counted.
+  const accountById = new Map(all.map((a) => [a.id, a]));
+  for (const { date, accountId, event } of instalmentEvents(
+    instalmentPlans(db, settings.currency),
+    end,
+  )) {
+    if (accountById.get(accountId)?.type === "depository") add(date, event);
+    else {
+      const bill = billByAccount.get(accountId);
+      if (bill) addCharge(bill, date, event);
     }
   }
 

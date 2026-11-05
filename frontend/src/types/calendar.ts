@@ -157,6 +157,7 @@ export interface ForecastEvent {
     | "interest"
     | "goal"
     | "cap_holdback"
+    | "instalment"
     | "scenario";
   seriesKey?: string;
   cadence?: "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { transactions } from "../../drizzle/schema.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { summarize } from "./services/analytics.service.js";
+import { cashForecast, instalmentEvents } from "./services/forecast.service.js";
 import { detectInternalTransfers } from "./services/transfer.service.js";
 import { refundCandidates, refundReview } from "./services/refund.service.js";
 import { makeTestApp } from "./test-helpers.js";
@@ -224,5 +225,43 @@ describe("a purchase paid in instalments", () => {
     expect(await get(repayments[3]!)).toMatchObject({ instalmentOfId: null, isTransfer: false });
     expect((await get(purchase)).instalmentPlan?.repaymentCount).toBe(2);
     expect(spent()).toBe(12_000 + 10_000);
+  });
+
+  it("keeps the rest of a plan in the cash forecast, and counts spending once", async () => {
+    const { t, purchase, repayments, link, spent } = await setup();
+    await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(200);
+    await link(repayments[0]!, purchase);
+    await link(repayments[1]!, purchase);
+    const f = cashForecast(t.db, { today: "2026-09-20", days: 60 });
+    const found = f.days.flatMap((d) => d.events.map((e) => ({ date: d.date, ...e })));
+    expect(
+      found.filter((e) => e.source === "instalment").map((e) => [e.date, e.label, e.amountMinor]),
+    ).toEqual([
+      ["2026-09-29", "Instalment for Gadget Store", -5000],
+      ["2026-10-13", "Instalment for Gadget Store", -5000],
+    ]);
+    // The repayments' own series is not projected on top.
+    expect(found.filter((e) => e.source === "recurring")).toEqual([]);
+    // $200 for the purchase, and the two repayments not yet linked.
+    expect(spent()).toBe(20_000 + 10_000);
+  });
+
+  it("splits what is left over the payments left, remainder last, and skips a finished plan", () => {
+    const plan = {
+      merchant: "Shop",
+      instalments: 3,
+      purchaseMinor: 10_000,
+      repayments: [{ date: "2026-09-01", amountMinor: 3333, accountId: 1 }],
+    };
+    const out = instalmentEvents([plan], "2026-12-31");
+    expect(out.map((o) => [o.date, o.event.amountMinor])).toEqual([
+      ["2026-09-15", -3333],
+      ["2026-09-29", -3334],
+    ]);
+    expect(instalmentEvents([{ ...plan, instalments: 1 }], "2026-12-31")).toEqual([]);
+    expect(instalmentEvents([{ ...plan, repayments: [] }], "2026-12-31")).toEqual([]);
   });
 });
