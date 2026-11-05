@@ -290,6 +290,12 @@ export interface Rule {
   enabled: boolean;
 }
 
+/** A rule as saved, with the batch its save recorded (null when nothing moved). */
+export interface SavedRule extends Rule {
+  batchId: number | null;
+  changeCount: number;
+}
+
 export interface RuleChange {
   id: number;
   date: string;

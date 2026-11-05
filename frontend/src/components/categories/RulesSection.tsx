@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { categoryOptions } from "../../hooks/useCategories";
 import { formatMinor } from "../../lib/money";
+import { announceDataChanged } from "../../lib/syncEvents";
 import { toast } from "../../lib/toast";
 import type {
   ApplyResult,
@@ -10,6 +11,7 @@ import type {
   Category,
   ChangeBatch,
   Rule,
+  SavedRule,
   RuleChange,
   RuleDirection,
   RuleField,
@@ -35,11 +37,12 @@ import { buttonClass, inputClass, primaryClass, type Notice } from "./shared";
 
 const PAGE = 50;
 
-/** Puts a batch back and says what happened, in a toast. */
+/** Puts a batch back and says what happened, in a toast; other views then reload. */
 async function undoBatch(id: number, then?: () => void): Promise<void> {
   try {
     const result = await api<BatchUndoResult>(`/rules/batches/${id}/undo`, { method: "POST" });
     toast(batchUndoText(result));
+    announceDataChanged();
   } catch (e) {
     toast(errorMessage(e, "Could not undo that."), { kind: "error" });
   }
@@ -69,6 +72,7 @@ export function RuleForm({
   // Changes beyond the first page, loaded by "Show more".
   const [more, setMore] = useState<RuleChange[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const options = categoryOptions(categories.filter((c) => c.active));
@@ -88,9 +92,13 @@ export function RuleForm({
     [field, operator, matchValue, direction, categoryId, rule, scope],
   );
 
+  const latestBody = useRef(previewBody);
+  latestBody.current = previewBody;
+
   // Show how many existing transactions the rule matches, as it is being written.
   useEffect(() => {
     setMore([]);
+    setPreviewError(null);
     if (matchValue.trim() === "") {
       setPreview(null);
       return;
@@ -99,7 +107,11 @@ export function RuleForm({
     const timer = window.setTimeout(() => {
       api<RulePreview>("/rules/preview", { method: "POST", body: JSON.stringify(previewBody) })
         .then((result) => !cancelled && setPreview(result))
-        .catch(() => !cancelled && setPreview(null));
+        .catch((e) => {
+          if (cancelled) return;
+          setPreview(null);
+          setPreviewError(errorMessage(e, "Could not work out what this rule would change."));
+        });
     }, 250);
     return () => {
       cancelled = true;
@@ -110,33 +122,30 @@ export function RuleForm({
   const shown = [...(preview?.changes ?? []), ...more];
 
   async function showMore(): Promise<void> {
+    const asked = previewBody;
     setLoadingMore(true);
     try {
       const next = await api<RulePreview>("/rules/preview", {
         method: "POST",
-        body: JSON.stringify({ ...previewBody, offset: shown.length, limit: PAGE }),
+        body: JSON.stringify({ ...asked, offset: shown.length, limit: PAGE }),
       });
-      setMore((m) => [...m, ...(next.changes ?? [])]);
+      // The inputs changed while this was loading: these rows belong to an older question.
+      if (latestBody.current === asked) setMore((m) => [...m, ...(next.changes ?? [])]);
     } catch (e) {
-      setError(errorMessage(e, "Could not load more."));
+      if (latestBody.current === asked) setError(errorMessage(e, "Could not load more."));
     } finally {
       setLoadingMore(false);
     }
   }
 
   // After a save that moved transactions: say how many, with a way to put them back.
-  async function announceMoved(ruleId: number): Promise<void> {
-    try {
-      const batch = (await api<ChangeBatch[]>("/rules/batches")).find(
-        (b) => b.ruleId === ruleId && b.kind === "rule_saved" && b.undoneAt === null,
-      );
-      if (!batch || batch.changeCount === 0) return;
-      toast(`Moved ${batch.changeCount} transaction${batch.changeCount === 1 ? "" : "s"}.`, {
-        action: { label: "Undo", run: () => undoBatch(batch.id) },
-      });
-    } catch {
-      // The rule is saved either way; the Recent changes list still has the batch.
-    }
+  function announceMoved(saved: { batchId: number | null; changeCount: number }): void {
+    if (saved.batchId === null) return;
+    announceDataChanged();
+    const batchId = saved.batchId;
+    toast(`Moved ${saved.changeCount} transaction${saved.changeCount === 1 ? "" : "s"}.`, {
+      action: { label: "Undo", run: () => undoBatch(batchId) },
+    });
   }
 
   async function submit(event: FormEvent): Promise<void> {
@@ -153,18 +162,20 @@ export function RuleForm({
     };
     try {
       if (rule) {
-        await api(`/rules/${rule.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ ...body, apply: true }),
-        });
-        await announceMoved(rule.id);
+        announceMoved(
+          await api<SavedRule>(`/rules/${rule.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ ...body, apply: true }),
+          }),
+        );
         onDone("Rule saved.");
       } else {
-        const created = await api<Rule>("/rules", {
-          method: "POST",
-          body: JSON.stringify({ ...body, scope }),
-        });
-        await announceMoved(created.id);
+        announceMoved(
+          await api<SavedRule>("/rules", {
+            method: "POST",
+            body: JSON.stringify({ ...body, scope }),
+          }),
+        );
         onDone("Rule added at the top of the list.");
       }
     } catch (e) {
@@ -309,6 +320,11 @@ export function RuleForm({
             </p>
           </div>
         )}
+        {previewError && (
+          <p role="alert" className="text-xs text-red-600">
+            {previewError}
+          </p>
+        )}
         {preview?.changeCount !== undefined && (
           // What saving really changes, after the order of the rules and hand-picked categories.
           <div className="rounded-md bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
@@ -405,15 +421,21 @@ export function RulesSection({ categories }: { categories: Category[] }) {
   const [removing, setRemoving] = useState<Rule | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [batches, setBatches] = useState<ChangeBatch[]>([]);
+  // null: the list of recent changes could not be loaded (the rules still show).
+  const [batches, setBatches] = useState<ChangeBatch[] | null>([]);
+  const [undoing, setUndoing] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setRules(await api<Rule[]>("/rules"));
-      setBatches(await api<ChangeBatch[]>("/rules/batches"));
     } catch (e) {
       setNotice({ kind: "error", text: errorMessage(e, "Could not load the rules.") });
       setRules([]);
+    }
+    try {
+      setBatches(await api<ChangeBatch[]>("/rules/batches"));
+    } catch {
+      setBatches(null);
     }
   }, []);
   useEffect(() => {
@@ -463,7 +485,14 @@ export function RulesSection({ categories }: { categories: Category[] }) {
             className={buttonClass}
             onClick={() =>
               void run(
-                () => api<ApplyResult>("/rules/apply", { method: "POST", body: "{}" }),
+                async () => {
+                  const result = await api<ApplyResult>("/rules/apply", {
+                    method: "POST",
+                    body: "{}",
+                  });
+                  if (result.changed > 0) announceDataChanged();
+                  return result;
+                },
                 (r) =>
                   r.changed === 0
                     ? "Everything already matches the rules."
@@ -559,11 +588,14 @@ export function RulesSection({ categories }: { categories: Category[] }) {
         )}
       </ol>
 
-      {batches.length > 0 && (
+      {(batches === null || batches.length > 0) && (
         <details className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
           <summary className="cursor-pointer font-medium">Recent changes</summary>
+          {batches === null && (
+            <p className="mt-2 text-xs text-slate-500">Recent changes could not be loaded.</p>
+          )}
           <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-700">
-            {batches.map((b) => (
+            {batches?.map((b) => (
               <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
                   <div>{b.label}</div>
@@ -577,9 +609,15 @@ export function RulesSection({ categories }: { categories: Category[] }) {
                 ) : (
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={busy || undoing}
                     className={buttonClass}
-                    onClick={() => void undoBatch(b.id, () => void load())}
+                    onClick={() => {
+                      setUndoing(true);
+                      void undoBatch(b.id, () => {
+                        setUndoing(false);
+                        void load();
+                      });
+                    }}
                   >
                     Undo
                   </button>

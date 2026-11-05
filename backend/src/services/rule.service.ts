@@ -416,6 +416,21 @@ function touchedIds(db: Reader, ruleId: number): number[] {
     .map((row) => row.id);
 }
 
+/** A saved rule, with the batch its save recorded (null when nothing was moved or applied). */
+export type SavedRule = RuleDto & { batchId: number | null; changeCount: number };
+
+function withBatch(db: AppDb, ruleId: number, batchId: number | null): SavedRule {
+  const changeCount =
+    batchId === null
+      ? 0
+      : (db
+          .select({ n: categoryChangeBatches.changeCount })
+          .from(categoryChangeBatches)
+          .where(eq(categoryChangeBatches.id, batchId))
+          .get()?.n ?? 0);
+  return { ...getRule(db, ruleId), batchId, changeCount };
+}
+
 /**
  * Saves a rule. `scope: "new"` makes it file only transactions from today on; `"all"` also files
  * the past straight away, as a batch that can be undone. Without a scope nothing is applied.
@@ -423,9 +438,10 @@ function touchedIds(db: Reader, ruleId: number): number[] {
 export function createRule(
   db: AppDb,
   input: Omit<RuleInput, "appliesFrom"> & { scope?: "new" | "all" | undefined },
-): RuleDto {
+): SavedRule {
   requireActiveCategory(db, input.categoryId);
   const now = new Date().toISOString();
+  let batchId: number | null = null;
   const id = db.transaction((tx) => {
     const lowest = tx
       .select({ priority: transactionRules.priority })
@@ -452,16 +468,16 @@ export function createRule(
       .returning({ id: transactionRules.id })
       .get();
     if (input.scope === "all") {
-      applyRules(tx, touchedIds(tx, created.id), {
+      batchId = applyRules(tx, touchedIds(tx, created.id), {
         kind: "rule_saved",
         ruleId: created.id,
         label: `Saved rule "${input.name}"`,
         now,
-      });
+      }).batchId;
     }
     return created.id;
   });
-  return getRule(db, id);
+  return withBatch(db, id, batchId);
 }
 
 /** Changes a rule. With `apply`, the changed rule is also run over the past, as a batch. */
@@ -469,26 +485,27 @@ export function updateRule(
   db: AppDb,
   id: number,
   patch: Partial<RuleInput> & { apply?: boolean | undefined },
-): RuleDto {
+): SavedRule {
   const before = getRule(db, id);
   if (patch.categoryId !== undefined) requireActiveCategory(db, patch.categoryId);
   const { apply, ...changes } = patch;
   const now = new Date().toISOString();
+  let batchId: number | null = null;
   db.transaction((tx) => {
     tx.update(transactionRules)
       .set({ ...changes, updatedAt: now })
       .where(eq(transactionRules.id, id))
       .run();
     if (apply) {
-      applyRules(tx, touchedIds(tx, id), {
+      batchId = applyRules(tx, touchedIds(tx, id), {
         kind: "rule_saved",
         ruleId: id,
         label: `Changed rule "${changes.name ?? before.name}"`,
         now,
-      });
+      }).batchId;
     }
   });
-  return getRule(db, id);
+  return withBatch(db, id, batchId);
 }
 
 /**

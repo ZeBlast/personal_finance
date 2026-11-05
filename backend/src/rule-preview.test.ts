@@ -162,6 +162,34 @@ describe("previewing a rule's real effect", () => {
     expect((await t.call("get", "/api/rules/batches")).body[0].undoneAt).not.toBeNull();
   });
 
+  it("a save answers with the batch it recorded, or null when nothing moved", async () => {
+    const { t, dining, coffeeRule } = await setup();
+    const created = (
+      await t
+        .call("post", "/api/rules")
+        .send({ ...coffeeRule, categoryId: dining, scope: "all" })
+        .expect(201)
+    ).body;
+    const [batch] = (await t.call("get", "/api/rules/batches")).body;
+    expect(created.batchId).toBe(batch.id);
+    expect(created.changeCount).toBe(3);
+    const again = (
+      await t
+        .call("patch", `/api/rules/${created.id}`)
+        .send({ name: "Renamed", apply: true })
+        .expect(200)
+    ).body;
+    expect(again.batchId).toBeNull();
+    expect(again.changeCount).toBe(0);
+    const plain = (
+      await t
+        .call("post", "/api/rules")
+        .send({ ...coffeeRule, categoryId: dining })
+        .expect(201)
+    ).body;
+    expect(plain.batchId).toBeNull();
+  });
+
   it("keeps a newer batch's category when an older batch is undone", async () => {
     const { t, dining, errands, coffeeRule, categoryOf, cart } = await setup();
     const rule = (
