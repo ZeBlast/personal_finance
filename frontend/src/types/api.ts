@@ -281,6 +281,8 @@ export interface Rule {
   matchValue: string;
   /** `in` (money coming in), `out` (money going out), or null for either. */
   direction: RuleDirection | null;
+  /** `YYYY-MM-DD`: the rule ignores transactions dated before this day; null covers every date. */
+  appliesFrom: string | null;
   categoryId: number;
   categoryName: string;
   categoryActive: boolean;
@@ -288,21 +290,47 @@ export interface Rule {
   enabled: boolean;
 }
 
+export interface RuleChange {
+  id: number;
+  date: string;
+  merchant: string;
+  amountMinor: number;
+  from: string | null;
+  to: string | null;
+}
+
 export interface RulePreview {
   matchCount: number;
   sample: Array<{ id: number; date: string; merchant: string; amountMinor: number }>;
   /** With a category: how many transactions saving the rule would really change. */
   changeCount?: number;
-  changes?: Array<{
-    id: number;
-    date: string;
-    merchant: string;
-    amountMinor: number;
-    from: string | null;
-    to: string | null;
+  /** One page of those changes, newest first. */
+  changes?: RuleChange[];
+  /** The change to spending in each category (transfers and income left out), largest first. */
+  totals?: Array<{
+    categoryId: number | null;
+    name: string | null;
+    changeMinor: number;
+    count: number;
   }>;
   /** Matches whose category was chosen by hand, which rules never change. */
   manualCount?: number;
+}
+
+/** A saved set of category changes made by a rule, which can be undone. */
+export interface ChangeBatch {
+  id: number;
+  kind: "rule_saved" | "rules_applied";
+  label: string;
+  ruleId: number | null;
+  changeCount: number;
+  createdAt: string;
+  undoneAt: string | null;
+}
+
+export interface BatchUndoResult {
+  restored: number;
+  kept: Array<{ id: number; date: string; merchant: string; category: string | null }>;
 }
 
 export interface ApplyResult {

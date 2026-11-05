@@ -1,24 +1,50 @@
-import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError, errorMessage } from "../../api/client";
+import { useApi } from "../../hooks/useApi";
 import { categoryOptions } from "../../hooks/useCategories";
+import { formatMinor } from "../../lib/money";
+import { toast } from "../../lib/toast";
 import type {
   ApplyResult,
+  BatchUndoResult,
   Category,
+  ChangeBatch,
   Rule,
+  RuleChange,
   RuleDirection,
   RuleField,
   RuleOperator,
   RulePreview,
+  Settings,
 } from "../../types/api";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { Select } from "../common/Select";
 import { OwnNamesSection } from "./OwnNamesSection";
-import { FIELD_LABEL, OPERATOR_LABEL, ruleEffectText } from "./ruleText";
+import {
+  batchUndoText,
+  FIELD_LABEL,
+  OPERATOR_LABEL,
+  ruleEffectText,
+  ruleTotalsText,
+} from "./ruleText";
 import { buttonClass, inputClass, primaryClass, type Notice } from "./shared";
 
 // ---------------------------------------------------------------------------------------
 // Rules
 // ---------------------------------------------------------------------------------------
+
+const PAGE = 50;
+
+/** Puts a batch back and says what happened, in a toast. */
+async function undoBatch(id: number, then?: () => void): Promise<void> {
+  try {
+    const result = await api<BatchUndoResult>(`/rules/batches/${id}/undo`, { method: "POST" });
+    toast(batchUndoText(result));
+  } catch (e) {
+    toast(errorMessage(e, "Could not undo that."), { kind: "error" });
+  }
+  then?.();
+}
 
 export function RuleForm({
   rule,
@@ -38,31 +64,40 @@ export function RuleForm({
   const [direction, setDirection] = useState<RuleDirection | "">(rule?.direction ?? "");
   const [categoryId, setCategoryId] = useState(rule ? String(rule.categoryId) : "");
   const [name, setName] = useState(rule?.name ?? "");
+  const [scope, setScope] = useState<"new" | "all">("all");
   const [preview, setPreview] = useState<RulePreview | null>(null);
+  // Changes beyond the first page, loaded by "Show more".
+  const [more, setMore] = useState<RuleChange[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const options = categoryOptions(categories.filter((c) => c.active));
+  const currency = useApi<Settings>("/settings").data?.currency ?? "USD";
+
+  // What the preview asks about: the same things saving would use.
+  const previewBody = useMemo(
+    () => ({
+      field,
+      operator,
+      matchValue,
+      direction: direction || null,
+      // With a category (and the rule being edited), it also says what would really change.
+      ...(categoryId ? { categoryId: Number(categoryId) } : {}),
+      ...(rule ? { ruleId: rule.id } : { scope }),
+    }),
+    [field, operator, matchValue, direction, categoryId, rule, scope],
+  );
 
   // Show how many existing transactions the rule matches, as it is being written.
   useEffect(() => {
+    setMore([]);
     if (matchValue.trim() === "") {
       setPreview(null);
       return;
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      api<RulePreview>("/rules/preview", {
-        method: "POST",
-        body: JSON.stringify({
-          field,
-          operator,
-          matchValue,
-          direction: direction || null,
-          // With a category (and the rule being edited), it also says what would really change.
-          ...(categoryId ? { categoryId: Number(categoryId) } : {}),
-          ...(rule ? { ruleId: rule.id } : {}),
-        }),
-      })
+      api<RulePreview>("/rules/preview", { method: "POST", body: JSON.stringify(previewBody) })
         .then((result) => !cancelled && setPreview(result))
         .catch(() => !cancelled && setPreview(null));
     }, 250);
@@ -70,7 +105,39 @@ export function RuleForm({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [field, operator, matchValue, direction, categoryId, rule]);
+  }, [previewBody, matchValue]);
+
+  const shown = [...(preview?.changes ?? []), ...more];
+
+  async function showMore(): Promise<void> {
+    setLoadingMore(true);
+    try {
+      const next = await api<RulePreview>("/rules/preview", {
+        method: "POST",
+        body: JSON.stringify({ ...previewBody, offset: shown.length, limit: PAGE }),
+      });
+      setMore((m) => [...m, ...(next.changes ?? [])]);
+    } catch (e) {
+      setError(errorMessage(e, "Could not load more."));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  // After a save that moved transactions: say how many, with a way to put them back.
+  async function announceMoved(ruleId: number): Promise<void> {
+    try {
+      const batch = (await api<ChangeBatch[]>("/rules/batches")).find(
+        (b) => b.ruleId === ruleId && b.kind === "rule_saved" && b.undoneAt === null,
+      );
+      if (!batch || batch.changeCount === 0) return;
+      toast(`Moved ${batch.changeCount} transaction${batch.changeCount === 1 ? "" : "s"}.`, {
+        action: { label: "Undo", run: () => undoBatch(batch.id) },
+      });
+    } catch {
+      // The rule is saved either way; the Recent changes list still has the batch.
+    }
+  }
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -86,10 +153,18 @@ export function RuleForm({
     };
     try {
       if (rule) {
-        await api(`/rules/${rule.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        await api(`/rules/${rule.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...body, apply: true }),
+        });
+        await announceMoved(rule.id);
         onDone("Rule saved.");
       } else {
-        await api("/rules", { method: "POST", body: JSON.stringify(body) });
+        const created = await api<Rule>("/rules", {
+          method: "POST",
+          body: JSON.stringify({ ...body, scope }),
+        });
+        await announceMoved(created.id);
         onDone("Rule added at the top of the list.");
       }
     } catch (e) {
@@ -194,29 +269,97 @@ export function RuleForm({
               </option>
             ))}
           </Select>
-          {preview?.changeCount !== undefined && (
-            // What saving really changes, after the order of the rules and hand-picked categories.
-            <div className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
-              <p className="font-medium text-slate-700 dark:text-slate-200">
-                {ruleEffectText(preview)}
-              </p>
-              {preview.changes && preview.changes.length > 0 && (
-                <ul className="mt-1 space-y-0.5 text-slate-600 dark:text-slate-300">
-                  {preview.changes.slice(0, 5).map((c) => (
-                    <li key={c.id} className="flex justify-between gap-2">
-                      <span className="truncate">
-                        {c.date} · {c.merchant}
-                      </span>
-                      <span className="shrink-0">
-                        {c.from ?? "Uncategorized"} → {c.to ?? "Uncategorized"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
         </div>
+        {rule ? (
+          <p className="text-xs text-slate-500">
+            Saving re-files past transactions too; you can undo it.
+          </p>
+        ) : (
+          <div>
+            <span id={`${id}-scope`} className="block text-sm font-medium">
+              Which transactions
+            </span>
+            <div
+              role="radiogroup"
+              aria-labelledby={`${id}-scope`}
+              className="mt-1 inline-flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600"
+            >
+              {(
+                [
+                  ["new", "Only new transactions"],
+                  ["all", "New and past transactions"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === value}
+                  onClick={() => setScope(value)}
+                  className={`px-3 py-1.5 ${scope === value ? "bg-blue-600 font-medium text-white" : "hover:bg-slate-100 dark:hover:bg-slate-700"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {scope === "new"
+                ? "Only transactions dated from today on."
+                : "Past transactions are re-filed too, and you can undo it."}
+            </p>
+          </div>
+        )}
+        {preview?.changeCount !== undefined && (
+          // What saving really changes, after the order of the rules and hand-picked categories.
+          <div className="rounded-md bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
+            <p className="font-medium text-slate-700 dark:text-slate-200">
+              {ruleEffectText(preview)}
+            </p>
+            {preview.totals && preview.totals.length > 0 && (
+              <p className="mt-1 text-slate-600 dark:text-slate-300">
+                Change to spending: {ruleTotalsText(preview.totals, currency)}
+              </p>
+            )}
+            {shown.length > 0 && (
+              <div className="mt-2 max-h-56 overflow-y-auto">
+                <table className="w-full text-left">
+                  <thead className="text-slate-500">
+                    <tr>
+                      <th className="py-0.5 pr-2 font-medium">Date</th>
+                      <th className="py-0.5 pr-2 font-medium">Merchant</th>
+                      <th className="py-0.5 pr-2 text-right font-medium">Amount</th>
+                      <th className="py-0.5 font-medium">Category</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-600 dark:text-slate-300">
+                    {shown.map((c) => (
+                      <tr key={c.id}>
+                        <td className="py-0.5 pr-2 whitespace-nowrap">{c.date}</td>
+                        <td className="max-w-40 truncate py-0.5 pr-2">{c.merchant}</td>
+                        <td className="py-0.5 pr-2 text-right whitespace-nowrap">
+                          {formatMinor(c.amountMinor, currency)}
+                        </td>
+                        <td className="py-0.5">
+                          {c.from ?? "Uncategorized"} → {c.to ?? "Uncategorized"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {shown.length < preview.changeCount && (
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => void showMore()}
+                className="mt-1 text-blue-600 hover:underline disabled:opacity-60 dark:text-blue-400"
+              >
+                {loadingMore ? "Loading..." : "Show more"}
+              </button>
+            )}
+          </div>
+        )}
         <div>
           <label htmlFor={`${id}-name`} className="block text-sm font-medium">
             Rule name (optional)
@@ -262,9 +405,12 @@ export function RulesSection({ categories }: { categories: Category[] }) {
   const [removing, setRemoving] = useState<Rule | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [batches, setBatches] = useState<ChangeBatch[]>([]);
+
   const load = useCallback(async () => {
     try {
       setRules(await api<Rule[]>("/rules"));
+      setBatches(await api<ChangeBatch[]>("/rules/batches"));
     } catch (e) {
       setNotice({ kind: "error", text: errorMessage(e, "Could not load the rules.") });
       setRules([]);
@@ -412,6 +558,37 @@ export function RulesSection({ categories }: { categories: Category[] }) {
           <li className="py-4 text-sm text-slate-500">No rules yet.</li>
         )}
       </ol>
+
+      {batches.length > 0 && (
+        <details className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+          <summary className="cursor-pointer font-medium">Recent changes</summary>
+          <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-700">
+            {batches.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <div>
+                  <div>{b.label}</div>
+                  <div className="text-xs text-slate-500">
+                    {b.changeCount} transaction{b.changeCount === 1 ? "" : "s"} ·{" "}
+                    {b.createdAt.slice(0, 10)}
+                  </div>
+                </div>
+                {b.undoneAt !== null ? (
+                  <span className="text-xs text-slate-500">Undone</span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={buttonClass}
+                    onClick={() => void undoBatch(b.id, () => void load())}
+                  >
+                    Undo
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {editing && (
         <RuleForm
