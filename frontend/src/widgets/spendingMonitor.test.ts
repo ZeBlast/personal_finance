@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monitorPath, paceText, type SpendingMonitor } from "./SpendingMonitorWidget";
+import { monitorPath, paceText, usualText, type SpendingMonitor } from "./SpendingMonitorWidget";
 
 describe("spending monitor", () => {
   it("asks only for the settings that are filled in", () => {
@@ -18,5 +18,18 @@ describe("spending monitor", () => {
       "25% less than usual by this day of the month.",
     );
     expect(paceText({ ...m, changePercent: null })).toMatch(/^Nothing to compare/);
+  });
+
+  it("says how many months the usual figure comes from", () => {
+    const usd = (n: number) => `$${(n / 100).toFixed(2)}`;
+    expect(usualText({ averageMinor: 3_000, baselineMonths: 1 } as SpendingMonitor, usd)).toBe(
+      "A whole month is usually $30.00 (from 1 month).",
+    );
+    expect(usualText({ averageMinor: 3_000, baselineMonths: 3 } as SpendingMonitor, usd)).toBe(
+      "A whole month is usually $30.00 (from 3 months).",
+    );
+    expect(usualText({ averageMinor: 0, baselineMonths: 0 } as SpendingMonitor, usd)).toBe(
+      "No full month of history to compare with yet.",
+    );
   });
 });

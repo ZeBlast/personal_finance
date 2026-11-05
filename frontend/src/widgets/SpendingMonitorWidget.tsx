@@ -11,9 +11,10 @@ export interface SpendingMonitor {
   spentMinor: number;
   projectedMinor: number;
   averageMinor: number;
+  baselineMonths: number;
   sameDayAverageMinor: number;
   changePercent: number | null;
-  months: Array<{ month: string; spentMinor: number }>;
+  months: Array<{ month: string; spentMinor: number; complete: boolean }>;
   unknownTag: boolean;
 }
 
@@ -37,6 +38,13 @@ export function paceText(m: SpendingMonitor): string {
   if (m.changePercent === null) return "Nothing to compare with in the last three months.";
   if (m.changePercent === 0) return "The same as usual by this day of the month.";
   return `${Math.abs(m.changePercent)}% ${m.changePercent > 0 ? "more" : "less"} than usual by this day of the month.`;
+}
+
+/** What a whole month usually comes to, and from how many months. Pure. */
+export function usualText(m: SpendingMonitor, money: (n: number) => string): string {
+  if (m.baselineMonths === 0) return "No full month of history to compare with yet.";
+  const n = m.baselineMonths;
+  return `A whole month is usually ${money(m.averageMinor)} (from ${n} month${n === 1 ? "" : "s"}).`;
 }
 
 export default defineWidget({
@@ -91,7 +99,7 @@ export default defineWidget({
             <p
               className={`text-xs ${(data.changePercent ?? 0) > 15 ? "text-red-600 dark:text-red-400" : "text-slate-500"}`}
             >
-              {paceText(data)} A whole month is usually {money(data.averageMinor)}.
+              {paceText(data)} {usualText(data, money)}
             </p>
             <div className="flex h-16 items-end gap-1" aria-hidden="true">
               {data.months.map((m, i) => (

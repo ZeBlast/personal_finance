@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
-import { addDays } from "../utils/dates.js";
+import { addDays, lastOfMonth } from "../utils/dates.js";
+import { countedAccount } from "./account-scope.js";
 
 /**
  * How far back, and how far forward, the app's records of one account can be trusted. A hand-kept
@@ -48,4 +49,39 @@ export function accountCoverage(db: AppDb, accountId: number): AccountCoverage {
     return { from, through, reason: "not_synced" };
   }
   return { from, through: null, reason: null };
+}
+
+/**
+ * Whether the records for a whole month can be trusted: every account that has history started on
+ * or before the month's first day and is still covered through its last day. Pure.
+ */
+export function isMonthComplete(
+  month: string,
+  coverage: Array<{ from: string | null; through: string | null }>,
+): boolean {
+  const first = `${month}-01`;
+  const last = lastOfMonth(month);
+  return coverage.every(
+    (c) => c.from === null || (c.from <= first && (c.through === null || c.through >= last)),
+  );
+}
+
+/** Which of these months are complete for the accounts that count (or for the one account). */
+export function completeMonths(
+  db: AppDb,
+  months: string[],
+  scope: { environment: string; accountId?: number },
+): Set<string> {
+  const ids =
+    scope.accountId !== undefined
+      ? [scope.accountId]
+      : db
+          .all<{ id: number }>(
+            sql`select a.id from accounts a left join plaid_items p on p.id = a.plaid_item_id
+              where ${countedAccount("a")}
+                and (a.plaid_item_id is null or p.environment = ${scope.environment})`,
+          )
+          .map((r) => r.id);
+  const coverage = ids.map((id) => accountCoverage(db, id));
+  return new Set(months.filter((m) => isMonthComplete(m, coverage)));
 }

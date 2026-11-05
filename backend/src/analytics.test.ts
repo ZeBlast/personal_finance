@@ -1272,6 +1272,8 @@ describe("spending caps", () => {
     const food = await makeCategory(ctx, "Food");
     const gas = await makeCategory(ctx, "Gas");
     const account = addAccount(ctx);
+    // History begins before June, so June to August are complete months.
+    addTx(ctx, account, { date: "2026-05-20", amount: 100 });
     addTx(ctx, account, { date: "2026-08-05", amount: 3000, categoryId: food.id });
     addTx(ctx, account, { date: "2026-09-05", amount: 4000, categoryId: food.id });
     addTx(ctx, account, { date: "2026-08-07", amount: 6000, categoryId: gas.id });
@@ -1282,7 +1284,7 @@ describe("spending caps", () => {
       { month: "2026-09", spentMinor: 4000, capMinor: 5000 },
     ]);
     expect(sep.uncapped).toMatchObject([
-      { categoryId: gas.id, label: "Gas", spentMinor: 0, averageMinor: 2000 },
+      { categoryId: gas.id, label: "Gas", spentMinor: 0, averageMinor: 2000, averageMonths: 3 },
     ]);
   });
 

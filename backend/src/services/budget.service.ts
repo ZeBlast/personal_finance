@@ -4,6 +4,7 @@ import type { AppDb } from "../db/client.js";
 import { addMonths, firstOfMonth, isRealDate, isRealMonth, lastOfMonth } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { categorySpending, summarize } from "./analytics.service.js";
+import { completeMonths } from "./history-coverage.service.js";
 
 export interface BudgetDto {
   id: number;
@@ -63,8 +64,10 @@ export interface UncappedCategory {
   label: string;
   color: string | null;
   spentMinor: number;
-  /** Average a month over the three months before. */
+  /** Average a month over the complete months among the three before. */
   averageMinor: number;
+  /** How many months that average is of; 0 when none of the three is complete. */
+  averageMonths: number;
 }
 
 export const ROLLOVERS = ["off", "all", "leftover"] as const;
@@ -229,11 +232,18 @@ function uncappedCategories(
     environment,
   };
   const now = summarize(db, { ...base, from: firstOfMonth(month), to: lastOfMonth(month) }).rows;
-  const before = summarize(db, {
-    ...base,
-    from: firstOfMonth(addMonths(month, -3)),
-    to: lastOfMonth(addMonths(month, -1)),
-  }).rows;
+  const complete = completeMonths(
+    db,
+    [-3, -2, -1].map((n) => addMonths(month, n)),
+    { environment },
+  );
+  const averageMonths = complete.size;
+  const before: typeof now = [];
+  for (const m of complete) {
+    before.push(...summarize(db, { ...base, from: firstOfMonth(m), to: lastOfMonth(m) }).rows);
+  }
+  const beforeTotal = (key: string) =>
+    before.filter((r) => r.key === key).reduce((n, r) => n + r.spendingMinor, 0);
   const found = new Map<number, UncappedCategory>();
   for (const row of [...now, ...before]) {
     const id = Number(row.key);
@@ -243,7 +253,8 @@ function uncappedCategories(
       label: row.label,
       color: row.color ?? null,
       spentMinor: now.find((r) => r.key === row.key)?.spendingMinor ?? 0,
-      averageMinor: Math.round((before.find((r) => r.key === row.key)?.spendingMinor ?? 0) / 3),
+      averageMinor: averageMonths === 0 ? 0 : Math.round(beforeTotal(row.key) / averageMonths),
+      averageMonths,
     });
   }
   return [...found.values()]

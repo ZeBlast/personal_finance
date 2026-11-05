@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { isMonthComplete } from "./services/history-coverage.service.js";
 import { spendingMonitor } from "./services/monitor.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
@@ -97,5 +98,42 @@ describe("spending monitors", () => {
       .call("get", "/api/analytics/monitor?merchant=coffee&today=2026-10-10")
       .expect(200);
     expect(res.body.spentMinor).toBe(3_000);
+  });
+
+  it("leaves months before an account's history out of the baseline", async () => {
+    const { t, add } = await setup();
+    await add("2026-08-15", "Shop", 9_000);
+    await add("2026-09-10", "Shop", 3_000);
+    await add("2026-10-05", "Shop", 1_000);
+    const m = spendingMonitor(t.db, {}, "2026-10-20");
+    expect(m.baselineMonths).toBe(1);
+    expect(m.averageMinor).toBe(3_000);
+    expect(m.months.map((x) => x.complete)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("compares with nothing when no month is complete", async () => {
+    const { t, add } = await setup();
+    await add("2026-08-15", "Shop", 9_000);
+    expect(spendingMonitor(t.db, {}, "2026-09-02")).toMatchObject({
+      baselineMonths: 0,
+      averageMinor: 0,
+      changePercent: null,
+    });
+  });
+
+  it("knows when a month is fully covered", () => {
+    expect(isMonthComplete("2026-09", [{ from: "2026-09-01", through: null }])).toBe(true);
+    expect(isMonthComplete("2026-09", [{ from: "2026-09-02", through: null }])).toBe(false);
+    expect(isMonthComplete("2026-09", [{ from: "2026-01-01", through: "2026-09-29" }])).toBe(false);
+    expect(isMonthComplete("2026-09", [{ from: "2026-01-01", through: "2026-09-30" }])).toBe(true);
+    expect(isMonthComplete("2026-09", [{ from: null, through: null }])).toBe(true);
   });
 });

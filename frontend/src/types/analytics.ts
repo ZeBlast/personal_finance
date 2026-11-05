@@ -137,8 +137,10 @@ export interface UncappedCategory {
   label: string;
   color: string | null;
   spentMinor: number;
-  /** Average a month over the three months before. */
+  /** Average a month over the complete months among the three before. */
   averageMinor: number;
+  /** How many months that average is of. */
+  averageMonths: number;
 }
 
 export interface BudgetMonth {

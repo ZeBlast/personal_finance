@@ -578,7 +578,9 @@ export function BudgetsPage() {
                       </td>
                       <td className="py-1 text-right tabular-nums">{money(c.spentMinor)}</td>
                       <td className="py-1 text-right text-slate-500 tabular-nums">
-                        {c.averageMinor > 0 ? money(c.averageMinor) : "No history"}
+                        {c.averageMonths === 0
+                          ? "No history"
+                          : `about ${money(c.averageMinor)} a month (${c.averageMonths} month${c.averageMonths === 1 ? "" : "s"})`}
                       </td>
                       <td className="py-1 pl-3 text-right">
                         <button
