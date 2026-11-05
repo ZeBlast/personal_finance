@@ -22,12 +22,19 @@ export interface ForecastEvent {
   chargedOn?: string;
 }
 
+export interface ForecastDay {
+  date: string;
+  balanceMinor: number;
+  changeMinor: number;
+  events: ForecastEvent[];
+}
+
 export interface Forecast {
   currency: string;
   today: string;
   startBalanceMinor: number;
   accountsCounted: number;
-  days: Array<{ date: string; balanceMinor: number; changeMinor: number; events: ForecastEvent[] }>;
+  days: ForecastDay[];
   lowest: { date: string; balanceMinor: number };
   endBalanceMinor: number;
   capHoldBack: {
@@ -287,4 +294,48 @@ export interface RenewalItem {
   amountMinor: number | null;
   changeMinor?: number;
   subscriptionId: number | null;
+}
+
+/** Cadences the backend's scenario adjustments accept. */
+export type ScenarioCadence =
+  "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
+
+/** One change a what-if scenario lays over the forecast (see backend/src/services/scenario.service.ts). */
+export type ScenarioAdjustment =
+  | { kind: "one_off"; label: string; date: string; amountMinor: number }
+  | {
+      kind: "recurring";
+      label: string;
+      amountMinor: number;
+      cadence: ScenarioCadence;
+      startDate: string;
+      endDate: string | null;
+    }
+  | {
+      kind: "change_series";
+      target: { seriesKey: string } | { plannedId: number };
+      fromDate: string;
+      amountMinor: number | null;
+    }
+  | { kind: "goal"; goalId: number; forecast: { monthlyMinor: number; day: number } | null };
+
+export interface Scenario {
+  id: number;
+  name: string;
+  adjustments: ScenarioAdjustment[];
+  /** Saved changes that could not be read and were left out. */
+  skipped: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScenarioComparison {
+  scenario: Scenario;
+  base: Forecast;
+  alt: Forecast;
+  /** Scenario minus now. */
+  lowestChangeMinor: number;
+  endChangeMinor: number;
+  /** Indexes of changes that matched nothing in this forecast window. */
+  unmatched: number[];
 }

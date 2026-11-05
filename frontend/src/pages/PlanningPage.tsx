@@ -5,13 +5,23 @@ import { AccountName } from "../components/common/AccountName";
 import { Modal } from "../components/common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
 import { AnnotatedForecast } from "../components/views/AnnotatedForecast";
+import { ScenarioDialog, useScenarioPickers } from "../components/views/ScenarioDialog";
 import { useApi } from "../hooks/useApi";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
+import { comparisonSentence, describeAdjustment, signedMoney } from "../lib/scenarios";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { lowestTile } from "../lib/views";
 import { CADENCE_LABEL } from "../lib/insights";
-import type { BillStatus, CardBill, Forecast, Paycheck } from "../types/planning";
+import type {
+  BillStatus,
+  CardBill,
+  Forecast,
+  Paycheck,
+  Scenario,
+  ScenarioComparison,
+} from "../types/planning";
 import { Select } from "../components/common/Select";
 import { Loading } from "../components/common/Loading";
 
@@ -99,6 +109,16 @@ function ForecastView() {
   const [days, setDays] = useState(60);
   const { data, error, loading, reload } = useApi<Forecast>(`/forecast?days=${days}`);
   const [holdError, setHoldError] = useState<string | null>(null);
+  const scenarios = useApi<Scenario[]>("/forecast/scenarios");
+  const [chosen, setChosen] = usePersistentState("pf.forecast.compare", "");
+  const [managing, setManaging] = useState(false);
+  // A scenario that was deleted no longer counts as chosen.
+  const compareId = scenarios.data?.some((s) => String(s.id) === chosen) ? chosen : "";
+  const comparison = useApi<ScenarioComparison>(
+    compareId ? `/forecast/scenarios/${compareId}/compare?days=${days}` : null,
+  );
+  const compared = compareId ? comparison.data : null;
+  const { names: scenarioNames } = useScenarioPickers();
   async function holdCaps(on: boolean): Promise<void> {
     setHoldError(null);
     try {
@@ -120,34 +140,94 @@ function ForecastView() {
   const money = (n: number) => formatMinor(n, data.currency);
   const upcoming = data.days.filter((d) => d.events.length > 0);
   const low = lowestTile(data);
+  const altLow = compared ? lowestTile(compared.alt) : null;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <dl className="grid grid-cols-3 gap-3 text-sm">
-          <Stat label="In the bank today" value={money(data.startBalanceMinor)} />
+          <Stat
+            label="In the bank today"
+            value={money(data.startBalanceMinor)}
+            change={compared ? "Same with the scenario" : undefined}
+          />
           <Stat
             label={`${low.afterToday ? "Lowest after today" : "Lowest"} (${formatDay(low.date)})`}
             value={money(low.balanceMinor)}
             warn={low.balanceMinor < 0}
+            change={
+              compared && altLow
+                ? `${signedMoney(altLow.balanceMinor - low.balanceMinor, data.currency)} with the scenario`
+                : undefined
+            }
           />
-          <Stat label={`In ${days} days`} value={money(data.endBalanceMinor)} />
+          <Stat
+            label={`In ${days} days`}
+            value={money(data.endBalanceMinor)}
+            change={
+              compared
+                ? `${signedMoney(compared.endChangeMinor, data.currency)} with the scenario`
+                : undefined
+            }
+          />
         </dl>
-        <label className="text-sm">
-          Look ahead{" "}
-          <Select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
-          >
-            {[30, 60, 90, 180].map((n) => (
-              <option key={n} value={n}>
-                {n} days
-              </option>
-            ))}
-          </Select>
-        </label>
+        <div className="flex flex-wrap items-end gap-3 text-sm">
+          <label>
+            Compare with{" "}
+            <Select
+              value={compareId}
+              onChange={(e) => setChosen(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
+            >
+              <option value="">Nothing</option>
+              {(scenarios.data ?? []).map((s) => (
+                <option key={s.id} value={String(s.id)}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <button type="button" className={buttonClass} onClick={() => setManaging(true)}>
+            Scenarios...
+          </button>
+          <label>
+            Look ahead{" "}
+            <Select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
+            >
+              {[30, 60, 90, 180].map((n) => (
+                <option key={n} value={n}>
+                  {n} days
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
       </div>
+      {compareId && comparison.error && (
+        <p role="alert" className="text-sm text-red-600">
+          {comparison.error}
+        </p>
+      )}
+      {managing && (
+        <ScenarioDialog
+          scenarios={scenarios.data ?? []}
+          currency={data.currency}
+          today={data.today}
+          days={days}
+          unmatched={
+            compared ? { scenarioId: compared.scenario.id, indexes: compared.unmatched } : null
+          }
+          onChanged={(savedId) => {
+            scenarios.reload();
+            comparison.reload();
+            if (savedId !== undefined) setChosen(String(savedId));
+          }}
+          onClose={() => setManaging(false)}
+        />
+      )}
       {data.lowest.balanceMinor < 0 && (
         <p
           role="alert"
@@ -156,7 +236,29 @@ function ForecastView() {
           Your bank accounts are expected to go below zero on {formatDay(data.lowest.date)}.
         </p>
       )}
-      <AnnotatedForecast forecast={data} />
+      <AnnotatedForecast
+        forecast={data}
+        compare={compared ? { label: compared.scenario.name, days: compared.alt.days } : null}
+      />
+      {compared && (
+        <div className="space-y-1 text-sm">
+          <p className="text-violet-700 dark:text-violet-300">
+            {comparisonSentence(compared, data.currency)}
+          </p>
+          {compared.scenario.skipped > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Some of this scenario&apos;s saved changes couldn&apos;t be read, so they aren&apos;t
+              counted.
+            </p>
+          )}
+          {compared.unmatched.map((i) => (
+            <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
+              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, scenarioNames)}:
+              This change doesn&apos;t match anything in the next {days} days.
+            </p>
+          ))}
+        </div>
+      )}
       <div className="text-sm">
         <label className="flex items-center gap-2">
           <input
@@ -241,13 +343,25 @@ function ForecastView() {
   );
 }
 
-function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+function Stat({
+  label,
+  value,
+  warn,
+  change,
+}: {
+  label: string;
+  value: string;
+  warn?: boolean;
+  /** How a compared scenario differs, shown under the value. */
+  change?: string | undefined;
+}) {
   return (
     <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className={`text-lg font-semibold tabular-nums ${warn ? "text-red-600" : ""}`}>
         {value}
       </dd>
+      {change && <dd className="text-xs text-violet-700 dark:text-violet-300">{change}</dd>}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
 import { formatAxisMoney, formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
 import { lowestOf, lowestTile, withExtraSpend } from "../../lib/views";
-import type { Forecast } from "../../types/planning";
+import type { Forecast, ForecastDay } from "../../types/planning";
 
 const PAD = { left: 56, right: 12, top: 26, bottom: 24 };
 
@@ -20,10 +20,13 @@ export function AnnotatedForecast({
   forecast,
   height = 300,
   whatIf = true,
+  compare = null,
 }: {
   forecast: Forecast;
   height?: number;
   whatIf?: boolean;
+  /** A saved scenario's days, drawn as a second dashed line over the same window. */
+  compare?: { label: string; days: ForecastDay[] } | null;
 }) {
   const { ref, width } = useMeasuredWidth();
   const [hover, setHover] = useState<number | null>(null);
@@ -35,7 +38,12 @@ export function AnnotatedForecast({
 
   const tried = extra > 0 ? withExtraSpend(days, extra, day) : null;
   const triedLow = tried ? lowestOf(tried) : null;
-  const values = [...days.map((d) => d.balanceMinor), ...(tried ?? []).map((d) => d.balanceMinor)];
+  const other = compare && compare.days.length > 0 ? compare : null;
+  const values = [
+    ...days.map((d) => d.balanceMinor),
+    ...(tried ?? []).map((d) => d.balanceMinor),
+    ...(other?.days ?? []).map((d) => d.balanceMinor),
+  ];
   const top = Math.max(0, ...values);
   const bottom = Math.min(0, ...values);
   const span = top - bottom || 1;
@@ -110,6 +118,16 @@ export function AnnotatedForecast({
           >
             {formatDay(days[days.length - 1]!.date)}
           </text>
+          {other && (
+            <path
+              data-testid="scenario-line"
+              d={stepLine(other.days.map((d, i) => ({ x: x(i), y: y(d.balanceMinor) })))}
+              fill="none"
+              strokeWidth={2}
+              strokeDasharray="7 4"
+              className="stroke-violet-500 dark:stroke-violet-400"
+            />
+          )}
           {tried && (
             <path
               data-testid="what-if-line"
@@ -169,6 +187,11 @@ export function AnnotatedForecast({
           >
             <div className="font-semibold">{formatDay(shown.date)}</div>
             <div className="tabular-nums">{money(shown.balanceMinor)} in the bank</div>
+            {other?.days[hover] && (
+              <div className="tabular-nums text-violet-700 dark:text-violet-300">
+                {money(other.days[hover].balanceMinor)} with {other.label}
+              </div>
+            )}
             {shown.events.slice(0, 4).map((e, i) => (
               <div
                 key={`${e.label}-${i}`}
@@ -196,6 +219,12 @@ export function AnnotatedForecast({
           />
           Money out
         </span>
+        {other && (
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="h-0.5 w-4 bg-violet-500 dark:bg-violet-400" />
+            With {other.label}
+          </span>
+        )}
         {tried && (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="h-0.5 w-4 bg-amber-500" />
