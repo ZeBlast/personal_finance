@@ -254,7 +254,7 @@ export interface TransactionDto {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | "instalment" | null;
   /**
    * The parts it is split into across categories (empty when it is not split). `valid` is false when
    * they no longer add up to the amount (the bank changed it), and the transaction counts whole.
@@ -300,6 +300,10 @@ export interface TransactionDto {
     | null;
   /** For a charge: how much linked refunds have given back (cents, positive; 0 when none). */
   refundedMinor: number;
+  /** For a repayment of a purchase paid in instalments: that purchase. */
+  instalmentOfId: number | null;
+  /** For a purchase paid in instalments: the plan and what linked repayments have paid so far. */
+  instalmentPlan: { instalments: number; paidMinor: number; repaymentCount: number } | null;
   /** `credit`, `loan`, `depository`, ... of this transaction's account. */
   accountType: string;
   paymentChannel: string | null;
@@ -390,6 +394,7 @@ const selectColumns = {
   mirrorSource: transactions.mirrorSource,
   refundOfId: transactions.refundOfId,
   refundSource: transactions.refundSource,
+  instalmentOfId: transactions.instalmentOfId,
   paymentChannel: transactions.paymentChannel,
   counterpartyName: transactions.counterpartyName,
   counterpartyType: transactions.counterpartyType,
@@ -491,6 +496,8 @@ function toDto(r: Row): TransactionDto {
     beforeOtherHistory: false,
     refundOf: null,
     refundedMinor: 0,
+    instalmentOfId: r.instalmentOfId,
+    instalmentPlan: null,
     splits: [],
     splitValid: true,
     paymentChannel: r.paymentChannel,
@@ -849,6 +856,27 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
           .all()
           .map((r) => [r.id!, r.back]),
   );
+  const plans = new Map(
+    rows.length === 0
+      ? []
+      : db
+          .all<{ id: number; instalments: number; paid: number; count: number }>(
+            sql`select p.transaction_id as id, p.instalments,
+              coalesce((select sum(r.amount_minor) from transactions r
+                where r.instalment_of_id = p.transaction_id), 0) as paid,
+              (select count(*) from transactions r
+                where r.instalment_of_id = p.transaction_id) as count
+            from instalment_purchases p
+            where p.transaction_id in (${sql.join(
+              rows.map((r) => sql`${r.id}`),
+              sql`, `,
+            )})`,
+          )
+          .map((p) => [
+            p.id,
+            { instalments: p.instalments, paidMinor: p.paid, repaymentCount: p.count },
+          ]),
+  );
   const partners = new Map<number, NonNullable<TransactionDto["transferWith"]>>();
   const partnerAmounts = new Map<number, number>();
   if (ids.length > 0) {
@@ -903,6 +931,7 @@ function withTransferPartners(db: AppDb, rows: Row[]): TransactionDto[] {
         }
       : null;
     dto.refundedMinor = refunded.get(r.id) ?? 0;
+    dto.instalmentPlan = plans.get(r.id) ?? null;
     dto.splits = splits.get(r.id) ?? [];
     // Valid when the parts add up to the transaction, or, for a purchase with reimbursements, to
     // what was kept (the purchase less what came back).

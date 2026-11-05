@@ -18,6 +18,12 @@ import {
   unlinkTransfer,
 } from "../services/transfer-link.service.js";
 import { linkMirror, mirrorCandidates, unlinkMirror } from "../services/paypal-mirror.service.js";
+import {
+  instalmentCandidates,
+  linkRepayment,
+  markInstalments,
+  unmarkInstalments,
+} from "../services/instalment.service.js";
 import { refundAllocation } from "../services/refund-allocation.service.js";
 import { refundCandidates, refundsOf, setRefundOf } from "../services/refund.service.js";
 import { MAX_SPLITS, setSplits } from "../services/split.service.js";
@@ -268,6 +274,26 @@ export function transactionsRoutes(db: AppDb): Router {
   router.put("/transactions/:id/refund-of", (req, res) => {
     const body = z.object({ originalId: idParam.nullable() }).strict().parse(req.body);
     res.json(setRefundOf(db, idParam.parse(req.params["id"]), body.originalId));
+  });
+
+  /** Marks this purchase as paid in instalments (or changes how many). */
+  router.put("/transactions/:id/instalments", (req, res) => {
+    const body = z.object({ instalments: z.number().int() }).strict().parse(req.body);
+    res.json(markInstalments(db, idParam.parse(req.params["id"]), body.instalments));
+  });
+  /** Stops treating this purchase as paid in instalments; its repayments count again. */
+  router.delete("/transactions/:id/instalments", (req, res) => {
+    unmarkInstalments(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
+  });
+  /** Money out that could be a repayment of this purchase. */
+  router.get("/transactions/:id/instalment-candidates", (req, res) => {
+    res.json(instalmentCandidates(db, idParam.parse(req.params["id"])));
+  });
+  /** Links this repayment with the purchase it pays off (null unlinks it). */
+  router.put("/transactions/:id/instalment-of", (req, res) => {
+    const body = z.object({ purchaseId: idParam.nullable() }).strict().parse(req.body);
+    res.json(linkRepayment(db, idParam.parse(req.params["id"]), body.purchaseId));
   });
 
   /** Adds a transaction by hand, to an account the user keeps by hand (cash, for example). */

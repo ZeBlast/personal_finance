@@ -12,6 +12,7 @@ import { useUnsavedGuard } from "../common/useUnsavedGuard";
 import { BankDetails } from "./BankDetails";
 import { TransferLink } from "./TransferLink";
 import { MirrorLink } from "./MirrorLink";
+import { InstalmentLink } from "./InstalmentLink";
 import { RefundLink } from "./RefundLink";
 import { MerchantGroupField } from "./MerchantGroupField";
 import { announceDataChanged } from "../../lib/syncEvents";
@@ -360,7 +361,8 @@ export function TransactionDetail({
             onChange={(e) => setTransfer(e.target.value as TransferChoice)}
             disabled={
               (t.transferWith !== null && t.transferSource === "manual") ||
-              t.transferSource === "mirror"
+              t.transferSource === "mirror" ||
+              t.transferSource === "instalment"
             }
             className={inputClass}
           >
@@ -396,6 +398,8 @@ export function TransactionDetail({
         </div>
 
         <RefundLink transaction={t} onChanged={linkChanged} />
+
+        <InstalmentLink transaction={t} onChanged={linkChanged} />
 
         <div>
           <label htmlFor={`${id}-online`} className="block text-sm font-medium">

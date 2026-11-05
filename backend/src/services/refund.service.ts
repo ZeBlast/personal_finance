@@ -112,6 +112,7 @@ export function detectRefunds(tx: Tx, now: string): number {
     from transactions t join accounts a on a.id = t.account_id
       left join categories c on c.id = t.category_id
     where ${counted} and t.amount_minor < 0 and t.refund_of_id is null and t.refund_blocked = 0
+      and t.instalment_of_id is null
       and coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) is null
       and coalesce(c.income_treatment, '') <> 'income'
       and coalesce(t.plaid_category_primary, '') <> 'INCOME'`);
@@ -128,7 +129,7 @@ export function detectRefunds(tx: Tx, now: string): number {
       ${text} as text,
       exists (select 1 from transactions r where r.refund_of_id = t.id) as refunded
     from transactions t join accounts a on a.id = t.account_id
-    where ${counted} and t.amount_minor > 0 and t.refund_of_id is null
+    where ${counted} and t.amount_minor > 0 and t.refund_of_id is null and t.instalment_of_id is null
       and coalesce(nullif(trim(t.recipient_user), ''), nullif(trim(t.recipient), '')) is null`);
   const pairs = matchRefunds(
     refunds,
@@ -155,10 +156,11 @@ function load(db: Pick<AppDb, "all">, id: number) {
     refund_of_id: number | null;
     transfer_pair_id: number | null;
     transfer_source: string | null;
+    instalment_of_id: number | null;
     text: string;
   }>(sql`
     select id, account_id, amount_minor as amount, currency, coalesce(authorized_date, date) as day,
-      refund_of_id, transfer_pair_id, transfer_source,
+      refund_of_id, transfer_pair_id, transfer_source, instalment_of_id,
       coalesce(merchant_name_user, '') || ' ' || coalesce(merchant_name, '') || ' ' || name as text
     from transactions where id = ${id}`)[0];
   if (!row) throw notFound("That transaction");
@@ -183,6 +185,13 @@ export function setRefundOf(
 ): TransactionDto {
   const refund = load(db, id);
   if (originalId !== null) {
+    if (refund.instalment_of_id !== null) {
+      throw new AppError(
+        400,
+        "instalment_linked",
+        "This pays off a purchase made in instalments, so it isn't a refund.",
+      );
+    }
     if (refund.amount >= 0) {
       throw new AppError(400, "not_a_refund", "Only money coming back can be a refund.");
     }
@@ -190,6 +199,13 @@ export function setRefundOf(
       throw new AppError(400, "same_transaction", "Choose the charge this gives back.");
     }
     const original = load(db, originalId);
+    if (original.instalment_of_id !== null) {
+      throw new AppError(
+        400,
+        "instalment_linked",
+        "That pays off a purchase made in instalments, so it isn't a charge to refund.",
+      );
+    }
     if (original.amount <= 0) {
       throw new AppError(400, "not_a_charge", "A refund gives back a charge: money that went out.");
     }
@@ -397,7 +413,7 @@ function rankCandidates(
   const day = sql`coalesce(t.authorized_date, t.date)`;
   const text = sql`coalesce(t.merchant_name_user, '') || ' ' || coalesce(t.merchant_name, '') || ' ' || t.name`;
   const common = sql`t.id <> ${id} and t.currency = ${self.currency} and t.refund_of_id is null
-    and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
+    and t.instalment_of_id is null and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
     ${counted ? sql`and a.type in ('credit', 'depository')` : sql``}`;
   // A charge already linked as a refund, or with nothing left to give back, gets no suggestions.
   const isRefund = self.amount < 0;
@@ -493,7 +509,7 @@ export function refundReview(
     from transactions t join accounts a on a.id = t.account_id
       left join categories c on c.id = t.category_id
     where t.amount_minor < 0 and t.refund_of_id is null and t.refund_blocked = 0
-      and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
+      and t.instalment_of_id is null and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
       and a.type in ('credit', 'depository')
       and ${day} >= ${addDays(today, -REVIEW_DAYS)} and ${day} <= ${today}
       and coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) is null

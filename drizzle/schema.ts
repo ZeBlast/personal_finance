@@ -232,6 +232,14 @@ export const transactions = sqliteTable(
     refundSource: text("refund_source"),
     /** The user said this is not a refund (of that charge): detection never links it again. */
     refundBlocked: integer("refund_blocked", { mode: "boolean" }).notNull().default(false),
+    /**
+     * For a repayment of a purchase paid in instalments, that purchase. The repayment is then a
+     * transfer (`transfer_source = 'instalment'`) so it counts nowhere; the purchase counts once.
+     */
+    instalmentOfId: integer("instalment_of_id"),
+    /** What `is_transfer` and `transfer_source` were before linking, to put back on unlinking. */
+    instalmentPriorTransfer: integer("instalment_prior_transfer", { mode: "boolean" }),
+    instalmentPriorSource: text("instalment_prior_source"),
     // User edits: never overwritten by a sync.
     merchantNameUser: text("merchant_name_user"),
     recipientUser: text("recipient_user"),
@@ -260,8 +268,18 @@ export const transactions = sqliteTable(
     index("transactions_category_idx").on(table.categoryId),
     // transaction_lines looks up each charge's refunds; without this, every lookup scans the table.
     index("transactions_refund_of_idx").on(table.refundOfId),
+    index("transactions_instalment_of_idx").on(table.instalmentOfId),
   ],
 );
+
+/** A purchase the user pays off in instalments (Pay in 4, Klarna): see instalment.service. */
+export const instalmentPurchases = sqliteTable("instalment_purchases", {
+  transactionId: integer("transaction_id")
+    .primaryKey()
+    .references(() => transactions.id, { onDelete: "cascade" }),
+  instalments: integer("instalments").notNull().default(4),
+  createdAt: text("created_at").notNull(),
+});
 
 /**
  * A user category, optionally under one parent (two levels at most). A category that is in use is

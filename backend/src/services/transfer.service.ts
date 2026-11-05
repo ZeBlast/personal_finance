@@ -3,6 +3,7 @@ import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
+import { resetInstalments } from "./instalment.service.js";
 import { detectMirrors, resetMirrors } from "./paypal-mirror.service.js";
 import { detectRefunds, resetRefunds } from "./refund.service.js";
 
@@ -175,6 +176,8 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
     resetMirrors(tx, now);
     // Refunds linked by the app are worked out again at the end, once copies are known.
     resetRefunds(tx);
+    // Repayments of a purchase that is gone go back to being ordinary transactions.
+    resetInstalments(tx, now);
 
     const rows = tx.all<{
       id: number;
@@ -292,6 +295,13 @@ export function setTransferFlag(
       409,
       "mirror_linked",
       "This is a copy of a purchase another account shows. Unlink it first.",
+    );
+  }
+  if (row.source === "instalment") {
+    throw new AppError(
+      409,
+      "instalment_linked",
+      "This pays off a purchase made in instalments. Unlink it from that purchase first.",
     );
   }
   if (row.source === "manual" && row.pairId !== null) {

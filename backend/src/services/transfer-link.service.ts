@@ -29,6 +29,7 @@ function load(db: Pick<AppDb, "select">, id: number) {
       transferPairId: transactions.transferPairId,
       transferSource: transactions.transferSource,
       createdForTransfer: transactions.createdForTransfer,
+      instalmentOfId: transactions.instalmentOfId,
     })
     .from(transactions)
     .innerJoin(accounts, eq(accounts.id, transactions.accountId))
@@ -46,6 +47,7 @@ export function linkTransferToAccount(
   now = new Date().toISOString(),
 ): TransactionDto {
   const t = load(db, id);
+  refuseInstalment(t);
   if (t.transferPairId !== null) {
     throw new AppError(
       409,
@@ -113,6 +115,17 @@ export function linkTransferToAccount(
   return getTransaction(db, id);
 }
 
+/** A repayment of a purchase paid in instalments is not a move between the user's accounts. */
+function refuseInstalment(t: { instalmentOfId: number | null }) {
+  if (t.instalmentOfId !== null) {
+    throw new AppError(
+      409,
+      "instalment_linked",
+      "This pays off a purchase made in instalments. Unlink it from that purchase first.",
+    );
+  }
+}
+
 type Loaded = ReturnType<typeof load>;
 
 /**
@@ -161,6 +174,8 @@ export function pairTransfers(
   }
   const a = load(db, id);
   const b = load(db, otherId);
+  refuseInstalment(a);
+  refuseInstalment(b);
   if (a.accountId === b.accountId) {
     throw new AppError(400, "same_account", "Choose a transaction on a different account.");
   }

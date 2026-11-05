@@ -8,10 +8,12 @@ const isDebt = (type: string): boolean => type === "credit" || type === "loan";
  * (Chase)"), which card a payment went to ("Paid Visa (Chase)"), or where money moved.
  */
 export function transferLabel(
-  t: Pick<Transaction, "transferWith" | "accountType" | "amountMinor">,
+  t: Pick<Transaction, "transferWith" | "accountType" | "amountMinor"> &
+    Partial<Pick<Transaction, "transferSource">>,
   /** Leave the institution out, for a tight space that keeps the full words in a tooltip. */
   short = false,
 ): string | null {
+  if (t.transferSource === "instalment") return "Instalment payment";
   const other = t.transferWith;
   if (!other) return null;
   const name = short ? other.accountName : accountLabel(other.accountName, other.institutionName);

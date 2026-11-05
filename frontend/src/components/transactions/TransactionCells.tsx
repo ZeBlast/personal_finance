@@ -85,7 +85,11 @@ export function TransferNote({ t }: { t: Transaction }) {
   return (
     <span
       className="block truncate text-xs text-slate-500"
-      title={`${transferLabel(t) ?? "Own-account transfer"}. Money moved between your own accounts. It is left out of income and spending.`}
+      title={
+        t.transferSource === "instalment"
+          ? "Pays off a purchase made in instalments. It is left out of income and spending; the purchase counts once."
+          : `${transferLabel(t) ?? "Own-account transfer"}. Money moved between your own accounts. It is left out of income and spending.`
+      }
     >
       {transferLabel(t, true) ?? "Own-account transfer"}
     </span>

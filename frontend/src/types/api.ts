@@ -188,7 +188,7 @@ export interface Transaction {
   /** A transfer between the user's own accounts: neither income nor spending. */
   isTransfer: boolean;
   /** Who decided: `auto` (matched with the other side), `manual` (the user), `system`, or null. */
-  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | null;
+  transferSource: "auto" | "manual" | "system" | "category" | "mirror" | "instalment" | null;
   /**
    * The same purchase on another account (PayPal and the card that paid): `copy` when this row is
    * left out of totals, `counts` when this row counts and `with` is the copy.
@@ -210,6 +210,10 @@ export interface Transaction {
     | null;
   /** For a charge: how much linked refunds have given back (cents, positive). */
   refundedMinor: number;
+  /** For a repayment of a purchase paid in instalments: that purchase. */
+  instalmentOfId: number | null;
+  /** For a purchase paid in instalments: the plan and what linked repayments have paid. */
+  instalmentPlan: { instalments: number; paidMinor: number; repaymentCount: number } | null;
   /** The parts it is split into across categories (empty when not split). */
   splits: Array<{
     id: number;

@@ -52,4 +52,15 @@ describe("the other side of a transfer, in words", () => {
     expect(transferLabel(t)).toBe("Moved from Plaid Checking (First Platypus Bank)");
     expect(transferLabel(t, true)).toBe("Moved from Plaid Checking");
   });
+
+  it("calls a repayment of a purchase paid in instalments an instalment payment", () => {
+    expect(
+      transferLabel({
+        accountType: "depository",
+        amountMinor: 5000,
+        transferWith: null,
+        transferSource: "instalment",
+      }),
+    ).toBe("Instalment payment");
+  });
 });
