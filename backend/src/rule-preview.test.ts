@@ -162,6 +162,24 @@ describe("previewing a rule's real effect", () => {
     expect((await t.call("get", "/api/rules/batches")).body[0].undoneAt).not.toBeNull();
   });
 
+  it("undoes the rest of a batch when an earlier category was deleted, and reports those rows", async () => {
+    const { t, dining, treats, existing, coffeeRule, cart, categoryOf } = await setup();
+    await t
+      .call("post", "/api/rules")
+      .send({ ...coffeeRule, categoryId: dining, scope: "all" })
+      .expect(201);
+    const [batch] = (await t.call("get", "/api/rules/batches")).body;
+    // Treats now has nothing in it, so it can go.
+    await t.call("delete", `/api/rules/${existing}`).expect(204);
+    await t.call("delete", `/api/categories/${treats}`).expect(200);
+    const undo = (await t.call("post", `/api/rules/batches/${batch.id}/undo`).expect(200)).body;
+    expect(undo.restored).toBe(0);
+    expect(undo.kept).toHaveLength(3);
+    expect(undo.kept[0]).toMatchObject({ reason: "its earlier category was deleted" });
+    expect(await categoryOf(cart)).toBe("Dining");
+    expect((await t.call("get", "/api/rules/batches")).body[0].undoneAt).not.toBeNull();
+  });
+
   it("a save answers with the batch it recorded, or null when nothing moved", async () => {
     const { t, dining, coffeeRule } = await setup();
     const created = (

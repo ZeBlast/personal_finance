@@ -340,7 +340,13 @@ export interface ChangeBatch {
 
 export interface BatchUndoResult {
   restored: number;
-  kept: Array<{ id: number; date: string; merchant: string; category: string | null }>;
+  kept: Array<{
+    id: number;
+    date: string;
+    merchant: string;
+    category: string | null;
+    reason?: string;
+  }>;
 }
 
 export interface ApplyResult {

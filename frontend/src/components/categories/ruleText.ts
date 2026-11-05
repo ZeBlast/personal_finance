@@ -32,12 +32,24 @@ export function ruleTotalsText(
 }
 
 /** What undoing a batch did: what was put back, and what kept a category changed since. Pure. */
-export function batchUndoText(r: { restored: number; kept: unknown[] }): string {
+export function batchUndoText(r: { restored: number; kept: Array<{ reason?: string }> }): string {
   const head = `Put back ${r.restored} transaction${r.restored === 1 ? "" : "s"}.`;
-  if (r.kept.length === 0) return head;
-  return `${head} ${r.kept.length} you changed since keep${r.kept.length === 1 ? "s" : ""} ${
-    r.kept.length === 1 ? "its" : "their"
-  } new category.`;
+  const gone = r.kept.filter((k) => k.reason !== undefined).length;
+  const changed = r.kept.length - gone;
+  const parts = [head];
+  if (changed > 0) {
+    parts.push(
+      `${changed} you changed since keep${changed === 1 ? "s" : ""} ${
+        changed === 1 ? "its" : "their"
+      } new category.`,
+    );
+  }
+  if (gone > 0) {
+    parts.push(
+      `${gone} ${gone === 1 ? "keeps its" : "keep their"} new category because the earlier one was deleted.`,
+    );
+  }
+  return parts.join(" ");
 }
 
 export const FIELD_LABEL: Record<RuleField, string> = {

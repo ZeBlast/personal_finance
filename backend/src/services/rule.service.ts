@@ -787,7 +787,13 @@ export function undoBatch(
   now: string = new Date().toISOString(),
 ): {
   restored: number;
-  kept: Array<{ id: number; date: string; merchant: string; category: string | null }>;
+  kept: Array<{
+    id: number;
+    date: string;
+    merchant: string;
+    category: string | null;
+    reason?: string;
+  }>;
 } {
   const batch = db
     .select({ undoneAt: categoryChangeBatches.undoneAt })
@@ -829,19 +835,28 @@ export function undoBatch(
         .map((c) => [c.id, c.name]),
     );
     let restored = 0;
-    const kept: Array<{ id: number; date: string; merchant: string; category: string | null }> = [];
+    const kept: Array<{
+      id: number;
+      date: string;
+      merchant: string;
+      category: string | null;
+      reason?: string;
+    }> = [];
     for (const row of items) {
       const { item } = row;
       const unchanged =
         row.categoryId === item.toCategoryId &&
         row.categoryRuleId === item.toRuleId &&
         row.categorySource === item.toSource;
-      if (!unchanged) {
+      const gone = item.fromCategoryId !== null && !names.has(item.fromCategoryId);
+      if (!unchanged || gone) {
         kept.push({
           id: item.transactionId,
           date: row.date,
           merchant: row.merchantNameUser?.trim() || row.merchantName || row.name,
           category: row.categoryId === null ? null : (names.get(row.categoryId) ?? null),
+          // A row left alone only because the user changed it since has no reason to give.
+          ...(unchanged ? { reason: "its earlier category was deleted" } : {}),
         });
         continue;
       }

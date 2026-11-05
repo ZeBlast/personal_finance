@@ -24,5 +24,10 @@ describe("batchUndoText", () => {
       "Put back 2 transactions. 1 you changed since keeps its new category.",
     );
     expect(batchUndoText({ restored: 3, kept: [] })).toBe("Put back 3 transactions.");
+    expect(
+      batchUndoText({ restored: 0, kept: [{ reason: "its earlier category was deleted" }, {}] }),
+    ).toBe(
+      "Put back 0 transactions. 1 you changed since keeps its new category. 1 keeps its new category because the earlier one was deleted.",
+    );
   });
 });
