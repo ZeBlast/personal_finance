@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { count } from "drizzle-orm";
-import { goals, plannedTransactions, transactions } from "../../drizzle/schema.js";
+import {
+  forecastScenarios,
+  goals,
+  plannedTransactions,
+  transactions,
+} from "../../drizzle/schema.js";
 import { cashForecast } from "./services/forecast.service.js";
 import { compareScenario, type ScenarioAdjustment } from "./services/scenario.service.js";
 import { getSettings } from "./services/settings.service.js";
@@ -73,7 +78,7 @@ async function setup() {
       .expect(200);
     return res.body as ReturnType<typeof compareScenario>;
   }
-  return { t, goalId, events, base, keyOf, compare };
+  return { t, checking, goalId, events, base, keyOf, compare };
 }
 
 describe("what-if scenarios", () => {
@@ -224,5 +229,132 @@ describe("what-if scenarios", () => {
     ]);
     await s.t.call("delete", `/api/forecast/scenarios/${id}`).expect(204);
     await s.t.call("get", `/api/forecast/scenarios/${id}/compare`).expect(404);
+  });
+
+  it("reports adjustments that match nothing", async () => {
+    const s = await setup();
+    const c = await s.compare([
+      { kind: "one_off", label: "x", date: "2026-10-15", amountMinor: -1 },
+      {
+        kind: "change_series",
+        target: { seriesKey: "gone:key" },
+        fromDate: "2026-11-01",
+        amountMinor: null,
+      },
+      {
+        kind: "change_series",
+        target: { plannedId: 9999 },
+        fromDate: "2026-11-01",
+        amountMinor: 5,
+      },
+      { kind: "goal", goalId: 9999, forecast: null },
+      {
+        kind: "change_series",
+        target: { seriesKey: s.keyOf("City Apartments") },
+        fromDate: "2026-11-01",
+        amountMinor: null,
+      },
+      { kind: "goal", goalId: s.goalId, forecast: null },
+    ]);
+    expect(c.unmatched).toEqual([1, 2, 3]);
+  });
+
+  it("keeps a recurring amount with an old start date, and stops it at its end date", async () => {
+    const s = await setup();
+    const old = await s.compare([
+      {
+        kind: "recurring",
+        label: "Old",
+        amountMinor: -1_000,
+        cadence: "weekly",
+        startDate: "2016-10-10",
+        endDate: null,
+      },
+    ]);
+    // 2016-10-10 was a Monday: Mondays after Oct 9, 2026 up to Dec 8 are 9 days of the 60.
+    expect(s.events(old.alt, "Old")).toHaveLength(9);
+    const ended = await s.compare([
+      {
+        kind: "recurring",
+        label: "Ends",
+        amountMinor: -1_000,
+        cadence: "weekly",
+        startDate: "2026-10-12",
+        endDate: "2026-10-26",
+      },
+    ]);
+    expect(s.events(ended.alt, "Ends").map((e) => e.date)).toEqual([
+      "2026-10-12",
+      "2026-10-19",
+      "2026-10-26",
+    ]);
+  });
+
+  it("changes an expected transaction by its plan", async () => {
+    const s = await setup();
+    const planned = await s.t
+      .call("post", "/api/planned")
+      .send({
+        merchant: "Tax bill",
+        amountMinor: 80_000,
+        direction: "out",
+        accountId: s.checking,
+        startDate: "2026-10-25",
+        frequency: "once",
+      })
+      .expect(201);
+    const c = await s.compare([
+      {
+        kind: "change_series",
+        target: { plannedId: planned.body.id },
+        fromDate: "2026-10-01",
+        amountMinor: 100_000,
+      },
+    ]);
+    expect(s.events(c.alt, "Tax bill")).toEqual([{ date: "2026-10-25", amountMinor: -100_000 }]);
+    expect(c.endChangeMinor).toBe(-20_000);
+    expect(c.unmatched).toEqual([]);
+  });
+
+  it("gives a goal that is already met no events", async () => {
+    const s = await setup();
+    const met = (
+      await s.t
+        .call("post", "/api/goals")
+        .send({ name: "Done", targetMinor: 100_000, savedMinor: 100_000 })
+        .expect(201)
+    ).body.id as number;
+    const c = await s.compare([
+      { kind: "goal", goalId: met, forecast: { monthlyMinor: 10_000, day: 5 } },
+    ]);
+    expect(s.events(c.alt, "Set aside for Done")).toEqual([]);
+    expect(c.unmatched).toEqual([]);
+  });
+
+  it("skips stored adjustments it cannot read instead of failing", async () => {
+    const s = await setup();
+    const made = await s.t
+      .call("post", "/api/forecast/scenarios")
+      .send({
+        name: "Old",
+        adjustments: [{ kind: "one_off", label: "x", date: "2026-10-15", amountMinor: -5 }],
+      })
+      .expect(201);
+    s.t.db
+      .update(forecastScenarios)
+      .set({
+        adjustments: JSON.stringify([
+          { kind: "one_off", label: "x", date: "2026-10-15", amountMinor: -5 },
+          { kind: "mystery" },
+        ]),
+      })
+      .run();
+    const c = (
+      await s.t
+        .call("get", `/api/forecast/scenarios/${made.body.id}/compare?today=${TODAY}`)
+        .expect(200)
+    ).body as ReturnType<typeof compareScenario>;
+    expect(c.scenario).toMatchObject({ skipped: 1 });
+    expect(c.scenario.adjustments).toHaveLength(1);
   });
 });

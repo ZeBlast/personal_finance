@@ -105,15 +105,30 @@ export interface ScenarioDto {
   id: number;
   name: string;
   adjustments: ScenarioAdjustment[];
+  /** Stored adjustments that could not be read and were left out. */
+  skipped: number;
   createdAt: string;
   updatedAt: string;
 }
 
 function toDto(row: typeof forecastScenarios.$inferSelect): ScenarioDto {
+  let stored: unknown[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.adjustments);
+    if (Array.isArray(parsed)) stored = parsed;
+  } catch {
+    // Unreadable: treated as no adjustments.
+  }
+  const adjustments: ScenarioAdjustment[] = [];
+  for (const entry of stored) {
+    const ok = adjustmentSchema.safeParse(entry);
+    if (ok.success) adjustments.push(ok.data);
+  }
   return {
     id: row.id,
     name: row.name,
-    adjustments: JSON.parse(row.adjustments) as ScenarioAdjustment[],
+    adjustments,
+    skipped: stored.length - adjustments.length,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -177,18 +192,26 @@ export function compareScenario(
   alt: Forecast;
   lowestChangeMinor: number;
   endChangeMinor: number;
+  /** Indexes of adjustments whose series, plan or goal was not found in this forecast. */
+  unmatched: number[];
 } {
   const scenario = get(db, id);
   const base = cashForecast(db, { days: opts.days, today: opts.today });
+  const matched = new Set<number>();
   const alt = cashForecast(db, {
     days: opts.days,
     today: base.today,
     adjustments: scenario.adjustments,
+    matched,
   });
+  const unmatched = scenario.adjustments
+    .map((a, i) => ((a.kind === "change_series" || a.kind === "goal") && !matched.has(i) ? i : -1))
+    .filter((i) => i >= 0);
   return {
     scenario,
     base,
     alt,
+    unmatched,
     lowestChangeMinor: alt.lowest.balanceMinor - base.lowest.balanceMinor,
     endChangeMinor: alt.endBalanceMinor - base.endBalanceMinor,
   };

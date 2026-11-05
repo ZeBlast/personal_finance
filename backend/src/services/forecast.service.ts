@@ -194,6 +194,8 @@ export function cashForecast(
     holdCaps?: boolean | undefined;
     /** What-if changes laid over the forecast. Nothing is stored. */
     adjustments?: ScenarioAdjustment[] | undefined;
+    /** Filled with the indexes of the adjustments that found their series, plan or goal here. */
+    matched?: Set<number> | undefined;
   } = {},
 ): Forecast {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
@@ -217,6 +219,16 @@ export function cashForecast(
   const adjustments = options.adjustments ?? [];
   // A series changed or stopped by the scenario: the event as it should be, or null when it stops.
   // `date` is the day the charge is made (for a card, not the day its bill is paid).
+  const hits = (a: ScenarioAdjustment, ref: { seriesKey?: string; plannedId?: number }): boolean =>
+    a.kind === "change_series" &&
+    (("seriesKey" in a.target && a.target.seriesKey === ref.seriesKey) ||
+      ("plannedId" in a.target && a.target.plannedId === ref.plannedId));
+  /** Notes which adjustments point at this series or plan, even when none of its days are changed. */
+  const markMatches = (ref: { seriesKey?: string; plannedId?: number }): void => {
+    adjustments.forEach((a, i) => {
+      if (hits(a, ref)) options.matched?.add(i);
+    });
+  };
   const adjustSeries = (
     e: ForecastEvent,
     date: string,
@@ -225,10 +237,7 @@ export function cashForecast(
     let out: ForecastEvent | null = e;
     for (const a of adjustments) {
       if (a.kind !== "change_series" || date < a.fromDate) continue;
-      const hit =
-        ("seriesKey" in a.target && a.target.seriesKey === ref.seriesKey) ||
-        ("plannedId" in a.target && a.target.plannedId === ref.plannedId);
-      if (!hit || out === null) continue;
+      if (!hits(a, ref) || out === null) continue;
       out =
         a.amountMinor === null
           ? null
@@ -291,6 +300,7 @@ export function cashForecast(
       plannedId: o.plannedId,
       ...(o.categoryId !== null ? { categoryId: o.categoryId } : {}),
     };
+    markMatches({ plannedId: o.plannedId });
     const changed = adjustSeries(event, o.date, { plannedId: o.plannedId });
     if (o.accountType === null || o.accountType === "depository") {
       if (matchesPendingManual(projectedPending, o)) continue;
@@ -318,6 +328,7 @@ export function cashForecast(
       ? undefined
       : s.accountNames.map((name) => billByName.get(name)).find((b) => b !== undefined);
     if (!onBank && !bill) continue;
+    markMatches({ seriesKey: s.key });
     const stop = stops.get(s.key);
     const amount = s.typicalAmountMinor;
     for (let d = s.nextExpected, guard = 0; d <= end && guard < 400; d = nextAfter(d, s.cadence)) {
@@ -413,7 +424,11 @@ export function cashForecast(
   // 6. Money set aside for goals.
   const goals = listGoals(db, today).map((g) => {
     let forecast = g.forecast;
-    for (const a of adjustments) if (a.kind === "goal" && a.goalId === g.id) forecast = a.forecast;
+    adjustments.forEach((a, i) => {
+      if (a.kind !== "goal" || a.goalId !== g.id) return;
+      forecast = a.forecast;
+      options.matched?.add(i);
+    });
     return { ...g, forecast };
   });
   for (const { date, event } of goalEvents(goals, today, end)) add(date, event);
@@ -423,8 +438,10 @@ export function cashForecast(
     if (a.kind === "one_off") {
       add(a.date, { label: a.label, amountMinor: a.amountMinor, source: "scenario" });
     } else if (a.kind === "recurring") {
-      for (let d = a.startDate, guard = 0; d <= end && guard < 400; d = nextAfter(d, a.cadence)) {
-        guard += 1;
+      // Skip ahead past today first, so an old start date still continues on its schedule.
+      let first = a.startDate;
+      while (first <= today) first = nextAfter(first, a.cadence);
+      for (let d = first; d <= end; d = nextAfter(d, a.cadence)) {
         if (a.endDate !== null && d > a.endDate) break;
         add(d, {
           label: a.label,
