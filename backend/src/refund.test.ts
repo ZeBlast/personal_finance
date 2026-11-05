@@ -409,8 +409,7 @@ describe("refund suggestions with a confidence", () => {
     await add({
       date: "2026-09-10",
       merchant: "Cashback Shop REWARD",
-      // Not the whole $20, so detection leaves it unlinked for the review list.
-      amountMinor: 1_500,
+      amountMinor: 2_000,
       direction: "in",
     });
     const item = refundReview(t.db, "2026-09-20")[0]!;

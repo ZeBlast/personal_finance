@@ -58,7 +58,8 @@ export function matchRefunds(
   const pairs: Array<[number, number]> = [];
   const ordered = [...refunds].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
   for (const r of ordered) {
-    if (PERSON_TO_PERSON.test(r.text)) continue;
+    // A reward or payout is left for the user to check (see the Review page).
+    if (PERSON_TO_PERSON.test(r.text) || GENERIC_CREDIT.test(r.text)) continue;
     const fits = charges.filter((c) => {
       if (used.has(c.id) || c.refunded || c.amount !== r.amount || c.currency !== r.currency) {
         return false;
