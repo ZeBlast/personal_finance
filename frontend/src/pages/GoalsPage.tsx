@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api/client";
 import { ConfirmDialog, Modal } from "../components/common/Modal";
+import { Select } from "../components/common/Select";
 import { useUnsavedGuard } from "../components/common/useUnsavedGuard";
 import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
 import { useApi } from "../hooks/useApi";
@@ -190,6 +191,9 @@ export function GoalsPage() {
                 <>{money(g.remainingMinor)} to go.</>
               )}
             </p>
+            {goalForecastText(g) && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">{goalForecastText(g)}</p>
+            )}
             {(g.accounts.length > 0 || g.savedMinor > 0) && (
               <ul className="space-y-0.5 text-xs text-slate-500">
                 {g.accounts.map((a) => (
@@ -232,7 +236,23 @@ export function GoalsPage() {
   );
 }
 
-/** How much of an account a goal owns, and why: "Savings: $1,500 of $5,000 (set; shared with Car)". */
+/** "1st", "2nd", "3rd", "11th", "22nd". Pure. */
+function ordinal(n: number): string {
+  const rest = n % 100;
+  const suffix =
+    rest >= 11 && rest <= 13
+      ? "th"
+      : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10];
+  return `${n}${suffix ?? "th"}`;
+}
+
+/** Says a goal's monthly contribution is part of the cash forecast, or null when it is not. Pure. */
+export function goalForecastText(g: Pick<Goal, "forecast" | "reached">): string | null {
+  if (g.forecast === null || g.reached) return null;
+  return `${money(g.forecast.monthlyMinor)} a month counts in the cash forecast, on the ${ordinal(g.forecast.day)}.`;
+}
+
+/** How much of an account a goal owns, and why:"Savings: $1,500 of $5,000 (set; shared with Car)". */
 export function goalAccountText(a: Goal["accounts"][number]): string {
   const whole = a.countedMinor === a.balanceMinor && a.sharedWith.length === 0;
   const parts = [
@@ -478,7 +498,7 @@ function GoalDialog({
                 <label htmlFor={`${id}-fc-day`} className="block font-medium">
                   On day
                 </label>
-                <select
+                <Select
                   id={`${id}-fc-day`}
                   value={form.forecastDay}
                   onChange={(e) => set({ forecastDay: e.target.value })}
@@ -489,7 +509,7 @@ function GoalDialog({
                       {i + 1}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
           )}

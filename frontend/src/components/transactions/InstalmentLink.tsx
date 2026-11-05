@@ -21,7 +21,10 @@ export function InstalmentLink({
   onChanged: (updated: Transaction) => void;
 }) {
   if (t.instalmentOfId !== null) return <Repayment transaction={t} onChanged={onChanged} />;
-  if (t.amountMinor > 0 && !t.isTransfer) return <Purchase transaction={t} onChanged={onChanged} />;
+  // A pending purchase can still change or go, so it can't be marked until it posts.
+  if (t.amountMinor > 0 && !t.isTransfer && (!t.pending || t.instalmentPlan !== null)) {
+    return <Purchase transaction={t} onChanged={onChanged} />;
+  }
   return null;
 }
 

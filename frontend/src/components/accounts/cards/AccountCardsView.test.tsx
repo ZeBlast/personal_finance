@@ -273,6 +273,20 @@ describe("the account cards", () => {
       expect(within(checking).getByText(`Not confirmed · ${shortDay("2026-10-31")}`)).toBeTruthy();
     });
 
+    it("opens the check from its status once there is one", async () => {
+      show([
+        account(4, "Checking", {
+          lastReconciled: { statementDate: "2026-10-31", status: "matched", differenceMinor: 0 },
+        }),
+      ]);
+      const checking = await card("Checking");
+      await userEvent.click(checking);
+      await userEvent.click(
+        within(checking).getByRole("button", { name: `Matched · ${shortDay("2026-10-31")}` }),
+      );
+      expect(await screen.findByRole("dialog", { name: /Reconcile Checking/ })).toBeTruthy();
+    });
+
     it("offers to check an account that has no check yet", async () => {
       show([account(4, "Checking", {})]);
       const checking = await card("Checking");

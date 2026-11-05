@@ -916,7 +916,7 @@ function AccountCard({
               </span>
             </div>
             {checked && (
-              <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">
+              <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
                 <svg
                   aria-hidden="true"
                   viewBox="0 0 16 16"
@@ -1062,34 +1062,31 @@ function AccountCard({
               <>
                 <dt className="text-slate-500">Statement check</dt>
                 <dd className="text-right">
-                  {a.lastReconciled ? (
-                    <span
-                      className={
-                        a.lastReconciled.status === "matched"
-                          ? undefined
-                          : "text-amber-700 dark:text-amber-400"
-                      }
-                    >
-                      {a.lastReconciled.status === "matched"
-                        ? "Matched"
-                        : a.lastReconciled.differenceMinor === 0
-                          ? "Not confirmed"
-                          : `Off by ${money(a, Math.abs(a.lastReconciled.differenceMinor))}`}{" "}
-                      · {shortDay(a.lastReconciled.statementDate)}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onReconcile();
-                      }}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      className="rounded text-blue-600 hover:underline dark:text-blue-400"
-                    >
-                      Check against a statement
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReconcile();
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className={`rounded hover:underline ${
+                      a.lastReconciled && a.lastReconciled.status !== "matched"
+                        ? "text-amber-700 dark:text-amber-400"
+                        : a.lastReconciled
+                          ? ""
+                          : "text-blue-600 dark:text-blue-400"
+                    }`}
+                  >
+                    {a.lastReconciled
+                      ? `${
+                          a.lastReconciled.status === "matched"
+                            ? "Matched"
+                            : a.lastReconciled.differenceMinor === 0
+                              ? "Not confirmed"
+                              : `Off by ${money(a, Math.abs(a.lastReconciled.differenceMinor))}`
+                        } · ${shortDay(a.lastReconciled.statementDate)}`
+                      : "Check against a statement"}
+                  </button>
                 </dd>
               </>
             )}

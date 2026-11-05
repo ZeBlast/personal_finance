@@ -249,6 +249,21 @@ describe("a purchase paid in instalments", () => {
     expect(spent()).toBe(20_000 + 10_000);
   });
 
+  it("refuses to mark a pending purchase", async () => {
+    const { t, purchase } = await setup();
+    t.db.update(transactions).set({ pending: true }).where(eq(transactions.id, purchase)).run();
+    const res = await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(409);
+    expect(res.body.error).toBe("pending_purchase");
+    t.db.update(transactions).set({ pending: false }).where(eq(transactions.id, purchase)).run();
+    await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(200);
+  });
+
   it("splits what is left over the payments left, remainder last, and skips a finished plan", () => {
     const plan = {
       merchant: "Shop",

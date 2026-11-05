@@ -32,6 +32,7 @@ function load(db: Pick<AppDb, "all">, id: number) {
     currency: string;
     day: string;
     is_transfer: number;
+    pending: number;
     transfer_source: string | null;
     transfer_pair_id: number | null;
     mirror_of_id: number | null;
@@ -42,7 +43,7 @@ function load(db: Pick<AppDb, "all">, id: number) {
     splits: number;
   }>(sql`
     select id, amount_minor as amount, currency, coalesce(authorized_date, date) as day,
-      is_transfer, transfer_source, transfer_pair_id, mirror_of_id, refund_of_id,
+      is_transfer, pending, transfer_source, transfer_pair_id, mirror_of_id, refund_of_id,
       instalment_of_id, instalment_prior_transfer as prior_transfer,
       instalment_prior_source as prior_source,
       (select count(*) from transaction_splits s where s.transaction_id = transactions.id) as splits
@@ -110,6 +111,13 @@ export function markInstalments(
       400,
       "not_a_purchase",
       "Only a purchase (money that went out) can be paid in instalments.",
+    );
+  }
+  if (p.pending === 1 && !plan(db, purchaseId)) {
+    throw new AppError(
+      409,
+      "pending_purchase",
+      "This purchase is still pending. Mark it as paid in instalments once it has posted.",
     );
   }
   if (p.is_transfer === 1 || p.instalment_of_id !== null) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goalAccountText, goalForecastInput } from "./GoalsPage";
+import { goalAccountText, goalForecastInput, goalForecastText } from "./GoalsPage";
 
 const account = {
   id: 1,
@@ -33,6 +33,29 @@ describe("what a goal owns of an account", () => {
         sharedWith: ["Car"],
       }),
     ).toBe("Savings: $0.00 of $5,000.00 ($100.00 set, not enough left; shared with Car)");
+  });
+});
+
+describe("saying a goal counts in the cash forecast", () => {
+  it("names the amount and the day, and stays quiet otherwise", () => {
+    const f = (day: number) => ({ forecast: { monthlyMinor: 50_000, day }, reached: false });
+    expect(goalForecastText(f(15))).toBe(
+      "$500.00 a month counts in the cash forecast, on the 15th.",
+    );
+    const day = (d: number) => goalForecastText(f(d))!.match(/the (\w+)\.$/)![1];
+    expect([1, 2, 3, 11, 12, 13, 21, 22, 28].map(day)).toEqual([
+      "1st",
+      "2nd",
+      "3rd",
+      "11th",
+      "12th",
+      "13th",
+      "21st",
+      "22nd",
+      "28th",
+    ]);
+    expect(goalForecastText({ forecast: null, reached: false })).toBeNull();
+    expect(goalForecastText({ ...f(5), reached: true })).toBeNull();
   });
 });
 
