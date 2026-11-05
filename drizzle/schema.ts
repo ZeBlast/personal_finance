@@ -1192,3 +1192,13 @@ export const merchantGroupMembers = sqliteTable(
   },
   (table) => [uniqueIndex("merchant_group_members_key").on(table.merchantKey)],
 );
+
+/** A named what-if for the cash forecast: changes applied to a copy of its inputs, never stored in the ledger. */
+export const forecastScenarios = sqliteTable("forecast_scenarios", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  /** JSON array of adjustments (see ScenarioAdjustment). */
+  adjustments: text("adjustments").notNull().default("[]"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

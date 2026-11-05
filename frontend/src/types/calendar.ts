@@ -156,7 +156,8 @@ export interface ForecastEvent {
     | "debt_plan"
     | "interest"
     | "goal"
-    | "cap_holdback";
+    | "cap_holdback"
+    | "scenario";
   seriesKey?: string;
   cadence?: "weekly" | "biweekly" | "semimonthly" | "monthly" | "quarterly" | "yearly";
   accountId?: number;

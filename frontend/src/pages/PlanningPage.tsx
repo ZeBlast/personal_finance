@@ -82,6 +82,7 @@ const SOURCE_LABEL = {
   interest: "Interest (from the APY)",
   goal: "Goal",
   cap_holdback: "Spending caps",
+  scenario: "What-if",
 };
 
 /** Where the held-back caps reach: the rest of the month, or only as far as the forecast does. */

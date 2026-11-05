@@ -14,6 +14,7 @@ import { accountYieldsById, monthlyInterest } from "./interest.service.js";
 import { nextAfter, recurringReport, type Cadence } from "./recurring.service.js";
 import { getSettings } from "./settings.service.js";
 import { pendingManualTransactions, matchesPendingManual } from "./pending-manual.service.js";
+import type { ScenarioAdjustment } from "./scenario.service.js";
 
 /**
  * A forecast of the cash in the user's bank accounts (checking, savings, cash) day by day: today's
@@ -41,6 +42,10 @@ import { pendingManualTransactions, matchesPendingManual } from "./pending-manua
  * - When the user chose to, what is left of this month's spending caps, less what is already
  *   forecast in their categories, spread over the days left in the month.
  *
+ * A what-if scenario's adjustments are applied on top of all of this, to the forecast's own copy of
+ * the inputs: a one-off or recurring amount is added, a recurring or expected series is stopped or
+ * changed from a day, and a goal's contribution is swapped for another.
+ *
  * It is an estimate, and says what each day's change is made of so the user can judge it.
  */
 
@@ -58,7 +63,8 @@ export interface ForecastEvent {
     | "debt_plan"
     | "interest"
     | "goal"
-    | "cap_holdback";
+    | "cap_holdback"
+    | "scenario";
   /** A detected recurring series: its key (to dismiss it) and schedule (to plan it). */
   seriesKey?: string;
   cadence?: Cadence;
@@ -186,6 +192,8 @@ export function cashForecast(
     today?: string | undefined;
     /** Overrides the setting that holds back the rest of the month's caps. */
     holdCaps?: boolean | undefined;
+    /** What-if changes laid over the forecast. Nothing is stored. */
+    adjustments?: ScenarioAdjustment[] | undefined;
   } = {},
 ): Forecast {
   const today = options.today ?? new Date().toISOString().slice(0, 10);
@@ -205,6 +213,29 @@ export function cashForecast(
   );
   const typeByName = new Map(all.map((a) => [a.name, a.type]));
   const start = cash.reduce((n, a) => n + a.currentBalanceMinor!, 0);
+
+  const adjustments = options.adjustments ?? [];
+  // A series changed or stopped by the scenario: the event as it should be, or null when it stops.
+  // `date` is the day the charge is made (for a card, not the day its bill is paid).
+  const adjustSeries = (
+    e: ForecastEvent,
+    date: string,
+    ref: { seriesKey?: string; plannedId?: number },
+  ): ForecastEvent | null => {
+    let out: ForecastEvent | null = e;
+    for (const a of adjustments) {
+      if (a.kind !== "change_series" || date < a.fromDate) continue;
+      const hit =
+        ("seriesKey" in a.target && a.target.seriesKey === ref.seriesKey) ||
+        ("plannedId" in a.target && a.target.plannedId === ref.plannedId);
+      if (!hit || out === null) continue;
+      out =
+        a.amountMinor === null
+          ? null
+          : { ...out, amountMinor: Math.sign(out.amountMinor) * a.amountMinor };
+    }
+    return out;
+  };
 
   const events = new Map<string, ForecastEvent[]>();
   const allPending = pendingManualTransactions(db, { to: end, currency: settings.currency });
@@ -260,13 +291,14 @@ export function cashForecast(
       plannedId: o.plannedId,
       ...(o.categoryId !== null ? { categoryId: o.categoryId } : {}),
     };
+    const changed = adjustSeries(event, o.date, { plannedId: o.plannedId });
     if (o.accountType === null || o.accountType === "depository") {
       if (matchesPendingManual(projectedPending, o)) continue;
-      add(o.date, event);
+      if (changed) add(o.date, changed);
     } else {
       const bill = o.accountId === null ? undefined : billByAccount.get(o.accountId);
       if (!bill || matchesPendingManual(allPending, o)) continue;
-      addCharge(bill, o.date, event);
+      if (changed) addCharge(bill, o.date, changed);
     }
     plannedMerchants.add(norm(o.merchant));
   }
@@ -310,8 +342,10 @@ export function cashForecast(
         cadence: s.cadence,
         ...(s.categoryId !== null ? { categoryId: s.categoryId } : {}),
       };
-      if (bill) addCharge(bill, d, event);
-      else add(d, event);
+      const changed = adjustSeries(event, d, { seriesKey: s.key });
+      if (!changed) continue;
+      if (bill) addCharge(bill, d, changed);
+      else add(d, changed);
     }
   }
 
@@ -377,7 +411,30 @@ export function cashForecast(
   }
 
   // 6. Money set aside for goals.
-  for (const { date, event } of goalEvents(listGoals(db, today), today, end)) add(date, event);
+  const goals = listGoals(db, today).map((g) => {
+    let forecast = g.forecast;
+    for (const a of adjustments) if (a.kind === "goal" && a.goalId === g.id) forecast = a.forecast;
+    return { ...g, forecast };
+  });
+  for (const { date, event } of goalEvents(goals, today, end)) add(date, event);
+
+  // 6b. The scenario's own one-off and recurring amounts.
+  for (const a of adjustments) {
+    if (a.kind === "one_off") {
+      add(a.date, { label: a.label, amountMinor: a.amountMinor, source: "scenario" });
+    } else if (a.kind === "recurring") {
+      for (let d = a.startDate, guard = 0; d <= end && guard < 400; d = nextAfter(d, a.cadence)) {
+        guard += 1;
+        if (a.endDate !== null && d > a.endDate) break;
+        add(d, {
+          label: a.label,
+          amountMinor: a.amountMinor,
+          source: "scenario",
+          cadence: a.cadence,
+        });
+      }
+    }
+  }
 
   // 7. The rest of this month's spending caps, less what the steps above already forecast in them
   // (goal and interest events carry no category, so they never count as spending).

@@ -15,7 +15,8 @@ export interface ForecastEvent {
     | "debt_plan"
     | "interest"
     | "goal"
-    | "cap_holdback";
+    | "cap_holdback"
+    | "scenario";
   /** A charge paid with a card bill: the card's name, and the day it is charged to the card. */
   card?: string;
   chargedOn?: string;

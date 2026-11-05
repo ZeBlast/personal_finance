@@ -1,0 +1,228 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { count } from "drizzle-orm";
+import { goals, plannedTransactions, transactions } from "../../drizzle/schema.js";
+import { cashForecast } from "./services/forecast.service.js";
+import { compareScenario, type ScenarioAdjustment } from "./services/scenario.service.js";
+import { getSettings } from "./services/settings.service.js";
+import { makeTestApp } from "./test-helpers.js";
+
+const cleanups: Array<() => void> = [];
+afterEach(() => {
+  while (cleanups.length > 0) cleanups.pop()!();
+});
+
+const TODAY = "2026-10-09";
+
+/** Payroll on the 20th, City Apartments $1,500 on the 12th, a goal counting $400 on the 5th, and a card with Netflix. */
+async function setup() {
+  const t = makeTestApp();
+  cleanups.push(t.cleanup);
+  const account = async (name: string, kind: string) =>
+    (await t.call("post", "/api/accounts/manual").send({ name, kind }).expect(201)).body
+      .id as number;
+  const checking = await account("Checking", "checking");
+  const card = await account("Visa", "credit_card");
+  await t
+    .call("put", `/api/accounts/${card}/bill`)
+    .send({ closingDay: 25, dueDay: 20 })
+    .expect(200);
+  const add = (
+    accountId: number,
+    date: string,
+    merchant: string,
+    amountMinor: number,
+    direction: "in" | "out",
+  ) =>
+    t
+      .call("post", "/api/transactions")
+      .send({ accountId, date, merchant, amountMinor, direction })
+      .expect(201);
+  for (const month of ["06", "07", "08", "09"]) {
+    await add(checking, `2026-${month}-20`, "ACME PAYROLL", 300_000, "in");
+    await add(checking, `2026-${month}-12`, "City Apartments", 150_000, "out");
+    await add(card, `2026-${month}-15`, "Netflix", 1599, "out");
+  }
+  const goalId = (
+    await t
+      .call("post", "/api/goals")
+      .send({
+        name: "Trip",
+        targetMinor: 5_000_000,
+        forecast: { monthlyMinor: 40_000, day: 5 },
+      })
+      .expect(201)
+  ).body.id as number;
+
+  const events = (f: ReturnType<typeof cashForecast>, label: string) =>
+    f.days.flatMap((d) =>
+      d.events
+        .filter((e) => e.label === label)
+        .map((e) => ({ date: d.date, amountMinor: e.amountMinor })),
+    );
+  const base = cashForecast(t.db, { today: TODAY, days: 60 });
+  const keyOf = (label: string) =>
+    base.days.flatMap((d) => d.events).find((e) => e.label === label)!.seriesKey!;
+
+  async function compare(adjustments: ScenarioAdjustment[], days = 60) {
+    const made = await t
+      .call("post", "/api/forecast/scenarios")
+      .send({ name: "What if", adjustments })
+      .expect(201);
+    const res = await t
+      .call("get", `/api/forecast/scenarios/${made.body.id}/compare?days=${days}&today=${TODAY}`)
+      .expect(200);
+    return res.body as ReturnType<typeof compareScenario>;
+  }
+  return { t, goalId, events, base, keyOf, compare };
+}
+
+describe("what-if scenarios", () => {
+  it("a one-off expense lowers the line from its day on", async () => {
+    const s = await setup();
+    const c = await s.compare(
+      [{ kind: "one_off", label: "Car repair", date: "2026-10-15", amountMinor: -50_000 }],
+      60,
+    );
+    expect(c).toMatchObject({ endChangeMinor: -50_000, lowestChangeMinor: -50_000 });
+    expect(c.alt.days.find((d) => d.date === "2026-10-15")!.events[0]).toMatchObject({
+      source: "scenario",
+    });
+  });
+
+  it("stopping a series removes its later events, and changing it changes their amount", async () => {
+    const s = await setup();
+    const rentKey = s.keyOf("City Apartments");
+    const stop = await s.compare(
+      [
+        {
+          kind: "change_series",
+          target: { seriesKey: rentKey },
+          fromDate: "2026-11-01",
+          amountMinor: null,
+        },
+      ],
+      60,
+    );
+    expect(s.events(stop.alt, "City Apartments").map((e) => e.amountMinor)).toEqual([-150_000]);
+    const raise = await s.compare(
+      [
+        {
+          kind: "change_series",
+          target: { seriesKey: rentKey },
+          fromDate: "2026-11-01",
+          amountMinor: 170_000,
+        },
+      ],
+      60,
+    );
+    expect(raise.endChangeMinor).toBe(-20_000);
+  });
+
+  it("moves a card-paid series with its bill when it is stopped", async () => {
+    const s = await setup();
+    const key = s.keyOf("Netflix");
+    const full = cashForecast(s.t.db, { today: TODAY, days: 90 });
+    expect(s.events(full, "Netflix").map((e) => e.date)).toEqual(["2026-11-20", "2026-12-20"]);
+    const stop = await s.compare(
+      [
+        {
+          kind: "change_series",
+          target: { seriesKey: key },
+          fromDate: "2026-11-01",
+          amountMinor: null,
+        },
+      ],
+      90,
+    );
+    // Oct 15 stays (on the bill due Nov 20); Nov 15 is on the bill due Dec 20 and goes.
+    expect(s.events(stop.alt, "Netflix")).toEqual([{ date: "2026-11-20", amountMinor: -1599 }]);
+  });
+
+  it("adds a new monthly amount, and replaces a goal's own contribution", async () => {
+    const s = await setup();
+    const gym = await s.compare(
+      [
+        {
+          kind: "recurring",
+          label: "Gym",
+          amountMinor: -5_000,
+          cadence: "monthly",
+          startDate: "2026-10-15",
+          endDate: null,
+        },
+      ],
+      60,
+    );
+    // Oct 15 and Nov 15 and Dec 15 are inside 60 days (to Dec 8): two charges.
+    expect(gym.endChangeMinor).toBe(-10_000);
+    const goal = await s.compare(
+      [{ kind: "goal", goalId: s.goalId, forecast: { monthlyMinor: 10_000, day: 5 } }],
+      60,
+    );
+    expect(s.events(goal.alt, "Set aside for Trip").map((e) => e.amountMinor)).toEqual([
+      -10_000, -10_000,
+    ]);
+    expect(goal.endChangeMinor).toBe(60_000);
+  });
+
+  it("never changes the ledger, the plan, goals or settings", async () => {
+    const s = await setup();
+    const snapshot = () => ({
+      tx: s.t.db.select({ n: count() }).from(transactions).get(),
+      planned: s.t.db.select({ n: count() }).from(plannedTransactions).get(),
+      goals: s.t.db.select().from(goals).all(),
+      settings: getSettings(s.t.db),
+      forecast: cashForecast(s.t.db, { today: TODAY, days: 60 }),
+    });
+    const before = snapshot();
+    await s.compare(
+      [
+        { kind: "one_off", label: "x", date: "2026-10-15", amountMinor: -1 },
+        { kind: "goal", goalId: s.goalId, forecast: null },
+        {
+          kind: "change_series",
+          target: { seriesKey: s.keyOf("City Apartments") },
+          fromDate: "2026-10-01",
+          amountMinor: null,
+        },
+      ],
+      60,
+    );
+    expect(snapshot()).toEqual(before);
+    const res = await s.t.call("get", `/api/forecast?today=${TODAY}&days=60`).expect(200);
+    expect(res.body).toEqual(before.forecast);
+
+    await s.t
+      .call("post", "/api/forecast/scenarios")
+      .send({
+        name: "Bad",
+        adjustments: [{ kind: "one_off", label: "x", date: "2026-13-01", amountMinor: 5 }],
+      })
+      .expect(400);
+    await s.t
+      .call("post", "/api/forecast/scenarios")
+      .send({
+        name: "Zero",
+        adjustments: [{ kind: "one_off", label: "x", date: "2026-10-15", amountMinor: 0 }],
+      })
+      .expect(400);
+  });
+
+  it("lists, renames and deletes scenarios", async () => {
+    const s = await setup();
+    const made = await s.t
+      .call("post", "/api/forecast/scenarios")
+      .send({ name: "A", adjustments: [] })
+      .expect(201);
+    const id = made.body.id as number;
+    await s.t
+      .call("put", `/api/forecast/scenarios/${id}`)
+      .send({ name: "B", adjustments: [] })
+      .expect(200);
+    expect((await s.t.call("get", "/api/forecast/scenarios").expect(200)).body).toMatchObject([
+      { id, name: "B", adjustments: [] },
+    ]);
+    await s.t.call("delete", `/api/forecast/scenarios/${id}`).expect(204);
+    await s.t.call("get", `/api/forecast/scenarios/${id}/compare`).expect(404);
+  });
+});

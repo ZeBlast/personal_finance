@@ -11,6 +11,14 @@ import {
 import { merchantTrends, yearReport } from "../services/trends.service.js";
 import { clearBillSettings, listBills, setBillSettings } from "../services/bills.service.js";
 import { cashForecast, MAX_FORECAST_DAYS } from "../services/forecast.service.js";
+import {
+  compareScenario,
+  createScenario,
+  deleteScenario,
+  listScenarios,
+  scenarioBodySchema,
+  updateScenario,
+} from "../services/scenario.service.js";
 import { monthReport } from "../services/report.service.js";
 import { detectPaychecks } from "../services/paycheck.service.js";
 import { navBadges } from "../services/badges.service.js";
@@ -158,6 +166,31 @@ export function planningRoutes(db: AppDb): Router {
       })
       .parse(req.query);
     res.json(cashForecast(db, q));
+  });
+
+  router.get("/forecast/scenarios", (_req, res) => {
+    res.json(listScenarios(db));
+  });
+  router.post("/forecast/scenarios", (req, res) => {
+    res.status(201).json(createScenario(db, scenarioBodySchema.parse(req.body)));
+  });
+  router.get("/forecast/scenarios/:id/compare", (req, res) => {
+    const q = z
+      .object({
+        days: z.coerce.number().int().min(7).max(MAX_FORECAST_DAYS).optional(),
+        today: day.optional(),
+      })
+      .parse(req.query);
+    res.json(compareScenario(db, idParam.parse(req.params["id"]), q));
+  });
+  router.put("/forecast/scenarios/:id", (req, res) => {
+    res.json(
+      updateScenario(db, idParam.parse(req.params["id"]), scenarioBodySchema.parse(req.body)),
+    );
+  });
+  router.delete("/forecast/scenarios/:id", (req, res) => {
+    deleteScenario(db, idParam.parse(req.params["id"]));
+    res.status(204).end();
   });
 
   router.get("/bills", (req, res) => {

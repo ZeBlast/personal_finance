@@ -17,6 +17,7 @@ const SOURCE: Record<ForecastEvent["source"], string> = {
   interest: "Interest (estimated from the APY)",
   goal: "Goal contribution",
   cap_holdback: "Spending caps (held back)",
+  scenario: "What-if",
 };
 
 const smallButton =
