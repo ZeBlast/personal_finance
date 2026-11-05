@@ -119,6 +119,47 @@ describe("spending monitors", () => {
     ]);
   });
 
+  it("keeps a closed account from emptying later baselines, and names it", async () => {
+    const { t, add } = await setup();
+    const old = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Old Visa", kind: "credit_card" })
+        .expect(201)
+    ).body.id as number;
+    await t
+      .call("post", "/api/transactions")
+      .send({
+        accountId: old,
+        date: "2026-01-10",
+        merchant: "Shop",
+        amountMinor: 500,
+        direction: "out",
+      })
+      .expect(201);
+    t.sqlite
+      .prepare("update accounts set no_longer_shared_at = ? where id = ?")
+      .run("2026-03-03T00:00:00Z", old);
+    await add("2026-01-05", "Shop", 100);
+    await add("2026-07-15", "Shop", 9_000);
+    await add("2026-08-15", "Shop", 3_000);
+    await add("2026-09-10", "Shop", 3_000);
+    const m = spendingMonitor(t.db, {}, "2026-10-20");
+    expect(m.baselineMonths).toBe(3);
+    expect(m.averageMinor).toBe(5_000);
+    expect(m.leftOut).toEqual([{ name: "Old Visa", through: "2026-03-03" }]);
+    // The month the account stopped in is still incomplete.
+    expect(isMonthComplete("2026-03", [{ from: "2026-01-10", through: "2026-03-03" }])).toBe(false);
+  });
+
+  it("lets a new account affect only its first month", () => {
+    const old = { from: "2026-01-01", through: null };
+    const added = { from: "2026-10-05", through: null };
+    expect(isMonthComplete("2026-09", [old, added])).toBe(true);
+    expect(isMonthComplete("2026-10", [old, added])).toBe(false);
+    expect(isMonthComplete("2026-11", [old, added])).toBe(true);
+  });
+
   it("compares with nothing when no month is complete", async () => {
     const { t, add } = await setup();
     await add("2026-08-15", "Shop", 9_000);
@@ -134,6 +175,13 @@ describe("spending monitors", () => {
     expect(isMonthComplete("2026-09", [{ from: "2026-09-02", through: null }])).toBe(false);
     expect(isMonthComplete("2026-09", [{ from: "2026-01-01", through: "2026-09-29" }])).toBe(false);
     expect(isMonthComplete("2026-09", [{ from: "2026-01-01", through: "2026-09-30" }])).toBe(true);
-    expect(isMonthComplete("2026-09", [{ from: null, through: null }])).toBe(true);
+    // An account with no history is ignored; with nothing else there is nothing to trust.
+    expect(isMonthComplete("2026-09", [{ from: null, through: null }])).toBe(false);
+    expect(
+      isMonthComplete("2026-09", [
+        { from: null, through: null },
+        { from: "2026-01-01", through: null },
+      ]),
+    ).toBe(true);
   });
 });

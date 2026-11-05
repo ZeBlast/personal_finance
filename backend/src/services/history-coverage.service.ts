@@ -52,8 +52,10 @@ export function accountCoverage(db: AppDb, accountId: number): AccountCoverage {
 }
 
 /**
- * Whether the records for a whole month can be trusted: every account that has history started on
- * or before the month's first day and is still covered through its last day. Pure.
+ * Whether the records for a whole month can be trusted. An account counts only for the months it
+ * touches: one whose history begins after the month, or whose coverage ended before it, is left
+ * out. The month in which an account starts or stops is incomplete, and so is a month no account
+ * has records for. Pure.
  */
 export function isMonthComplete(
   month: string,
@@ -61,9 +63,25 @@ export function isMonthComplete(
 ): boolean {
   const first = `${month}-01`;
   const last = lastOfMonth(month);
-  return coverage.every(
-    (c) => c.from === null || (c.from <= first && (c.through === null || c.through >= last)),
+  const touching = coverage.filter(
+    (c) => c.from !== null && c.from <= last && (c.through === null || c.through >= first),
   );
+  return (
+    touching.length > 0 &&
+    touching.every((c) => c.from! <= first && (c.through === null || c.through >= last))
+  );
+}
+
+/** An account left out of a baseline because its records stopped before a month it looks at. */
+export interface LeftOutAccount {
+  name: string;
+  /** The last day its records cover. */
+  through: string;
+}
+
+export interface CompleteMonths {
+  months: Set<string>;
+  leftOut: LeftOutAccount[];
 }
 
 /** Which of these months are complete for the accounts that count (or for the one account). */
@@ -71,17 +89,26 @@ export function completeMonths(
   db: AppDb,
   months: string[],
   scope: { environment: string; accountId?: number },
-): Set<string> {
-  const ids =
+): CompleteMonths {
+  const accounts =
     scope.accountId !== undefined
-      ? [scope.accountId]
-      : db
-          .all<{ id: number }>(
-            sql`select a.id from accounts a left join plaid_items p on p.id = a.plaid_item_id
+      ? db.all<{ id: number; name: string }>(
+          sql`select id, name from accounts where id = ${scope.accountId}`,
+        )
+      : db.all<{ id: number; name: string }>(
+          sql`select a.id, a.name from accounts a left join plaid_items p on p.id = a.plaid_item_id
               where ${countedAccount("a")}
                 and (a.plaid_item_id is null or p.environment = ${scope.environment})`,
+        );
+  const coverage = accounts.map((a) => ({ name: a.name, ...accountCoverage(db, a.id) }));
+  const leftOut =
+    scope.accountId !== undefined
+      ? []
+      : coverage
+          .filter(
+            (c) =>
+              c.from !== null && c.through !== null && months.some((m) => c.through! < `${m}-01`),
           )
-          .map((r) => r.id);
-  const coverage = ids.map((id) => accountCoverage(db, id));
-  return new Set(months.filter((m) => isMonthComplete(m, coverage)));
+          .map((c) => ({ name: c.name, through: c.through! }));
+  return { months: new Set(months.filter((m) => isMonthComplete(m, coverage))), leftOut };
 }

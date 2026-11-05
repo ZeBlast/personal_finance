@@ -14,6 +14,7 @@ import {
   suggestedCap,
   totalExpected,
 } from "../lib/caps";
+import { leftOutNote } from "../lib/leftOut";
 import { announceDataChanged } from "../lib/syncEvents";
 import { currencyDigits, formatMinor, parseMoneyToMinor } from "../lib/money";
 import { firstOfMonth, lastOfMonth, monthLabel, monthOf, shiftMonth, today } from "../lib/period";
@@ -549,6 +550,11 @@ export function BudgetsPage() {
                   {money(data.unbudgetedSpendingMinor)}{" "}
                   {daysLeft !== null ? "so far this month" : `in ${monthLabel(month, "long")}`} is
                   outside any cap.
+                </p>
+              )}
+              {(data.uncappedLeftOut ?? []).length > 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Typical month: {leftOutNote(data.uncappedLeftOut)}
                 </p>
               )}
               <table className="mt-2 w-full text-sm">

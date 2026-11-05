@@ -2,7 +2,7 @@ import type { AppDb } from "../db/client.js";
 import { addMonths, isRealDate, lastOfMonth } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
 import { summarize } from "./analytics.service.js";
-import { completeMonths } from "./history-coverage.service.js";
+import { completeMonths, type LeftOutAccount } from "./history-coverage.service.js";
 import { getSettings } from "./settings.service.js";
 import { tagByName } from "./tag.service.js";
 
@@ -38,6 +38,8 @@ export interface SpendingMonitor {
   months: Array<{ month: string; spentMinor: number; complete: boolean }>;
   /** A tag was named that does not exist. */
   unknownTag: boolean;
+  /** Accounts the baseline leaves out because their records stopped before some of those months. */
+  leftOut: LeftOutAccount[];
 }
 
 const MONTHS_BACK = 6;
@@ -75,7 +77,7 @@ export function spendingMonitor(
   const names = Array.from({ length: MONTHS_BACK + 1 }, (_, i) =>
     addMonths(month, i - MONTHS_BACK),
   );
-  const complete = completeMonths(db, names, {
+  const { months: complete, leftOut } = completeMonths(db, names, {
     environment,
     ...(filter.accountId !== undefined ? { accountId: filter.accountId } : {}),
   });
@@ -118,5 +120,6 @@ export function spendingMonitor(
         : null,
     months,
     unknownTag,
+    leftOut,
   };
 }

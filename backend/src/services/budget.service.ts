@@ -4,7 +4,7 @@ import type { AppDb } from "../db/client.js";
 import { addMonths, firstOfMonth, isRealDate, isRealMonth, lastOfMonth } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { categorySpending, summarize } from "./analytics.service.js";
-import { completeMonths } from "./history-coverage.service.js";
+import { completeMonths, type LeftOutAccount } from "./history-coverage.service.js";
 
 export interface BudgetDto {
   id: number;
@@ -88,6 +88,8 @@ export interface BudgetMonth {
   unbudgetedSpendingMinor: number;
   /** Categories with spending and no cap, biggest first, when asked for. */
   uncapped?: UncappedCategory[];
+  /** Accounts the typical month leaves out because their records stopped. */
+  uncappedLeftOut?: LeftOutAccount[];
 }
 
 /** Before this many days a month's pace says too little to call anything at risk. */
@@ -223,7 +225,7 @@ function uncappedCategories(
   month: string,
   environment: string,
   covered: (id: number) => boolean,
-): UncappedCategory[] {
+): { categories: UncappedCategory[]; leftOut: LeftOutAccount[] } {
   const base = {
     groupBy: "category" as const,
     includeTransfers: false,
@@ -232,7 +234,7 @@ function uncappedCategories(
     environment,
   };
   const now = summarize(db, { ...base, from: firstOfMonth(month), to: lastOfMonth(month) }).rows;
-  const complete = completeMonths(
+  const { months: complete, leftOut } = completeMonths(
     db,
     [-3, -2, -1].map((n) => addMonths(month, n)),
     { environment },
@@ -257,10 +259,11 @@ function uncappedCategories(
       averageMonths,
     });
   }
-  return [...found.values()]
+  const categories = [...found.values()]
     .filter((c) => c.spentMinor > 0 || c.averageMinor > 0)
     .sort((a, b) => Math.max(b.spentMinor, b.averageMinor) - Math.max(a.spentMinor, a.averageMinor))
     .slice(0, UNCAPPED_SHOWN);
+  return { categories, leftOut };
 }
 
 /** Whole months from one month through another, counting both, at least 1. */
@@ -418,19 +421,20 @@ export function budgetMonth(
     unbudgeted += row.spendingMinor;
   }
 
+  const uncappedParts = () => {
+    const found = uncappedCategories(db, month, environment, (id) => {
+      const parent = parentOf.get(id) ?? null;
+      return covered.has(id) || (parent !== null && covered.has(parent));
+    });
+    return { uncapped: found.categories, uncappedLeftOut: found.leftOut };
+  };
+
   return {
     month,
     budgets: list,
     totals: { budgetedMinor, spentMinor, remainingMinor: budgetedMinor - spentMinor },
     unbudgetedSpendingMinor: unbudgeted,
-    ...(options.detail
-      ? {
-          uncapped: uncappedCategories(db, month, environment, (id) => {
-            const parent = parentOf.get(id) ?? null;
-            return covered.has(id) || (parent !== null && covered.has(parent));
-          }),
-        }
-      : {}),
+    ...(options.detail ? uncappedParts() : {}),
   };
 }
 

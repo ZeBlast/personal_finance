@@ -147,6 +147,8 @@ export interface BudgetMonth {
   month: string;
   budgets: Budget[];
   uncapped?: UncappedCategory[];
+  /** Accounts the typical month leaves out because their records stopped. */
+  uncappedLeftOut?: Array<{ name: string; through: string }>;
   totals: { budgetedMinor: number; spentMinor: number; remainingMinor: number };
   unbudgetedSpendingMinor: number;
 }

@@ -1,4 +1,5 @@
 import { useApi } from "../hooks/useApi";
+import { leftOutNote } from "../lib/leftOut";
 import { formatMinor } from "../lib/money";
 import { monthShort } from "../lib/period";
 import { accountField, categoryField } from "./fields";
@@ -16,6 +17,7 @@ export interface SpendingMonitor {
   changePercent: number | null;
   months: Array<{ month: string; spentMinor: number; complete: boolean }>;
   unknownTag: boolean;
+  leftOut?: Array<{ name: string; through: string }>;
 }
 
 /** The query for a monitor's settings; empty settings are left out. Pure. */
@@ -100,6 +102,7 @@ export default defineWidget({
               className={`text-xs ${(data.changePercent ?? 0) > 15 ? "text-red-600 dark:text-red-400" : "text-slate-500"}`}
             >
               {paceText(data)} {usualText(data, money)}
+              {data.leftOut && data.leftOut.length > 0 && ` ${leftOutNote(data.leftOut)}`}
             </p>
             <div className="flex h-16 items-end gap-1" aria-hidden="true">
               {data.months.map((m, i) => (
