@@ -221,7 +221,10 @@ export function AnnotatedForecast({
         </span>
         {other && (
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="h-0.5 w-4 bg-violet-500 dark:bg-violet-400" />
+            <span
+              aria-hidden="true"
+              className="w-4 border-t-2 border-dashed border-violet-500 dark:border-violet-400"
+            />
             With {other.label}
           </span>
         )}

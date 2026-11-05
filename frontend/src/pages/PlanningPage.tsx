@@ -118,12 +118,14 @@ function ForecastView() {
     compareId ? `/forecast/scenarios/${compareId}/compare?days=${days}` : null,
   );
   const compared = compareId ? comparison.data : null;
-  const { names: scenarioNames } = useScenarioPickers();
+  const pickers = useScenarioPickers(managing || compareId !== "");
   async function holdCaps(on: boolean): Promise<void> {
     setHoldError(null);
     try {
       await api("/settings", { method: "PATCH", body: JSON.stringify({ forecastHoldCaps: on }) });
       reload();
+      // The scenario line is worked out with the same hold-back, so it follows.
+      comparison.reload();
       announceDataChanged();
     } catch (e) {
       // The box shows what the forecast says, so it stays as it was.
@@ -146,11 +148,7 @@ function ForecastView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <dl className="grid grid-cols-3 gap-3 text-sm">
-          <Stat
-            label="In the bank today"
-            value={money(data.startBalanceMinor)}
-            change={compared ? "Same with the scenario" : undefined}
-          />
+          <Stat label="In the bank today" value={money(data.startBalanceMinor)} />
           <Stat
             label={`${low.afterToday ? "Lowest after today" : "Lowest"} (${formatDay(low.date)})`}
             value={money(low.balanceMinor)}
@@ -217,13 +215,17 @@ function ForecastView() {
           currency={data.currency}
           today={data.today}
           days={days}
+          pickers={pickers}
           unmatched={
             compared ? { scenarioId: compared.scenario.id, indexes: compared.unmatched } : null
           }
           onChanged={(savedId) => {
             scenarios.reload();
-            comparison.reload();
-            if (savedId !== undefined) setChosen(String(savedId));
+            // After a delete there is nothing to reload: a deleted scenario would only 404.
+            if (savedId !== undefined) {
+              comparison.reload();
+              setChosen(String(savedId));
+            }
           }}
           onClose={() => setManaging(false)}
         />
@@ -253,7 +255,7 @@ function ForecastView() {
           )}
           {compared.unmatched.map((i) => (
             <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
-              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, scenarioNames)}:
+              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, pickers.names)}:
               This change doesn&apos;t match anything in the next {days} days.
             </p>
           ))}

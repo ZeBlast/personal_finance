@@ -2,16 +2,12 @@ import { useState } from "react";
 import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { CADENCE_LABEL } from "../../lib/insights";
-import { parseMoneyToMinor } from "../../lib/money";
+import { formatMinor, parseMoneyToMinor } from "../../lib/money";
 import { describeAdjustment } from "../../lib/scenarios";
 import type { Goal } from "../../pages/GoalsPage";
 import type { PlannedItem } from "../../types/calendar";
-import type {
-  Scenario,
-  ScenarioAdjustment,
-  ScenarioCadence,
-  SubscriptionReview,
-} from "../../types/planning";
+import type { RecurringReport, RecurringSeries } from "../../types/insights";
+import type { Scenario, ScenarioAdjustment, ScenarioCadence } from "../../types/planning";
 import { ActionMenu } from "../common/ActionMenu";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { Select } from "../common/Select";
@@ -33,20 +29,39 @@ interface Draft {
   skipped: number;
 }
 
-/** The payments, planned items and goals a change can point at, and their names for describing changes. */
-export function useScenarioPickers() {
-  const subscriptions = useApi<SubscriptionReview>("/subscriptions").data?.subscriptions;
-  const plannedItems = useApi<PlannedItem[]>("/planned").data;
-  const goalList = useApi<Goal[]>("/goals").data;
-  const subs = subscriptions ?? [];
+export interface ScenarioPickers {
+  series: RecurringSeries[];
+  planned: PlannedItem[];
+  goals: Goal[];
+  names: {
+    series: Map<string, string>;
+    planned: Map<number, string>;
+    goals: Map<number, string>;
+  };
+}
+
+/**
+ * The payments, planned items and goals a change can point at, and their names for describing
+ * changes. The payments are the same detected series the forecast uses (paychecks included).
+ * Nothing loads until `enabled`.
+ */
+export function useScenarioPickers(enabled: boolean): ScenarioPickers {
+  const series = useApi<RecurringReport>(enabled ? "/insights/recurring" : null).data?.series;
+  const plannedItems = useApi<PlannedItem[]>(enabled ? "/planned" : null).data;
+  const goalList = useApi<Goal[]>(enabled ? "/goals" : null).data;
+  const active = (series ?? []).filter((s) => s.status === "active" && !s.dismissed);
   const planned = plannedItems ?? [];
   const goals = goalList ?? [];
-  const names = {
-    series: new Map(subs.map((s) => [s.key, s.merchant])),
-    planned: new Map(planned.map((p) => [p.id, p.merchant])),
-    goals: new Map(goals.map((g) => [g.id, g.name])),
+  return {
+    series: active,
+    planned,
+    goals,
+    names: {
+      series: new Map(active.map((s) => [s.key, s.merchant])),
+      planned: new Map(planned.map((p) => [p.id, p.merchant])),
+      goals: new Map(goals.map((g) => [g.id, g.name])),
+    },
   };
-  return { subs, planned, goals, names };
 }
 
 /**
@@ -59,17 +74,19 @@ export function ScenarioDialog({
   today,
   days,
   unmatched,
+  pickers,
   onChanged,
   onClose,
 }: {
   scenarios: Scenario[];
+  pickers: ScenarioPickers;
   currency: string;
   today: string;
   /** The forecast window, for saying which changes match nothing in it. */
   days: number;
   /** For the scenario being compared: which of its changes matched nothing. */
   unmatched: { scenarioId: number; indexes: number[] } | null;
-  /** After any save or delete; `savedId` is the scenario just saved. */
+  /** After any save or delete; `savedId` is the scenario just saved (none after a delete). */
   onChanged: (savedId?: number) => void;
   onClose: () => void;
 }) {
@@ -77,7 +94,7 @@ export function ScenarioDialog({
   const [deleting, setDeleting] = useState<Scenario | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { subs, planned, goals, names } = useScenarioPickers();
+  const { names } = pickers;
 
   async function save(): Promise<void> {
     if (!draft) return;
@@ -172,9 +189,7 @@ export function ScenarioDialog({
           <AddChange
             currency={currency}
             today={today}
-            subs={subs}
-            planned={planned}
-            goals={goals}
+            pickers={pickers}
             disabled={draft.adjustments.length >= 50}
             onAdd={(a) => setDraft({ ...draft, adjustments: [...draft.adjustments, a] })}
           />
@@ -292,20 +307,17 @@ export function ScenarioDialog({
 function AddChange({
   currency,
   today,
-  subs,
-  planned,
-  goals,
+  pickers,
   disabled,
   onAdd,
 }: {
   currency: string;
   today: string;
-  subs: SubscriptionReview["subscriptions"];
-  planned: PlannedItem[];
-  goals: Goal[];
+  pickers: ScenarioPickers;
   disabled: boolean;
   onAdd: (a: ScenarioAdjustment) => void;
 }) {
+  const { series, planned, goals } = pickers;
   const [kind, setKind] = useState<Kind>("one_off");
   const [label, setLabel] = useState("");
   const [direction, setDirection] = useState<"out" | "in">("out");
@@ -424,16 +436,16 @@ function AddChange({
               className={inputClass}
             >
               <option value="">Choose one</option>
-              {subs
-                .filter((s) => s.status === "active")
-                .map((s) => (
-                  <option key={s.key} value={`s:${s.key}`}>
-                    {s.merchant}
-                  </option>
-                ))}
+              {series.map((s) => (
+                <option key={s.key} value={`s:${s.key}`}>
+                  {s.merchant}, {s.direction === "in" ? "coming in" : "going out"}, usually{" "}
+                  {formatMinor(s.typicalAmountMinor, currency)}
+                </option>
+              ))}
               {planned.map((p) => (
                 <option key={p.id} value={`p:${p.id}`}>
-                  {p.merchant} (expected)
+                  {p.merchant} (expected), {p.direction === "in" ? "coming in" : "going out"},{" "}
+                  {formatMinor(p.amountMinor, currency)}
                 </option>
               ))}
             </Select>
