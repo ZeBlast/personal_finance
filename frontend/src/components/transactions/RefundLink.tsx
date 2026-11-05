@@ -4,25 +4,36 @@ import { useApi } from "../../hooks/useApi";
 import { formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
 import type { Transaction } from "../../types/api";
-
-interface Suggestion {
-  transaction: Transaction;
-  namesAgree: boolean;
-  /** The refund is exactly the charge, or exactly what is left of it. */
-  exactAmount: boolean;
-  /** Days from the charge to the refund. */
-  daysBefore: number;
-  /** For a suggested charge: what is left of it to give back. */
-  leftMinor: number | null;
-}
+import type { RefundConfidence, RefundSuggestion } from "../../types/planning";
 
 interface Suggestions {
-  suggestions: Suggestion[];
+  suggestions: RefundSuggestion[];
   more: boolean;
   range: "recent" | "all";
 }
 
 const buttonClass = "rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600";
+
+const CONFIDENCE: Record<RefundConfidence, { label: string; style: string }> = {
+  high: {
+    label: "Likely match",
+    style: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200",
+  },
+  medium: {
+    label: "Possible match",
+    style: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  },
+  low: {
+    label: "Check first",
+    style: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+  },
+};
+
+/** How sure a suggested match is, in words. */
+export function ConfidenceBadge({ confidence }: { confidence: RefundConfidence }) {
+  const { label, style } = CONFIDENCE[confidence];
+  return <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${style}`}>{label}</span>;
+}
 
 /** How far apart a charge and its refund are, said from the side being looked at. */
 export function dayGap(daysBefore: number, fromRefund: boolean): string {
@@ -383,12 +394,12 @@ function Finder({
 }
 
 function SuggestionRow({
-  suggestion: { transaction: c, namesAgree, exactAmount, daysBefore, leftMinor },
+  suggestion: { transaction: c, confidence, namesAgree, exactAmount, daysBefore, leftMinor },
   fromRefund,
   busy,
   onPick,
 }: {
-  suggestion: Suggestion;
+  suggestion: RefundSuggestion;
   fromRefund: boolean;
   busy: boolean;
   onPick: () => void;
@@ -410,11 +421,9 @@ function SuggestionRow({
     <li className="flex flex-wrap items-center gap-2 px-2 py-1">
       <span className="min-w-0 flex-1">
         <strong>{c.merchant}</strong> · {formatDay(c.authorizedDate ?? c.date)} · {c.accountName}
-        {namesAgree && exactAmount && (
-          <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200">
-            Likely
-          </span>
-        )}
+        <span className="ml-2">
+          <ConfidenceBadge confidence={confidence} />
+        </span>
         <span className="block text-xs text-slate-500">{details.join(" · ")}</span>
         {bankText && (
           <span className="block truncate text-xs text-slate-400" title={bankText}>

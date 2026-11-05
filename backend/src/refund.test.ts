@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { refundConfidence, refundReview } from "./services/refund.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -337,5 +338,96 @@ describe("finding what a refund gives back", () => {
     expect(matchesRefundSearch("1251", row)).toBe(false);
     expect(matchesRefundSearch("amzn visa", row)).toBe(true);
     expect(matchesRefundSearch("amzn target", row)).toBe(false);
+  });
+});
+
+describe("refund suggestions with a confidence", () => {
+  /** A card, and a way to add what happens on it. */
+  async function card() {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const account = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Card", kind: "credit_card" })
+        .expect(201)
+    ).body.id as number;
+    const add = async (body: Record<string, unknown>) =>
+      (
+        await t
+          .call("post", "/api/transactions")
+          .send({ accountId: account, ...body })
+          .expect(201)
+      ).body.id as number;
+    return { t, add };
+  }
+
+  it("rates a suggestion by how much agrees", () => {
+    const base = {
+      namesAgree: true,
+      exactAmount: true,
+      sameAccount: true,
+      daysBefore: 12,
+      generic: false,
+    };
+    expect(refundConfidence(base)).toBe("high");
+    expect(refundConfidence({ ...base, sameAccount: false })).toBe("medium");
+    expect(refundConfidence({ ...base, namesAgree: false })).toBe("low");
+    expect(refundConfidence({ ...base, generic: true })).toBe("low");
+    expect(refundConfidence({ ...base, daysBefore: 120 })).toBe("medium");
+  });
+
+  it("suggests partial refunds without promising more than is left of the purchase", async () => {
+    const { t, add } = await card();
+    await add({ date: "2026-09-01", merchant: "Shop A", amountMinor: 10_000, direction: "out" });
+    await add({ date: "2026-09-10", merchant: "Shop A", amountMinor: 3_000, direction: "in" });
+    await add({ date: "2026-09-12", merchant: "Shop A", amountMinor: 8_000, direction: "in" });
+    const items = refundReview(t.db, "2026-09-20");
+    expect(items.find((i) => i.credit.amountMinor === -3_000)!.suggestion).toMatchObject({
+      partial: true,
+      leftMinor: 10_000,
+    });
+    // Only $70 would be left of the purchase after the $30 above it.
+    expect(items.find((i) => i.credit.amountMinor === -8_000)).toBeUndefined();
+    // Across the whole list, what is suggested against one purchase never exceeds what it has.
+    const perPurchase = new Map<number, number>();
+    for (const i of items) {
+      const id = i.suggestion.transaction.id;
+      perPurchase.set(id, (perPurchase.get(id) ?? 0) - i.credit.amountMinor);
+    }
+    for (const total of perPurchase.values()) expect(total).toBeLessThanOrEqual(10_000);
+  });
+
+  it("asks for a check before a bank credit is linked, and drops a credit marked not a refund", async () => {
+    const { t, add } = await card();
+    await add({
+      date: "2026-09-01",
+      merchant: "Cashback Shop",
+      amountMinor: 2_000,
+      direction: "out",
+    });
+    await add({
+      date: "2026-09-10",
+      merchant: "Cashback Shop REWARD",
+      // Not the whole $20, so detection leaves it unlinked for the review list.
+      amountMinor: 1_500,
+      direction: "in",
+    });
+    const item = refundReview(t.db, "2026-09-20")[0]!;
+    expect(item.suggestion.generic).toBe(true);
+    expect(item.needsCheck).toBe(true);
+    await t
+      .call("put", `/api/transactions/${item.credit.id}/refund-of`)
+      .send({ originalId: null })
+      .expect(200);
+    expect(refundReview(t.db, "2026-09-20").map((i) => i.credit.id)).not.toContain(item.credit.id);
+  });
+
+  it("serves the list at /api/review/refunds", async () => {
+    const { t, add } = await card();
+    await add({ date: "2026-09-01", merchant: "Shop A", amountMinor: 10_000, direction: "out" });
+    await add({ date: "2026-09-10", merchant: "Shop A", amountMinor: 3_000, direction: "in" });
+    const body = (await t.call("get", "/api/review/refunds").expect(200)).body;
+    expect(Array.isArray(body)).toBe(true);
   });
 });

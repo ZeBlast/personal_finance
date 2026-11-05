@@ -167,6 +167,30 @@ export interface MonthReport {
   transactionCount: number;
 }
 
+export type RefundConfidence = "high" | "medium" | "low";
+
+export interface RefundSuggestion {
+  transaction: Transaction;
+  confidence: RefundConfidence;
+  /** The refund is less than what is left of the charge. */
+  partial: boolean;
+  generic: boolean;
+  namesAgree: boolean;
+  /** The refund is exactly the charge, or exactly what is left of it. */
+  exactAmount: boolean;
+  /** Days from the charge to the refund. */
+  daysBefore: number;
+  /** For a suggested charge: what is left of it to give back. */
+  leftMinor: number | null;
+}
+
+/** A recent bank credit and the purchase it most likely gives back. */
+export interface RefundReviewItem {
+  credit: Transaction;
+  suggestion: RefundSuggestion;
+  needsCheck: boolean;
+}
+
 export interface Attachment {
   id: number;
   transactionId: number;

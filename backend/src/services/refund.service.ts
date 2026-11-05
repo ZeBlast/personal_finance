@@ -249,8 +249,34 @@ export function setRefundOf(
   return getTransaction(db, id);
 }
 
+/** Credits that are rewards, interest or payouts rather than money back for a purchase. */
+export const GENERIC_CREDIT =
+  /\b(cash ?back|rewards?|bonus|promo(tion)?|incentive|interest|dividend|statement credit|courtesy credit|adjustment|payout|winnings|fanduel|draftkings|casino|financial aid|disbursement)\b/i;
+
+export type RefundConfidence = "high" | "medium" | "low";
+
+/** How sure a suggestion is: a reward-like credit is never better than low. Pure, for testing. */
+export function refundConfidence(s: {
+  namesAgree: boolean;
+  exactAmount: boolean;
+  sameAccount: boolean;
+  daysBefore: number;
+  generic: boolean;
+}): RefundConfidence {
+  if (s.generic || !s.namesAgree) return "low";
+  if (s.exactAmount && s.sameAccount && s.daysBefore >= 0 && s.daysBefore <= AUTO_REFUND_DAYS) {
+    return "high";
+  }
+  return s.exactAmount || s.sameAccount ? "medium" : "low";
+}
+
 export interface RefundSuggestion {
   transaction: TransactionDto;
+  confidence: RefundConfidence;
+  /** The refund is less than what is left of the charge. */
+  partial: boolean;
+  /** The credit's text looks like a reward, interest or payout. */
+  generic: boolean;
   namesAgree: boolean;
   /** The refund is exactly the charge's amount, or exactly what is left of it to give back. */
   exactAmount: boolean;
@@ -397,6 +423,8 @@ export function refundCandidates(
       sameAccount: r.same_account === 1,
       // Pay or interest is rarely a refund (still listed, for a search).
       income: r.income === 1,
+      partial: refundAmount(r) < chargeLeft(r),
+      generic: GENERIC_CREDIT.test(isRefund ? self.text : r.text),
     }))
     .sort(
       (x, y) =>
@@ -408,18 +436,70 @@ export function refundCandidates(
         x.id - y.id,
     );
   return {
-    suggestions: ranked
-      .slice(0, limit)
-      .map((s) => ({
-        transaction: getTransaction(db, s.id),
-        namesAgree: s.namesAgree,
-        exactAmount: s.exactAmount,
-        daysBefore: s.daysBefore,
-        leftMinor: s.leftMinor,
-      })),
+    suggestions: ranked.slice(0, limit).map((s) => ({
+      transaction: getTransaction(db, s.id),
+      confidence: refundConfidence(s),
+      partial: s.partial,
+      generic: s.generic,
+      namesAgree: s.namesAgree,
+      exactAmount: s.exactAmount,
+      daysBefore: s.daysBefore,
+      leftMinor: s.leftMinor,
+    })),
     more: ranked.length > limit,
     range,
   };
+}
+
+const REVIEW_DAYS = 90;
+const REVIEW_MAX = 50;
+
+/**
+ * Recent bank credits not yet linked to a purchase, each with the purchase it most likely gives
+ * back, for the Review page. Oldest first. A purchase is never promised more than it has left: what
+ * is suggested above a credit is taken off before the next is matched, and a credit that no longer
+ * fits any purchase is left out. `needsCheck`: it looks like a reward or payout, or the match is weak.
+ */
+export function refundReview(
+  db: AppDb,
+  today: string = new Date().toISOString().slice(0, 10),
+): Array<{ credit: TransactionDto; suggestion: RefundSuggestion; needsCheck: boolean }> {
+  const day = sql`coalesce(t.authorized_date, t.date)`;
+  const credits = db.all<{ id: number; text: string }>(sql`
+    select t.id,
+      coalesce(t.merchant_name_user, '') || ' ' || coalesce(t.merchant_name, '') || ' ' || t.name as text
+    from transactions t join accounts a on a.id = t.account_id
+      left join categories c on c.id = t.category_id
+    where t.amount_minor < 0 and t.refund_of_id is null and t.refund_blocked = 0
+      and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
+      and ${day} >= ${addDays(today, -REVIEW_DAYS)} and ${day} <= ${today}
+      and coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) is null
+      and coalesce(c.income_treatment, '') <> 'income'
+      and coalesce(t.plaid_category_primary, '') <> 'INCOME'
+    order by ${day}, t.id`);
+  // Cents already suggested against each purchase, by the credits above.
+  const taken = new Map<number, number>();
+  const items: ReturnType<typeof refundReview> = [];
+  for (const { id, text } of credits) {
+    if (items.length >= REVIEW_MAX) break;
+    if (PERSON_TO_PERSON.test(text)) continue;
+    const credit = getTransaction(db, id);
+    const amount = -credit.amountMinor;
+    for (const s of refundCandidates(db, id, { limit: 20 }).suggestions) {
+      const chargeId = s.transaction.id;
+      const left = (s.leftMinor ?? 0) - (taken.get(chargeId) ?? 0);
+      if (left < amount) continue;
+      taken.set(chargeId, (taken.get(chargeId) ?? 0) + amount);
+      const suggestion = { ...s, leftMinor: left, partial: amount < left };
+      items.push({
+        credit,
+        suggestion,
+        needsCheck: s.generic || s.confidence === "low",
+      });
+      break;
+    }
+  }
+  return items;
 }
 
 /** The refunds linked to a charge, oldest first. */

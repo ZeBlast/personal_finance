@@ -29,6 +29,7 @@ import {
   SUBSCRIPTION_STATUSES,
   subscriptionReview,
 } from "../services/subscriptions.service.js";
+import { refundReview } from "../services/refund.service.js";
 import { AppError } from "../utils/errors.js";
 import { dueReminders } from "../services/reminders.service.js";
 
@@ -263,6 +264,11 @@ export function planningRoutes(db: AppDb): Router {
   /** Every transaction without a category (not just recent ones), to categorize from Review. */
   router.get("/review/uncategorized", (_req, res) => {
     res.json(uncategorized(db));
+  });
+
+  /** Recent bank credits with the purchase each most likely gives back. */
+  router.get("/review/refunds", (_req, res) => {
+    res.json(refundReview(db));
   });
 
   router.post("/review/mark", (req, res) => {

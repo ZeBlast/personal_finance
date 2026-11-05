@@ -43,6 +43,9 @@ const tent = tx({ id: 10, date: "2025-11-20", merchant: "Camping World", amountM
 
 const suggestion = (t: Transaction, over: object = {}) => ({
   transaction: t,
+  confidence: "low",
+  partial: false,
+  generic: false,
   namesAgree: false,
   exactAmount: false,
   daysBefore: 22,
@@ -54,13 +57,15 @@ describe("finding what a refund gives back", () => {
   it("suggests, searches all history, shows more, and links the one picked", async () => {
     const calls = fakeBackend({
       [candidatesPath(2, "", false, 10)]: {
-        suggestions: [suggestion(charge, { namesAgree: true, exactAmount: true })],
+        suggestions: [
+          suggestion(charge, { confidence: "high", namesAgree: true, exactAmount: true }),
+        ],
         more: true,
         range: "recent",
       },
       [candidatesPath(2, "", false, 20)]: {
         suggestions: [
-          suggestion(charge, { namesAgree: true, exactAmount: true }),
+          suggestion(charge, { confidence: "high", namesAgree: true, exactAmount: true }),
           suggestion(tent),
         ],
         more: false,
@@ -78,7 +83,7 @@ describe("finding what a refund gives back", () => {
     await userEvent.click(screen.getByRole("button", { name: "This is a refund of..." }));
 
     // The likeliest, with what tells it apart: its category and the bank's own description.
-    const first = (await screen.findByText("Likely")).closest("li")!;
+    const first = (await screen.findByText("Likely match")).closest("li")!;
     expect(first.textContent).toContain("Shopping");
     expect(first.textContent).toContain("22 days before");
     expect(first.textContent).toContain("OUTDOOR STORE #12 SEATTLE");
@@ -101,6 +106,19 @@ describe("finding what a refund gives back", () => {
       path: "/transactions/2/refund-of",
       body: { originalId: 10 },
     });
+  });
+
+  it("says to check first when a suggestion is weak", async () => {
+    fakeBackend({
+      [candidatesPath(2, "", false, 10)]: {
+        suggestions: [suggestion(tent, { confidence: "low", generic: true })],
+        more: false,
+        range: "recent",
+      },
+    });
+    render(<RefundLink transaction={refund} onChanged={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "This is a refund of..." }));
+    await screen.findByText("Check first");
   });
 
   it("from a purchase: finds the money that came back and links it to this purchase", async () => {

@@ -5,12 +5,14 @@ import { buttonClass, primaryClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { CategorySelect } from "../components/common/CategorySelect";
+import { askConfirm } from "../components/common/ConfirmHost";
+import { ConfidenceBadge } from "../components/transactions/RefundLink";
 import { TransactionDetail, useWideScreen } from "../components/transactions/TransactionDetail";
 import { formatMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import type { Transaction } from "../types/api";
-import type { DuplicatePair, ReviewQueue, ReviewReason } from "../types/planning";
+import type { DuplicatePair, RefundReviewItem, ReviewQueue, ReviewReason } from "../types/planning";
 
 const REASONS: Record<ReviewReason, string> = {
   uncategorized: "No category",
@@ -40,6 +42,7 @@ export function ReviewPage() {
   const queue = useApi<ReviewQueue>("/review");
   const dupes = useApi<DuplicatePair[]>("/duplicates");
   const loose = useApi<{ items: Transaction[]; total: number }>("/review/uncategorized");
+  const refunds = useApi<RefundReviewItem[]>("/review/refunds");
   const { categories } = useCategories();
   const categoryChoices = categoryOptions((categories ?? []).filter((c) => c.active));
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +56,7 @@ export function ReviewPage() {
       queue.reload();
       dupes.reload();
       loose.reload();
+      refunds.reload();
       announceDataChanged();
     } catch (e) {
       setError(errorMessage(e, failure));
@@ -65,6 +69,32 @@ export function ReviewPage() {
       () => api("/review/mark", { method: "POST", body: JSON.stringify({ ids, reviewed: true }) }),
       "Could not mark them reviewed.",
     );
+
+  async function linkRefund(
+    creditId: number,
+    purchaseId: number | null,
+    askFirst: boolean,
+  ): Promise<void> {
+    if (
+      askFirst &&
+      !(await askConfirm({
+        title: "Link this credit?",
+        message:
+          "This looks like a bank credit or payout, not money back for a purchase. Link it anyway?",
+        confirmLabel: "Link anyway",
+      }))
+    ) {
+      return;
+    }
+    await run(
+      () =>
+        api(`/transactions/${creditId}/refund-of`, {
+          method: "PUT",
+          body: JSON.stringify({ originalId: purchaseId }),
+        }),
+      "Could not change the refund.",
+    );
+  }
 
   const items = queue.data?.items ?? [];
   return (
@@ -284,6 +314,68 @@ export function ReviewPage() {
           ))}
           {dupes.data && dupes.data.length === 0 && <AllClear>No possible duplicates</AllClear>}
         </div>
+
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">
+            Possible refunds{refunds.data ? ` (${refunds.data.length})` : ""}
+          </h2>
+          <p className="text-xs text-slate-500">
+            Money that came in over the last 90 days and may be a purchase given back. Link it so
+            the purchase stops counting as spending, or say it is not a refund.
+          </p>
+          <ul className="divide-y divide-slate-100 empty:hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">
+            {(refunds.data ?? []).map(({ credit, suggestion: s, needsCheck }) => (
+              <li
+                key={credit.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{credit.merchant}</span>
+                    <span className="text-slate-500">
+                      {formatDay(credit.authorizedDate ?? credit.date)}
+                    </span>
+                    <Amount t={credit} />
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span>
+                      May give back {s.transaction.merchant} (
+                      {formatMinor(s.transaction.amountMinor, s.transaction.currency)},{" "}
+                      {formatDay(s.transaction.authorizedDate ?? s.transaction.date)})
+                    </span>
+                    <ConfidenceBadge confidence={needsCheck ? "low" : s.confidence} />
+                    {s.partial && s.leftMinor !== null && (
+                      <span>
+                        Partial: {formatMinor(-credit.amountMinor, credit.currency)} of{" "}
+                        {formatMinor(s.leftMinor, credit.currency)} left
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={busy}
+                    onClick={() => void linkRefund(credit.id, s.transaction.id, needsCheck)}
+                  >
+                    Link
+                  </button>
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={busy}
+                    title="Count it as money in. The app won't suggest it again."
+                    onClick={() => void linkRefund(credit.id, null, false)}
+                  >
+                    Not a refund
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {refunds.data && refunds.data.length === 0 && <AllClear>No possible refunds</AllClear>}
+        </div>
       </section>
       {inspecting && (
         <TransactionDetail
@@ -297,6 +389,7 @@ export function ReviewPage() {
             queue.reload();
             loose.reload();
             dupes.reload();
+            refunds.reload();
           }}
         />
       )}
