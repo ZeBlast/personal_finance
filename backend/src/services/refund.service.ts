@@ -301,6 +301,8 @@ export interface RefundSearch {
   /** Look past REFUND_WINDOW_DAYS days. */
   all?: boolean;
   limit?: number;
+  /** Only charges on credit and depository accounts, as detection does (for the Review page). */
+  counted?: boolean;
 }
 
 interface SearchRow {
@@ -358,20 +360,50 @@ const refundedSql = (except: number) => sql`coalesce((select -sum(r.amount_minor
 export function refundCandidates(
   db: AppDb,
   id: number,
-  { q = "", all = false, limit = 10 }: RefundSearch = {},
+  { limit = 10, ...search }: RefundSearch = {},
 ): RefundSuggestions {
+  const { ranked, range } = rankCandidates(db, id, search);
+  return {
+    suggestions: ranked.slice(0, limit).map((s) => ({
+      transaction: getTransaction(db, s.id),
+      ...suggestionOf(s),
+    })),
+    more: ranked.length > limit,
+    range,
+  };
+}
+
+type Ranked = ReturnType<typeof rankCandidates>["ranked"][number];
+
+const suggestionOf = (s: Ranked) => ({
+  confidence: refundConfidence(s),
+  partial: s.partial,
+  generic: s.generic,
+  namesAgree: s.namesAgree,
+  exactAmount: s.exactAmount,
+  daysBefore: s.daysBefore,
+  leftMinor: s.leftMinor,
+});
+
+/** The candidates of refundCandidates, best first, as ids with what ranks them. */
+function rankCandidates(
+  db: AppDb,
+  id: number,
+  { q = "", all = false, counted = false }: Omit<RefundSearch, "limit">,
+) {
   const self = load(db, id);
   const search = q.trim();
-  const range = all || search !== "" ? "all" : "recent";
+  const range: RefundSuggestions["range"] = all || search !== "" ? "all" : "recent";
   const day = sql`coalesce(t.authorized_date, t.date)`;
   const text = sql`coalesce(t.merchant_name_user, '') || ' ' || coalesce(t.merchant_name, '') || ' ' || t.name`;
   const common = sql`t.id <> ${id} and t.currency = ${self.currency} and t.refund_of_id is null
-    and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0`;
+    and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
+    ${counted ? sql`and a.type in ('credit', 'depository')` : sql``}`;
   // A charge already linked as a refund, or with nothing left to give back, gets no suggestions.
   const isRefund = self.amount < 0;
   const left = isRefund ? 0 : self.amount - refundedBy(db, id, 0);
   if (!isRefund && (self.refund_of_id !== null || left <= 0)) {
-    return { suggestions: [], more: false, range };
+    return { ranked: [], range };
   }
   const where = isRefund
     ? sql`${common} and t.amount_minor > 0
@@ -436,24 +468,13 @@ export function refundCandidates(
         Math.abs(x.daysBefore) - Math.abs(y.daysBefore) ||
         x.id - y.id,
     );
-  return {
-    suggestions: ranked.slice(0, limit).map((s) => ({
-      transaction: getTransaction(db, s.id),
-      confidence: refundConfidence(s),
-      partial: s.partial,
-      generic: s.generic,
-      namesAgree: s.namesAgree,
-      exactAmount: s.exactAmount,
-      daysBefore: s.daysBefore,
-      leftMinor: s.leftMinor,
-    })),
-    more: ranked.length > limit,
-    range,
-  };
+  return { ranked, range };
 }
 
 const REVIEW_DAYS = 90;
 const REVIEW_MAX = 50;
+/** How many of the best purchases are tried for a credit, as earlier suggestions use some up. */
+const REVIEW_TRIES = 5;
 
 /**
  * Recent bank credits not yet linked to a purchase, each with the purchase it most likely gives
@@ -473,6 +494,7 @@ export function refundReview(
       left join categories c on c.id = t.category_id
     where t.amount_minor < 0 and t.refund_of_id is null and t.refund_blocked = 0
       and t.is_transfer = 0 and t.pending = 0 and a.hidden = 0
+      and a.type in ('credit', 'depository')
       and ${day} >= ${addDays(today, -REVIEW_DAYS)} and ${day} <= ${today}
       and coalesce(nullif(trim(t.sender_user), ''), nullif(trim(t.sender), '')) is null
       and coalesce(c.income_treatment, '') <> 'income'
@@ -484,18 +506,21 @@ export function refundReview(
   for (const { id, text } of credits) {
     if (items.length >= REVIEW_MAX) break;
     if (PERSON_TO_PERSON.test(text)) continue;
-    const credit = getTransaction(db, id);
-    const amount = -credit.amountMinor;
-    for (const s of refundCandidates(db, id, { limit: 20 }).suggestions) {
-      const chargeId = s.transaction.id;
-      const left = (s.leftMinor ?? 0) - (taken.get(chargeId) ?? 0);
+    const amount = -load(db, id).amount;
+    for (const s of rankCandidates(db, id, { counted: true }).ranked.slice(0, REVIEW_TRIES)) {
+      const left = (s.leftMinor ?? 0) - (taken.get(s.id) ?? 0);
       if (left < amount) continue;
-      taken.set(chargeId, (taken.get(chargeId) ?? 0) + amount);
-      const suggestion = { ...s, leftMinor: left, partial: amount < left };
+      taken.set(s.id, (taken.get(s.id) ?? 0) + amount);
+      const suggestion = {
+        transaction: getTransaction(db, s.id),
+        ...suggestionOf(s),
+        leftMinor: left,
+        partial: amount < left,
+      };
       items.push({
-        credit,
+        credit: getTransaction(db, id),
         suggestion,
-        needsCheck: s.generic || s.confidence === "low",
+        needsCheck: s.generic || suggestion.confidence === "low",
       });
       break;
     }

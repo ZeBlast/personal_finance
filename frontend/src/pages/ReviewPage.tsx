@@ -6,7 +6,7 @@ import { useApi } from "../hooks/useApi";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { CategorySelect } from "../components/common/CategorySelect";
 import { askConfirm } from "../components/common/ConfirmHost";
-import { ConfidenceBadge } from "../components/transactions/RefundLink";
+import { ConfidenceBadge, matchReason } from "../components/transactions/RefundLink";
 import { TransactionDetail, useWideScreen } from "../components/transactions/TransactionDetail";
 import { formatMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
@@ -73,14 +73,16 @@ export function ReviewPage() {
   async function linkRefund(
     creditId: number,
     purchaseId: number | null,
-    askFirst: boolean,
+    askFirst: "payout" | "weak" | null,
   ): Promise<void> {
     if (
       askFirst &&
       !(await askConfirm({
         title: "Link this credit?",
         message:
-          "This looks like a bank credit or payout, not money back for a purchase. Link it anyway?",
+          askFirst === "payout"
+            ? "This looks like a bank credit or payout, not money back for a purchase. Link it anyway?"
+            : "This is a weak match — check it's the same purchase.",
         confirmLabel: "Link anyway",
       }))
     ) {
@@ -344,6 +346,7 @@ export function ReviewPage() {
                       {formatDay(s.transaction.authorizedDate ?? s.transaction.date)})
                     </span>
                     <ConfidenceBadge confidence={needsCheck ? "low" : s.confidence} />
+                    <span>{matchReason(s)}</span>
                     {s.partial && s.leftMinor !== null && (
                       <span>
                         Partial: {formatMinor(-credit.amountMinor, credit.currency)} of{" "}
@@ -357,7 +360,13 @@ export function ReviewPage() {
                     type="button"
                     className={buttonClass}
                     disabled={busy}
-                    onClick={() => void linkRefund(credit.id, s.transaction.id, needsCheck)}
+                    onClick={() =>
+                      void linkRefund(
+                        credit.id,
+                        s.transaction.id,
+                        needsCheck ? (s.generic ? "payout" : "weak") : null,
+                      )
+                    }
                   >
                     Link
                   </button>
@@ -366,7 +375,7 @@ export function ReviewPage() {
                     className={buttonClass}
                     disabled={busy}
                     title="Count it as money in. The app won't suggest it again."
-                    onClick={() => void linkRefund(credit.id, null, false)}
+                    onClick={() => void linkRefund(credit.id, null, null)}
                   >
                     Not a refund
                   </button>

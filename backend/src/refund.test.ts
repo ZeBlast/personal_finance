@@ -422,11 +422,69 @@ describe("refund suggestions with a confidence", () => {
     expect(refundReview(t.db, "2026-09-20").map((i) => i.credit.id)).not.toContain(item.credit.id);
   });
 
-  it("serves the list at /api/review/refunds", async () => {
+  it("leaves a real refund with a reward-like word in its name for a check", async () => {
+    const { t, add } = await card();
+    await add({
+      date: "2026-09-01",
+      merchant: "Bonus Dental",
+      amountMinor: 9_000,
+      direction: "out",
+    });
+    await add({
+      date: "2026-09-10",
+      merchant: "Bonus Dental",
+      amountMinor: 9_000,
+      direction: "in",
+    });
+    const item = refundReview(t.db, "2026-09-20")[0]!;
+    expect(item.credit.refundOf).toBeNull();
+    expect(item).toMatchObject({ needsCheck: true, suggestion: { confidence: "low" } });
+  });
+
+  it("only looks at credit and bank accounts, like detection does", async () => {
     const { t, add } = await card();
     await add({ date: "2026-09-01", merchant: "Shop A", amountMinor: 10_000, direction: "out" });
-    await add({ date: "2026-09-10", merchant: "Shop A", amountMinor: 3_000, direction: "in" });
+    const loan = (
+      await t.call("post", "/api/accounts/manual").send({ name: "Loan", kind: "loan" }).expect(201)
+    ).body.id as number;
+    await t
+      .call("post", "/api/transactions")
+      .send({
+        accountId: loan,
+        date: "2026-09-10",
+        merchant: "Shop A",
+        amountMinor: 3_000,
+        direction: "in",
+      })
+      .expect(201);
+    expect(refundReview(t.db, "2026-09-20")).toEqual([]);
+  });
+
+  it("serves the list at /api/review/refunds", async () => {
+    const { t, add } = await card();
+    const charge = await add({
+      date: "2026-09-01",
+      merchant: "Shop A",
+      amountMinor: 10_000,
+      direction: "out",
+    });
+    const credit = await add({
+      date: new Date().toISOString().slice(0, 10),
+      merchant: "Shop A",
+      amountMinor: 3_000,
+      direction: "in",
+    });
     const body = (await t.call("get", "/api/review/refunds").expect(200)).body;
-    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({
+      credit: { id: credit },
+      needsCheck: false,
+      suggestion: {
+        transaction: { id: charge },
+        confidence: expect.any(String),
+        partial: true,
+        leftMinor: 10_000,
+      },
+    });
   });
 });

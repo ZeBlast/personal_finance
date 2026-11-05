@@ -68,6 +68,7 @@ describe("possible refunds on the Review page", () => {
     await screen.findByText("Possible refunds (1)");
     const row = screen.getByText("Likely match").closest("li")!;
     expect(row.textContent).toContain("Partial: $30.00 of $100.00 left");
+    expect(row.textContent).toContain("Same merchant, different amount");
     await userEvent.click(within(row).getByRole("button", { name: "Link" }));
     await waitFor(() =>
       expect(calls.find((c) => c.method === "PUT")).toMatchObject({
@@ -77,10 +78,27 @@ describe("possible refunds on the Review page", () => {
     );
   });
 
+  it("asks differently before linking a weak match than a likely payout", async () => {
+    const weak = item({ needsCheck: true });
+    weak.suggestion.confidence = "low";
+    fakeBackend({ ...quiet, "/review/refunds": [weak] });
+    render(
+      <>
+        <ReviewPage />
+        <ConfirmHost />
+      </>,
+    );
+    await screen.findByText("Check first");
+    await userEvent.click(screen.getByRole("button", { name: "Link" }));
+    await screen.findByText("This is a weak match — check it's the same purchase.");
+  });
+
   it("asks before linking a credit that may be a payout", async () => {
+    const payout = item({ needsCheck: true });
+    payout.suggestion.generic = true;
     const calls = fakeBackend({
       ...quiet,
-      "/review/refunds": [item({ needsCheck: true })],
+      "/review/refunds": [payout],
       "PUT /transactions/2/refund-of": {},
     });
     render(

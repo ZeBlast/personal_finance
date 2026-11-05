@@ -35,6 +35,19 @@ export function ConfidenceBadge({ confidence }: { confidence: RefundConfidence }
   return <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${style}`}>{label}</span>;
 }
 
+/** Why a suggestion is rated as it is, in a few plain words. */
+export function matchReason(s: {
+  generic: boolean;
+  namesAgree: boolean;
+  exactAmount: boolean;
+}): string {
+  if (s.generic) return "Looks like a reward or payout";
+  if (s.namesAgree && s.exactAmount) return "Same merchant, same amount";
+  if (s.namesAgree) return "Same merchant, different amount";
+  if (s.exactAmount) return "Same amount, different merchant";
+  return "Different merchant and amount";
+}
+
 /** How far apart a charge and its refund are, said from the side being looked at. */
 export function dayGap(daysBefore: number, fromRefund: boolean): string {
   if (daysBefore === 0) return "same day";
