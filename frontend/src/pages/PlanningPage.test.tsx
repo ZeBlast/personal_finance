@@ -74,7 +74,7 @@ describe("cash forecast scenarios", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByTestId("scenario-line")).toBeTruthy();
-    expect(screen.getByText(/With “Rent goes up”: lowest −\$50\.00/)).toBeTruthy();
+    expect(screen.getByText(/With “Rent goes up”: lowest \$50\.00 lower/)).toBeTruthy();
     await user.click(screen.getByRole("combobox", { name: /Compare with/ }));
     await user.click(screen.getByRole("option", { name: "Nothing" }));
     await waitFor(() => expect(screen.queryByTestId("scenario-line")).toBeNull());

@@ -9,6 +9,28 @@ export function signedMoney(minor: number, currency: string): string {
   return `${minor < 0 ? "−" : "+"}${formatMinor(Math.abs(minor), currency)}`;
 }
 
+/**
+ * The detected payments the forecast actually carries, so a change to one can show up: those with
+ * no expected transaction of the same merchant (that one is counted instead), paid from a bank
+ * account or a card whose bill dates are set. Pure.
+ */
+export function forecastedSeries<S extends { merchant: string; accountNames: string[] }>(
+  series: S[],
+  plannedMerchants: string[],
+  accounts: Array<{ name: string; type: string }>,
+  bills: Array<{ name: string; statement: unknown }>,
+): S[] {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const planned = new Set(plannedMerchants.map(norm));
+  const banks = new Set(accounts.filter((a) => a.type === "depository").map((a) => a.name));
+  const billed = new Set(bills.filter((b) => b.statement !== null).map((b) => b.name));
+  return series.filter(
+    (s) =>
+      !planned.has(norm(s.merchant)) &&
+      s.accountNames.some((name) => banks.has(name) || billed.has(name)),
+  );
+}
+
 /** What a scenario change does, in one plain line. Pure. */
 export function describeAdjustment(
   a: ScenarioAdjustment,
@@ -44,7 +66,34 @@ export function describeAdjustment(
   }
 }
 
+/** How far a scenario's figure is from the plan's: "$10.00 lower", "$10.00 higher" or "the same". Pure. */
+export function differenceText(minor: number, currency: string): string {
+  if (minor === 0) return "the same";
+  return `${formatMinor(Math.abs(minor), currency)} ${minor < 0 ? "lower" : "higher"}`;
+}
+
+/** What sits under a tile: "$10.00 lower with the scenario" (not a balance, so no sign). Pure. */
+export function tileChangeText(minor: number, currency: string): string {
+  if (minor === 0) return "Same with the scenario";
+  return `${differenceText(minor, currency)} with the scenario`;
+}
+
 /** How a scenario moves the lowest and last days against the plan. Pure. */
 export function comparisonSentence(c: ScenarioComparison, currency: string): string {
-  return `With “${c.scenario.name}”: lowest ${signedMoney(c.lowestChangeMinor, currency)}, at the end ${signedMoney(c.endChangeMinor, currency)} compared with your plan.`;
+  const { lowestChangeMinor: low, endChangeMinor: end } = c;
+  if (low === 0 && end === 0) {
+    return `With “${c.scenario.name}”: the lowest and the end balance are the same as your plan.`;
+  }
+  const figures = `lowest ${differenceText(low, currency)}, end ${differenceText(end, currency)}`;
+  return `With “${c.scenario.name}”: ${figures}${low !== 0 && end !== 0 ? " than" : " compared with"} your plan.`;
+}
+
+/** The note for a change that did nothing in the forecast: ended before today, or matched nothing. Pure. */
+export function unmatchedNote(a: ScenarioAdjustment, today: string, days: number): string {
+  const before =
+    (a.kind === "one_off" && a.date <= today) ||
+    (a.kind === "recurring" && a.endDate !== null && a.endDate <= today);
+  return before
+    ? "This change is before today, so it doesn't affect the forecast."
+    : `This change doesn't match anything in the next ${days} days.`;
 }

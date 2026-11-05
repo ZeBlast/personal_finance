@@ -272,6 +272,16 @@ function instalmentPlans(db: AppDb, currency: string): InstalmentPlan[] {
   }));
 }
 
+/**
+ * The forecast's "Lowest" figure as the screens show it. When the lowest point is today (it only
+ * repeats what is in the bank), the lowest of the days after today instead. Pure.
+ */
+export function lowestBalance(f: Pick<Forecast, "today" | "lowest" | "days">): number {
+  if (f.lowest.date !== f.today) return f.lowest.balanceMinor;
+  const later = f.days.filter((d) => d.date > f.today).map((d) => d.balanceMinor);
+  return later.length > 0 ? Math.min(...later) : f.lowest.balanceMinor;
+}
+
 export function cashForecast(
   db: AppDb,
   options: {
@@ -342,11 +352,15 @@ export function cashForecast(
   // Spending in a category (what a spending cap counts), by the day the charge is made, even when a
   // card charge's bill is paid after the forecast ends. Goal and interest events have no category.
   const spending: Array<{ date: string; categoryId: number; amountMinor: number }> = [];
-  const add = (date: string, e: ForecastEvent): void => {
-    const madeOn = e.chargedOn ?? date;
+  const record = (madeOn: string, e: ForecastEvent): void => {
     if (e.categoryId !== undefined && e.amountMinor < 0 && madeOn > today && madeOn <= end) {
       spending.push({ date: madeOn, categoryId: e.categoryId, amountMinor: -e.amountMinor });
     }
+  };
+  // `counted` is the event as the user's plan has it, before a scenario changed it: scenarios never
+  // change what is held back for the caps, so spending is taken from this.
+  const add = (date: string, e: ForecastEvent, counted: ForecastEvent = e): void => {
+    record(e.chargedOn ?? date, counted);
     if (date <= today || date > end || e.amountMinor === 0) return;
     events.set(date, [...(events.get(date) ?? []), e]);
   };
@@ -364,13 +378,17 @@ export function cashForecast(
     const closes = closingDates(bill.settings!.closingDay, date);
     return dueAfter(closes.last === date ? closes.last : closes.next, bill.settings!.dueDay);
   };
-  const addCharge = (bill: CardBill, date: string, e: ForecastEvent): void => {
-    add(billDueFor(bill, date), {
-      ...e,
-      accountId: bill.accountId,
-      card: bill.name,
-      chargedOn: date,
-    });
+  const addCharge = (
+    bill: CardBill,
+    date: string,
+    e: ForecastEvent,
+    counted: ForecastEvent = e,
+  ): void => {
+    add(
+      billDueFor(bill, date),
+      { ...e, accountId: bill.accountId, card: bill.name, chargedOn: date },
+      counted,
+    );
   };
 
   // 1. What the user expects.
@@ -391,11 +409,13 @@ export function cashForecast(
     const changed = adjustSeries(event, o.date, { plannedId: o.plannedId });
     if (o.accountType === null || o.accountType === "depository") {
       if (matchesPendingManual(projectedPending, o)) continue;
-      if (changed) add(o.date, changed);
+      if (changed) add(o.date, changed, event);
+      else record(o.date, event);
     } else {
       const bill = o.accountId === null ? undefined : billByAccount.get(o.accountId);
       if (!bill || matchesPendingManual(allPending, o)) continue;
-      if (changed) addCharge(bill, o.date, changed);
+      if (changed) addCharge(bill, o.date, changed, event);
+      else record(o.date, event);
     }
     plannedMerchants.add(norm(o.merchant));
   }
@@ -441,9 +461,9 @@ export function cashForecast(
         ...(s.categoryId !== null ? { categoryId: s.categoryId } : {}),
       };
       const changed = adjustSeries(event, d, { seriesKey: s.key });
-      if (!changed) continue;
-      if (bill) addCharge(bill, d, changed);
-      else add(d, changed);
+      if (!changed) record(d, event);
+      else if (bill) addCharge(bill, d, changed, event);
+      else add(d, changed, event);
     }
   }
 

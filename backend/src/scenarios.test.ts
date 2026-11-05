@@ -6,7 +6,7 @@ import {
   plannedTransactions,
   transactions,
 } from "../../drizzle/schema.js";
-import { cashForecast } from "./services/forecast.service.js";
+import { cashForecast, lowestBalance } from "./services/forecast.service.js";
 import { compareScenario, type ScenarioAdjustment } from "./services/scenario.service.js";
 import { getSettings } from "./services/settings.service.js";
 import { makeTestApp } from "./test-helpers.js";
@@ -314,6 +314,56 @@ describe("what-if scenarios", () => {
     expect(s.events(c.alt, "Tax bill")).toEqual([{ date: "2026-10-25", amountMinor: -100_000 }]);
     expect(c.endChangeMinor).toBe(-20_000);
     expect(c.unmatched).toEqual([]);
+  });
+
+  it("reports a change whose days are all before today", async () => {
+    const s = await setup();
+    const c = await s.compare([
+      { kind: "one_off", label: "Old", date: "2026-10-01", amountMinor: -1_000 },
+      { kind: "one_off", label: "Today", date: TODAY, amountMinor: -1_000 },
+      { kind: "one_off", label: "Soon", date: "2026-10-15", amountMinor: -1_000 },
+      {
+        kind: "recurring",
+        label: "Over",
+        amountMinor: -1_000,
+        cadence: "weekly",
+        startDate: "2026-08-01",
+        endDate: "2026-09-01",
+      },
+      {
+        kind: "recurring",
+        label: "Still on",
+        amountMinor: -1_000,
+        cadence: "weekly",
+        startDate: "2026-08-01",
+        endDate: null,
+      },
+    ]);
+    expect(c.unmatched).toEqual([0, 1, 3]);
+  });
+
+  it("measures the lowest point after today when today is the low point", () => {
+    const day = (date: string, balanceMinor: number) => ({
+      date,
+      balanceMinor,
+      changeMinor: 0,
+      events: [],
+    });
+    const days = [day("2026-10-09", 100), day("2026-10-10", 300), day("2026-10-11", 200)];
+    expect(
+      lowestBalance({
+        today: "2026-10-09",
+        lowest: { date: "2026-10-09", balanceMinor: 100 },
+        days,
+      }),
+    ).toBe(200);
+    expect(
+      lowestBalance({
+        today: "2026-10-09",
+        lowest: { date: "2026-10-11", balanceMinor: 50 },
+        days,
+      }),
+    ).toBe(50);
   });
 
   it("gives a goal that is already met no events", async () => {

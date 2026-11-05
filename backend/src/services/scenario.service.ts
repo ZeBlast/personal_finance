@@ -4,7 +4,7 @@ import { forecastScenarios } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { isRealDate } from "../utils/dates.js";
 import { notFound } from "../utils/errors.js";
-import { cashForecast, type Forecast } from "./forecast.service.js";
+import { cashForecast, lowestBalance, type Forecast } from "./forecast.service.js";
 import type { Cadence } from "./recurring.service.js";
 
 /**
@@ -181,7 +181,7 @@ export function deleteScenario(db: AppDb, id: number): void {
   db.delete(forecastScenarios).where(eq(forecastScenarios.id, id)).run();
 }
 
-/** The forecast as it is and as it would be with the scenario, and how the lowest and last days differ (scenario minus now). */
+/** The forecast as it is and as it would be with the scenario, and how the lowest and last days differ (scenario minus now). The lowest is the screens' figure: after today when today is the low point. */
 export function compareScenario(
   db: AppDb,
   id: number,
@@ -204,15 +204,21 @@ export function compareScenario(
     adjustments: scenario.adjustments,
     matched,
   });
+  // A change that finds nothing, or whose days are all before today (the forecast starts tomorrow).
+  const before = (a: ScenarioAdjustment): boolean =>
+    (a.kind === "one_off" && a.date <= base.today) ||
+    (a.kind === "recurring" && a.endDate !== null && a.endDate <= base.today);
   const unmatched = scenario.adjustments
-    .map((a, i) => ((a.kind === "change_series" || a.kind === "goal") && !matched.has(i) ? i : -1))
+    .map((a, i) =>
+      ((a.kind === "change_series" || a.kind === "goal") && !matched.has(i)) || before(a) ? i : -1,
+    )
     .filter((i) => i >= 0);
   return {
     scenario,
     base,
     alt,
     unmatched,
-    lowestChangeMinor: alt.lowest.balanceMinor - base.lowest.balanceMinor,
+    lowestChangeMinor: lowestBalance(alt) - lowestBalance(base),
     endChangeMinor: alt.endBalanceMinor - base.endBalanceMinor,
   };
 }

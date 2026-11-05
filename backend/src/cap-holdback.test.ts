@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { capHoldBack } from "./services/cap-holdback.js";
+import { cashForecast } from "./services/forecast.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -221,5 +222,52 @@ describe("cap hold-back in the forecast", () => {
     const { forecast } = await capped("2026-11");
     const f = await forecast("days=30&today=2026-10-10");
     expect(f.capHoldBack).toEqual({ included: true, totalMinor: 0, caps: [] });
+  });
+
+  it("is not moved by a scenario that stops a capped payment", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const checking = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Checking", kind: "checking", openingBalanceMinor: 500_000 })
+        .expect(201)
+    ).body.id as number;
+    const dining = (await t.call("post", "/api/categories").send({ name: "Dining" }).expect(201))
+      .body.id as number;
+    await t
+      .call("post", "/api/budgets")
+      .send({ categoryId: dining, month: "2026-10", amountMinor: 30_000 })
+      .expect(201);
+    const planned = (
+      await t
+        .call("post", "/api/planned")
+        .send({
+          merchant: "Dinner out",
+          amountMinor: 5_000,
+          direction: "out",
+          accountId: checking,
+          categoryId: dining,
+          startDate: "2026-10-28",
+          frequency: "once",
+        })
+        .expect(201)
+    ).body.id as number;
+    const options = { today: "2026-10-26", days: 30, holdCaps: true };
+    const base = cashForecast(t.db, options);
+    const alt = cashForecast(t.db, {
+      ...options,
+      adjustments: [
+        {
+          kind: "change_series",
+          target: { plannedId: planned },
+          fromDate: "2026-10-01",
+          amountMinor: null,
+        },
+      ],
+    });
+    expect(base.capHoldBack.totalMinor).toBe(25_000);
+    expect(alt.capHoldBack.totalMinor).toBe(base.capHoldBack.totalMinor);
+    expect(alt.endBalanceMinor).toBe(base.endBalanceMinor + 5_000);
   });
 });

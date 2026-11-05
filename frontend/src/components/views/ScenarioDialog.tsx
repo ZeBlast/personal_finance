@@ -3,11 +3,12 @@ import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { CADENCE_LABEL } from "../../lib/insights";
 import { formatMinor, parseMoneyToMinor } from "../../lib/money";
-import { describeAdjustment } from "../../lib/scenarios";
+import { describeAdjustment, forecastedSeries, unmatchedNote } from "../../lib/scenarios";
 import type { Goal } from "../../pages/GoalsPage";
+import type { Account } from "../../types/api";
 import type { PlannedItem } from "../../types/calendar";
 import type { RecurringReport, RecurringSeries } from "../../types/insights";
-import type { Scenario, ScenarioAdjustment, ScenarioCadence } from "../../types/planning";
+import type { CardBill, Scenario, ScenarioAdjustment, ScenarioCadence } from "../../types/planning";
 import { ActionMenu } from "../common/ActionMenu";
 import { ConfirmDialog, Modal } from "../common/Modal";
 import { Select } from "../common/Select";
@@ -49,11 +50,19 @@ export function useScenarioPickers(enabled: boolean): ScenarioPickers {
   const series = useApi<RecurringReport>(enabled ? "/insights/recurring" : null).data?.series;
   const plannedItems = useApi<PlannedItem[]>(enabled ? "/planned" : null).data;
   const goalList = useApi<Goal[]>(enabled ? "/goals" : null).data;
+  const accounts = useApi<Account[]>(enabled ? "/accounts" : null).data;
+  const bills = useApi<CardBill[]>(enabled ? "/bills" : null).data;
   const active = (series ?? []).filter((s) => s.status === "active" && !s.dismissed);
   const planned = plannedItems ?? [];
   const goals = goalList ?? [];
   return {
-    series: active,
+    // The forecast skips some detected payments, so a change to one would do nothing: not offered.
+    series: forecastedSeries(
+      active,
+      planned.map((p) => p.merchant),
+      accounts ?? [],
+      bills ?? [],
+    ),
     planned,
     goals,
     names: {
@@ -84,8 +93,8 @@ export function ScenarioDialog({
   today: string;
   /** The forecast window, for saying which changes match nothing in it. */
   days: number;
-  /** For the scenario being compared: which of its changes matched nothing. */
-  unmatched: { scenarioId: number; indexes: number[] } | null;
+  /** For the scenario being compared: the changes that matched nothing, as saved. */
+  unmatched: { scenarioId: number; adjustments: ScenarioAdjustment[] } | null;
   /** After any save or delete; `savedId` is the scenario just saved (none after a delete). */
   onChanged: (savedId?: number) => void;
   onClose: () => void;
@@ -131,7 +140,12 @@ export function ScenarioDialog({
   }
 
   if (draft) {
-    const missed = unmatched && draft.id === unmatched.scenarioId ? unmatched.indexes : [];
+    // A note belongs to the change itself, not its place in the list: a row removed or edited since
+    // the last save no longer has one.
+    const missed =
+      unmatched && draft.id === unmatched.scenarioId
+        ? new Set(unmatched.adjustments.map((a) => JSON.stringify(a)))
+        : new Set<string>();
     return (
       <Modal
         title={draft.id === null ? "New scenario" : "Edit scenario"}
@@ -165,9 +179,9 @@ export function ScenarioDialog({
               >
                 <span>
                   {describeAdjustment(a, currency, names)}
-                  {missed.includes(i) && (
+                  {missed.has(JSON.stringify(a)) && (
                     <span className="block text-xs text-amber-700 dark:text-amber-400">
-                      This change doesn&apos;t match anything in the next {days} days.
+                      {unmatchedNote(a, today, days)}
                     </span>
                   )}
                 </span>

@@ -126,4 +126,29 @@ describe("scenario dialog", () => {
     expect(put?.body).toMatchObject({ name: "Rent up a lot", adjustments: existing.adjustments });
     expect(calls.filter((c) => c.method !== "GET")).toHaveLength(1);
   });
+
+  it("keeps a 'matches nothing' note on its own change when another row is removed", async () => {
+    const first = { kind: "one_off", label: "First", date: "2026-11-10", amountMinor: -1_000 };
+    const second = { kind: "one_off", label: "Second", date: "2026-11-11", amountMinor: -2_000 };
+    const existing: Scenario = {
+      id: 9,
+      name: "Two",
+      adjustments: [first, second],
+      skipped: 0,
+      createdAt: "",
+      updatedAt: "",
+    } as Scenario;
+    fakeBackend({});
+    const user = userEvent.setup();
+    open({
+      scenarios: [existing],
+      unmatched: { scenarioId: 9, adjustments: [first] as Scenario["adjustments"] },
+    });
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getAllByText(/doesn't match anything/)).toHaveLength(1);
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]!);
+    // The change that had the note is gone, and the one left must not inherit it.
+    expect(screen.getByText(/Second:/)).toBeTruthy();
+    expect(screen.queryByText(/doesn't match anything/)).toBeNull();
+  });
 });

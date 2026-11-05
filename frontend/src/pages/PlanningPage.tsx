@@ -9,7 +9,12 @@ import { ScenarioDialog, useScenarioPickers } from "../components/views/Scenario
 import { useApi } from "../hooks/useApi";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
-import { comparisonSentence, describeAdjustment, signedMoney } from "../lib/scenarios";
+import {
+  comparisonSentence,
+  describeAdjustment,
+  tileChangeText,
+  unmatchedNote,
+} from "../lib/scenarios";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { lowestTile } from "../lib/views";
@@ -156,18 +161,14 @@ function ForecastView() {
             warn={low.balanceMinor < 0}
             change={
               compared && altLow
-                ? `${signedMoney(altLow.balanceMinor - low.balanceMinor, data.currency)} with the scenario`
+                ? tileChangeText(altLow.balanceMinor - low.balanceMinor, data.currency)
                 : undefined
             }
           />
           <Stat
             label={`In ${days} days`}
             value={money(data.endBalanceMinor)}
-            change={
-              compared
-                ? `${signedMoney(compared.endChangeMinor, data.currency)} with the scenario`
-                : undefined
-            }
+            change={compared ? tileChangeText(compared.endChangeMinor, data.currency) : undefined}
           />
         </dl>
         <div className="flex flex-wrap items-end gap-3 text-sm">
@@ -218,7 +219,12 @@ function ForecastView() {
           days={days}
           pickers={pickers}
           unmatched={
-            compared ? { scenarioId: compared.scenario.id, indexes: compared.unmatched } : null
+            compared
+              ? {
+                  scenarioId: compared.scenario.id,
+                  adjustments: compared.unmatched.map((i) => compared.scenario.adjustments[i]!),
+                }
+              : null
           }
           onChanged={(savedId) => {
             scenarios.reload();
@@ -256,8 +262,8 @@ function ForecastView() {
           )}
           {compared.unmatched.map((i) => (
             <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
-              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, pickers.names)}:
-              This change doesn&apos;t match anything in the next {days} days.
+              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, pickers.names)}:{" "}
+              {unmatchedNote(compared.scenario.adjustments[i]!, data.today, days)}
             </p>
           ))}
         </div>
