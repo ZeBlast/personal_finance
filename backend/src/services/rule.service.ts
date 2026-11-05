@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   appSettings,
   categories,
@@ -8,6 +8,7 @@ import {
   transactions,
 } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
+import { IS_INCOME, NOT_TRANSFER } from "./analytics.service.js";
 import { syncCategoryTransfers } from "./transfer.service.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { merchantKey } from "../utils/merchant.js";
@@ -394,6 +395,28 @@ export interface RuleInput {
 }
 
 /**
+ * The transactions saving this rule can change: those it matches and those it had filed. This is
+ * the same set the preview reports, so the preview, the change count and the batch agree.
+ */
+function touchedIds(db: Reader, ruleId: number): number[] {
+  const rule = db.select().from(transactionRules).where(eq(transactionRules.id, ruleId)).get();
+  if (!rule) return [];
+  const like: RuleLike = {
+    field: rule.field as RuleField,
+    operator: rule.operator as RuleOperator,
+    matchValue: rule.matchValue,
+    direction: rule.direction as RuleDirection | null,
+    appliesFrom: rule.appliesFrom,
+  };
+  return db
+    .select(subjectColumns)
+    .from(transactions)
+    .all()
+    .filter((row) => row.categoryRuleId === ruleId || ruleMatches(like, toSubject(row)))
+    .map((row) => row.id);
+}
+
+/**
  * Saves a rule. `scope: "new"` makes it file only transactions from today on; `"all"` also files
  * the past straight away, as a batch that can be undone. Without a scope nothing is applied.
  */
@@ -429,7 +452,7 @@ export function createRule(
       .returning({ id: transactionRules.id })
       .get();
     if (input.scope === "all") {
-      applyRules(tx, undefined, {
+      applyRules(tx, touchedIds(tx, created.id), {
         kind: "rule_saved",
         ruleId: created.id,
         label: `Saved rule "${input.name}"`,
@@ -457,7 +480,7 @@ export function updateRule(
       .where(eq(transactionRules.id, id))
       .run();
     if (apply) {
-      applyRules(tx, undefined, {
+      applyRules(tx, touchedIds(tx, id), {
         kind: "rule_saved",
         ruleId: id,
         label: `Changed rule "${changes.name ?? before.name}"`,
@@ -521,6 +544,24 @@ export interface RuleChange {
   to: string | null;
 }
 
+/** Which of these transactions count as spending in the reports (not a transfer, not income). */
+function spendingIds(db: AppDb, ids: number[]): Set<number> {
+  const found = new Set<number>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const list = sql.join(
+      ids.slice(i, i + 500).map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const rows = db.all<{ id: number }>(sql`
+      select t.id as id from transactions t
+      join accounts a on a.id = t.account_id
+      left join categories c on c.id = t.category_id
+      where t.id in (${list}) and ${NOT_TRANSFER} and (case when ${IS_INCOME} then 0 else 1 end) = 1`);
+    for (const r of rows) found.add(r.id);
+  }
+  return found;
+}
+
 export interface RulePreview {
   matchCount: number;
   sample: Array<{ id: number; date: string; merchant: string; amountMinor: number }>;
@@ -570,8 +611,18 @@ export function previewRule(
     })
     .from(transactions)
     .all();
+  // Looked up in the table, not among the active rules: a disabled rule keeps its start day.
   const existing =
-    rule.ruleId === undefined ? undefined : activeRules(db).find((r) => r.id === rule.ruleId);
+    rule.ruleId === undefined
+      ? undefined
+      : db
+          .select({
+            appliesFrom: transactionRules.appliesFrom,
+            priority: transactionRules.priority,
+          })
+          .from(transactionRules)
+          .where(eq(transactionRules.id, rule.ruleId))
+          .get();
   const appliesFrom =
     rule.scope === "new" ? today : rule.scope === "all" ? null : (existing?.appliesFrom ?? null);
   const effective = { ...rule, appliesFrom };
@@ -622,6 +673,12 @@ export function previewRule(
     entry.count += 1;
     totals.set(id, entry);
   };
+  const changedRows: Array<{
+    id: number;
+    from: number | null;
+    to: number | null;
+    amountMinor: number;
+  }> = [];
   let manualCount = 0;
   for (const row of [...rows].sort(newestFirst)) {
     const subject = toSubject(row);
@@ -643,8 +700,18 @@ export function previewRule(
       from: nameOf(row.categoryId),
       to: nameOf(next),
     });
-    bump(next, row.amountMinor);
-    bump(row.categoryId, -row.amountMinor);
+    changedRows.push({ id: row.id, from: row.categoryId, to: next, amountMinor: row.amountMinor });
+  }
+  // Totals follow the reports: transfers and income are left out, and a linked refund is a
+  // negative amount that nets against its category.
+  const counted = spendingIds(
+    db,
+    changedRows.map((c) => c.id),
+  );
+  for (const c of changedRows) {
+    if (!counted.has(c.id)) continue;
+    bump(c.to, c.amountMinor);
+    bump(c.from, -c.amountMinor);
   }
   const offset = Math.max(0, rule.offset ?? 0);
   const limit = Math.min(PREVIEW_MAX_PAGE, Math.max(1, rule.limit ?? PREVIEW_PAGE));

@@ -58,6 +58,7 @@ async function setup() {
     (await t.call("get", `/api/transactions/${id}`).expect(200)).body.category?.name ?? null;
   return {
     t,
+    account,
     treats,
     dining,
     errands,
@@ -183,5 +184,81 @@ describe("previewing a rule's real effect", () => {
     const undoB = (await t.call("post", `/api/rules/batches/${newer.id}/undo`).expect(200)).body;
     expect(undoB.restored).toBe(3);
     expect(await categoryOf(cart)).toBe("Dining");
+  });
+
+  it("totals leave out income and transfers, as the reports do", async () => {
+    const { t, dining, treats, account, preview } = await setup();
+    const post = (body: Record<string, unknown>) =>
+      t
+        .call("post", "/api/transactions")
+        .send({ accountId: account, date: "2026-09-25", ...body })
+        .expect(201);
+    await post({ merchant: "Coffee Payroll", amountMinor: 2_000, direction: "in", sender: "Boss" });
+    await post({ merchant: "Coffee Move", amountMinor: 700, direction: "out", isTransfer: true });
+    const p = await preview({ categoryId: dining });
+    expect(p.changeCount).toBe(5);
+    expect(p.totals).toEqual([
+      { categoryId: dining, name: "Dining", changeMinor: 1_500, count: 3 },
+      { categoryId: treats, name: "Treats", changeMinor: -1_500, count: 3 },
+    ]);
+  });
+
+  it("saving a rule changes only what its preview showed, not unrelated stale rows", async () => {
+    const { t, dining, errands, coffeeRule, account, categoryOf } = await setup();
+    const bakery = (
+      await t
+        .call("post", "/api/transactions")
+        .send({
+          accountId: account,
+          date: "2026-09-10",
+          merchant: "Bakery",
+          amountMinor: 300,
+          direction: "out",
+        })
+        .expect(201)
+    ).body.id as number;
+    // A rule that would file it, saved without applying: the row is stale.
+    await t
+      .call("post", "/api/rules")
+      .send({ ...coffeeRule, name: "Bakery", matchValue: "bakery", categoryId: errands })
+      .expect(201);
+    expect(await categoryOf(bakery)).toBeNull();
+    await t
+      .call("post", "/api/rules")
+      .send({ ...coffeeRule, categoryId: dining, scope: "all" })
+      .expect(201);
+    const [batch] = (await t.call("get", "/api/rules/batches")).body;
+    expect(batch.changeCount).toBe(3);
+    expect(await categoryOf(bakery)).toBeNull();
+    // Apply rules now is the full re-check, and is recorded as its own batch.
+    await t.call("post", "/api/rules/apply").send({}).expect(200);
+    expect(await categoryOf(bakery)).toBe("Errands");
+    const [applied] = (await t.call("get", "/api/rules/batches")).body;
+    expect(applied).toMatchObject({ kind: "rules_applied", changeCount: 1 });
+  });
+
+  it("clears the start day, and a transaction on that exact day is covered", async () => {
+    const { t, dining, cartRule, add, preview } = await setup();
+    const rule = (
+      await t
+        .call("post", "/api/rules")
+        .send({ ...cartRule, categoryId: dining, scope: "new" })
+        .expect(201)
+    ).body;
+    const today = new Date().toISOString().slice(0, 10);
+    expect(rule.appliesFrom).toBe(today);
+    await add("Cart Today", today);
+    const p = await preview({ matchValue: "cart", categoryId: dining, scope: "new" });
+    expect(p.matchCount).toBe(1);
+    // Disabled, its start day still counts in the preview.
+    await t.call("patch", `/api/rules/${rule.id}`).send({ enabled: false }).expect(200);
+    expect(
+      (await preview({ matchValue: "cart", categoryId: dining, ruleId: rule.id })).matchCount,
+    ).toBe(1);
+    const cleared = await t
+      .call("patch", `/api/rules/${rule.id}`)
+      .send({ appliesFrom: null })
+      .expect(200);
+    expect(cleared.body.appliesFrom).toBeNull();
   });
 });

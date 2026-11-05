@@ -121,7 +121,7 @@ export function categoriesRoutes(db: AppDb): Router {
       applyRules(tx, undefined, {
         kind: "rules_applied",
         ruleId: null,
-        label: "Apply rules now",
+        label: "Apply rules now (every transaction re-checked)",
         now: new Date().toISOString(),
       }),
     );
