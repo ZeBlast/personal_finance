@@ -21,7 +21,7 @@ const WINDOW_DAYS = 180;
 /** How far a repayment may be from the purchase divided by the instalments (cents). */
 const AMOUNT_SLACK = 100;
 const MAX_CANDIDATES = 20;
-const INSTALMENT_WORDS = /pay in 4|afterpay|klarna|affirm|sezzle|zip|paypal/i;
+const INSTALMENT_WORDS = /\b(pay in 4|afterpay|klarna|affirm|sezzle|zip|paypal)\b/i;
 
 type Tx = Pick<AppDb, "all" | "run" | "update" | "select" | "delete" | "insert">;
 
@@ -214,12 +214,90 @@ export function linkRepayment(
   return getTransaction(db, repaymentId);
 }
 
-/** Puts back repayments whose purchase is gone or no longer marked (a sync removed it). Part of detection. */
+/** Whether a transaction is a purchase marked as paid in instalments. */
+export function isInstalmentPurchase(db: Pick<AppDb, "all">, id: number): boolean {
+  return plan(db, id) !== undefined;
+}
+
+/**
+ * Refuses a change of amount, direction or currency that would break the rules of a link: a
+ * repayment must stay money out in the purchase's currency, and repayments together may not come
+ * to more than the purchase. `next` is what the transaction would become (no currency: unchanged).
+ */
+export function checkInstalmentEdit(
+  db: Pick<AppDb, "all">,
+  id: number,
+  next: { amountMinor: number; currency?: string | undefined },
+): void {
+  const row = load(db, id);
+  if (row.instalment_of_id !== null) {
+    const p = load(db, row.instalment_of_id);
+    if (next.amountMinor <= 0 || (next.currency !== undefined && next.currency !== p.currency)) {
+      throw new AppError(
+        409,
+        "instalment_linked",
+        "This pays off a purchase made in instalments, so it must stay money out in the same currency. Unlink it first.",
+      );
+    }
+    if (paidBy(db, p.id, id) + next.amountMinor > p.amount) {
+      throw new AppError(
+        409,
+        "repayments_exceed_purchase",
+        "That would pay back more than the purchase cost. Unlink this payment first, or leave a fee unlinked.",
+      );
+    }
+  } else if (plan(db, id)) {
+    const linked = db.all<{ n: number; c: number }>(sql`
+      select coalesce(sum(amount_minor), 0) as n, count(*) as c from transactions
+      where instalment_of_id = ${id}`)[0]!;
+    if (
+      next.amountMinor <= 0 ||
+      (linked.c > 0 && next.currency !== undefined && next.currency !== row.currency)
+    ) {
+      throw new AppError(
+        409,
+        "instalment_purchase",
+        "This purchase is paid in instalments, so it must stay money out in the same currency. Stop treating it as instalments first.",
+      );
+    }
+    if (linked.n > next.amountMinor) {
+      throw new AppError(
+        409,
+        "repayments_exceed_purchase",
+        "The payments already linked come to more than that. Unlink some, or stop treating it as instalments, first.",
+      );
+    }
+  }
+}
+
+/**
+ * Puts back repayments that no longer fit: their purchase is gone or no longer marked, or a sync
+ * changed an amount or currency so the repayments together exceed the purchase (the newest are
+ * unlinked until they fit). Part of detection.
+ */
 export function resetInstalments(tx: Tx, now: string): void {
   const orphans = tx.all<{ id: number }>(sql`
     select id from transactions where instalment_of_id is not null
       and not exists (select 1 from instalment_purchases p where p.transaction_id = instalment_of_id)`);
   for (const { id } of orphans) restore(tx, id, load(tx, id), now);
+  // Newest first, so the newest are the ones unlinked.
+  const linked = tx.all<{ id: number; of: number }>(sql`
+    select id, instalment_of_id as "of" from transactions where instalment_of_id is not null
+    order by coalesce(authorized_date, date) desc, id desc`);
+  const byPurchase = new Map<number, number[]>();
+  for (const r of linked) byPurchase.set(r.of, [...(byPurchase.get(r.of) ?? []), r.id]);
+  for (const [purchaseId, ids] of byPurchase) {
+    const p = load(tx, purchaseId);
+    const rows = ids.map((id) => load(tx, id));
+    let total = rows.reduce((n, r) => n + r.amount, 0);
+    for (const r of rows) {
+      const bad = r.amount <= 0 || r.currency !== p.currency || p.amount <= 0;
+      if (bad || total > p.amount) {
+        restore(tx, r.id, r, now);
+        total -= r.amount;
+      }
+    }
+  }
 }
 
 /**

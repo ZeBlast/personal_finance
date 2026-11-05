@@ -5,6 +5,7 @@ import { isRealDate } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { accountColor } from "./account.service.js";
 import { addManualCreditLimit } from "./credit-limit.service.js";
+import { checkInstalmentEdit } from "./instalment.service.js";
 import { applyRules } from "./rule.service.js";
 import { detectInternalTransfers } from "./transfer.service.js";
 import {
@@ -520,6 +521,12 @@ function updateAnyTransactionInTransaction(
     checkAmount(amount);
     const direction = patch.direction ?? (row.amountMinor > 0 ? "out" : "in");
     changes.amountMinor = direction === "out" ? amount : -amount;
+  }
+  if (changes.amountMinor !== undefined || changes.currency !== undefined) {
+    checkInstalmentEdit(db, id, {
+      amountMinor: changes.amountMinor ?? row.amountMinor,
+      currency: changes.currency,
+    });
   }
   if (
     row.transferSource === "manual" &&

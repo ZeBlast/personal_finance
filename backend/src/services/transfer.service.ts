@@ -3,7 +3,7 @@ import { transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
-import { resetInstalments } from "./instalment.service.js";
+import { isInstalmentPurchase, resetInstalments } from "./instalment.service.js";
 import { detectMirrors, resetMirrors } from "./paypal-mirror.service.js";
 import { detectRefunds, resetRefunds } from "./refund.service.js";
 
@@ -196,6 +196,7 @@ export function detectInternalTransfers(db: AppDb, now: string = new Date().toIS
         a.type as account_type, coalesce(t.authorized_date, t.date) as transaction_date
       from transactions t join accounts a on a.id = t.account_id
       where t.transfer_source is null and t.amount_minor <> 0 and t.refund_of_id is null
+        and not exists (select 1 from instalment_purchases ip where ip.transaction_id = t.id)
         and coalesce(a.subtype, '') <> ${STORE_CREDIT_SUBTYPE}`);
     const toCandidate = (r: (typeof rows)[number], useTransactionDate = false): Candidate => ({
       id: r.id,
@@ -259,7 +260,10 @@ export function syncCategoryTransfers(
   const moving = sql`(select id from categories where income_treatment = 'transfer')`;
   db.update(transactions)
     .set({ isTransfer: true, transferSource: "category", transferPairId: null, updatedAt: now })
-    .where(sql`${transactions.transferSource} is null and ${transactions.categoryId} in ${moving}`)
+    .where(
+      sql`${transactions.transferSource} is null and ${transactions.categoryId} in ${moving}
+        and ${transactions.id} not in (select transaction_id from instalment_purchases)`,
+    )
     .run();
   db.update(transactions)
     .set({ isTransfer: false, transferSource: null, updatedAt: now })
@@ -295,6 +299,13 @@ export function setTransferFlag(
       409,
       "mirror_linked",
       "This is a copy of a purchase another account shows. Unlink it first.",
+    );
+  }
+  if (value === true && isInstalmentPurchase(db, id)) {
+    throw new AppError(
+      409,
+      "instalment_purchase",
+      "This purchase is paid in instalments, so it counts as spending. Stop treating it as instalments first.",
     );
   }
   if (row.source === "instalment") {

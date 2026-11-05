@@ -3,6 +3,7 @@ import { accounts, transactions } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError, notFound } from "../utils/errors.js";
 import { STORE_CREDIT_SUBTYPE } from "./account-scope.js";
+import { isInstalmentPurchase } from "./instalment.service.js";
 import { createManualTransaction, recomputeManualBalance } from "./manual-transaction.service.js";
 import { getTransaction, type TransactionDto } from "./transaction.service.js";
 import { detectInternalTransfers } from "./transfer.service.js";
@@ -47,7 +48,7 @@ export function linkTransferToAccount(
   now = new Date().toISOString(),
 ): TransactionDto {
   const t = load(db, id);
-  refuseInstalment(t);
+  refuseInstalment(db, t);
   if (t.transferPairId !== null) {
     throw new AppError(
       409,
@@ -116,7 +117,17 @@ export function linkTransferToAccount(
 }
 
 /** A repayment of a purchase paid in instalments is not a move between the user's accounts. */
-function refuseInstalment(t: { instalmentOfId: number | null }) {
+function refuseInstalment(
+  db: Pick<AppDb, "all">,
+  t: { id: number; instalmentOfId: number | null },
+) {
+  if (isInstalmentPurchase(db, t.id)) {
+    throw new AppError(
+      409,
+      "instalment_purchase",
+      "This purchase is paid in instalments, so it counts as spending. Stop treating it as instalments first.",
+    );
+  }
   if (t.instalmentOfId !== null) {
     throw new AppError(
       409,
@@ -174,8 +185,8 @@ export function pairTransfers(
   }
   const a = load(db, id);
   const b = load(db, otherId);
-  refuseInstalment(a);
-  refuseInstalment(b);
+  refuseInstalment(db, a);
+  refuseInstalment(db, b);
   if (a.accountId === b.accountId) {
     throw new AppError(400, "same_account", "Choose a transaction on a different account.");
   }

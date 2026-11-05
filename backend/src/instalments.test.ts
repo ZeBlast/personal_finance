@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { transactions } from "../../drizzle/schema.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { summarize } from "./services/analytics.service.js";
 import { detectInternalTransfers } from "./services/transfer.service.js";
@@ -171,5 +173,56 @@ describe("a purchase paid in instalments", () => {
       .call("patch", `/api/transactions/${repayments[0]}`)
       .send({ isTransfer: false })
       .expect(409);
+  });
+
+  it("keeps a marked purchase from becoming a transfer", async () => {
+    const { t, purchase, spent, get } = await setup();
+    await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(200);
+    const before = spent();
+    await t.call("patch", `/api/transactions/${purchase}`).send({ isTransfer: true }).expect(409);
+    detectInternalTransfers(t.db);
+    expect((await get(purchase)).isTransfer).toBe(false);
+    expect(spent()).toBe(before);
+  });
+
+  it("refuses edits that would break the cap or the direction", async () => {
+    const { t, purchase, repayments, link } = await setup();
+    await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(200);
+    for (const r of repayments) await link(r, purchase);
+    const edit = (id: number, body: object, status: number) =>
+      t.call("patch", `/api/transactions/${id}`).send(body).expect(status);
+    // The four payments already come to the whole purchase.
+    await edit(repayments[0]!, { amountMinor: 5100 }, 409);
+    await edit(repayments[0]!, { direction: "in" }, 409);
+    await edit(purchase, { amountMinor: 19_000 }, 409);
+    await edit(purchase, { direction: "in" }, 409);
+    await edit(repayments[0]!, { amountMinor: 4900 }, 200);
+    await edit(purchase, { amountMinor: 25_000 }, 200);
+  });
+
+  it("unlinks the newest repayments when a sync shrinks the purchase", async () => {
+    const { t, purchase, repayments, link, get, spent } = await setup();
+    await t
+      .call("put", `/api/transactions/${purchase}/instalments`)
+      .send({ instalments: 4 })
+      .expect(200);
+    for (const r of repayments) await link(r, purchase);
+    t.db
+      .update(transactions)
+      .set({ amountMinor: 12_000 })
+      .where(eq(transactions.id, purchase))
+      .run();
+    detectInternalTransfers(t.db);
+    expect((await get(repayments[0]!)).instalmentOfId).toBe(purchase);
+    expect((await get(repayments[1]!)).instalmentOfId).toBe(purchase);
+    expect(await get(repayments[3]!)).toMatchObject({ instalmentOfId: null, isTransfer: false });
+    expect((await get(purchase)).instalmentPlan?.repaymentCount).toBe(2);
+    expect(spent()).toBe(12_000 + 10_000);
   });
 });
