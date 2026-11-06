@@ -408,3 +408,51 @@ describe("what-if scenarios", () => {
     expect(c.scenario.adjustments).toHaveLength(1);
   });
 });
+
+describe("previewing what-ifs that are not saved", () => {
+  const rise: ScenarioAdjustment = {
+    kind: "one_off",
+    label: "Car repair",
+    date: "2026-10-15",
+    amountMinor: -50_000,
+  };
+  const preview = (s: Awaited<ReturnType<typeof setup>>, body: object) =>
+    s.t.call("post", "/api/forecast/scenarios/preview").send({ today: TODAY, ...body });
+
+  it("returns what compare returns for the same adjustments", async () => {
+    const s = await setup();
+    const saved = await s.compare([rise], 60);
+    const res = await preview(s, { adjustments: [rise], days: 60 }).expect(200);
+    expect(res.body.alt).toEqual(saved.alt);
+    expect(res.body.base).toEqual(saved.base);
+    expect(res.body).toMatchObject({
+      lowestChangeMinor: saved.lowestChangeMinor,
+      endChangeMinor: saved.endChangeMinor,
+      unmatched: saved.unmatched,
+    });
+  });
+
+  it("lowers the lowest point by a one-off that lands before the low", async () => {
+    const s = await setup();
+    const res = await preview(s, { adjustments: [rise], days: 60 }).expect(200);
+    expect(res.body.lowestChangeMinor).toBe(-50_000);
+    expect(lowestBalance(res.body.alt)).toBe(lowestBalance(res.body.base) - 50_000);
+  });
+
+  it("refuses an empty list, a bad date and 51 entries", async () => {
+    const s = await setup();
+    await preview(s, { adjustments: [] }).expect(400);
+    await preview(s, { adjustments: [{ ...rise, date: "2026-02-31" }] }).expect(400);
+    await preview(s, { adjustments: Array.from({ length: 51 }, () => rise) }).expect(400);
+  });
+
+  it("writes nothing", async () => {
+    const s = await setup();
+    const forecastUrl = `/api/forecast?days=60&today=${TODAY}`;
+    const before = (await s.t.call("get", forecastUrl)).body;
+    await preview(s, { adjustments: [rise], days: 60 }).expect(200);
+    const list = await s.t.call("get", "/api/forecast/scenarios").expect(200);
+    expect(list.body).toEqual([]);
+    expect((await s.t.call("get", forecastUrl)).body).toEqual(before);
+  });
+});

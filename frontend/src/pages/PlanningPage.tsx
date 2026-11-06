@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
@@ -6,16 +6,20 @@ import { Modal } from "../components/common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
 import { AnnotatedForecast } from "../components/views/AnnotatedForecast";
 import { ScenarioDialog, useScenarioPickers } from "../components/views/ScenarioDialog";
+import { AddWhatIfDialog, SaveWhatIfsDialog, WhatIfChips } from "../components/views/WhatIfDraft";
+import type { OneOffAdjustment } from "../components/views/WhatIfForm";
 import { useApi } from "../hooks/useApi";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { formatMinor, parseMoneyToMinor } from "../lib/money";
 import {
   comparisonSentence,
   describeAdjustment,
+  draftName,
+  MAX_WHAT_IFS,
   tileChangeText,
   unmatchedNote,
 } from "../lib/scenarios";
-import { announceDataChanged } from "../lib/syncEvents";
+import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { holdBackLine, holdBackSummary, lowestTile } from "../lib/views";
 import { CADENCE_LABEL } from "../lib/insights";
@@ -25,6 +29,7 @@ import type {
   Forecast,
   Paycheck,
   Scenario,
+  ScenarioAdjustment,
   ScenarioComparison,
 } from "../types/planning";
 import { Select } from "../components/common/Select";
@@ -123,7 +128,59 @@ function ForecastView() {
   const comparison = useApi<ScenarioComparison>(
     compareId ? `/forecast/scenarios/${compareId}/compare?days=${days}` : null,
   );
-  const compared = compareId ? comparison.data : null;
+  const selected = scenarios.data?.find((s) => String(s.id) === compareId) ?? null;
+  // What-ifs added from the chart: not saved, and tried out through the preview.
+  const [draft, setDraft] = useState<OneOffAdjustment[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState<ScenarioComparison | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewTick, setPreviewTick] = useState(0);
+  const synced = useSyncFinishedCount();
+  const combined = useMemo<ScenarioAdjustment[]>(
+    () => [...(selected?.adjustments ?? []), ...draft],
+    [selected, draft],
+  );
+  useEffect(() => {
+    if (draft.length === 0) {
+      setPreview(null);
+      setPreviewError(null);
+      return;
+    }
+    // Typing several in a row asks once, and an answer for an older draft is thrown away.
+    let stale = false;
+    const timer = setTimeout(() => {
+      api<ScenarioComparison>("/forecast/scenarios/preview", {
+        method: "POST",
+        body: JSON.stringify({ adjustments: combined, days }),
+      })
+        .then((result) => {
+          if (stale) return;
+          setPreview(result);
+          setPreviewError(null);
+        })
+        .catch((e: unknown) => {
+          if (!stale) setPreviewError(errorMessage(e, "Could not work out your what-ifs."));
+        });
+    }, 250);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [combined, days, draft.length, previewTick, synced]);
+  const drafting = draft.length > 0;
+  const live = drafting ? preview : compareId ? comparison.data : null;
+  // With what-ifs the line is named for them (and the scenario it builds on).
+  const compared =
+    live && drafting
+      ? {
+          ...live,
+          scenario: {
+            ...live.scenario,
+            name: draftName(selected?.name ?? null, draft.length),
+          },
+        }
+      : live;
   const pickers = useScenarioPickers(managing || compareId !== "");
   async function holdCaps(on: boolean): Promise<void> {
     setHoldError(null);
@@ -132,6 +189,7 @@ function ForecastView() {
       reload();
       // The scenario line is worked out with the same hold-back, so it follows.
       comparison.reload();
+      setPreviewTick((n) => n + 1);
       announceDataChanged();
     } catch (e) {
       // The box shows what the forecast says, so it stays as it was.
@@ -194,6 +252,14 @@ function ForecastView() {
           <button type="button" className={buttonClass} onClick={() => setManaging(true)}>
             Scenarios...
           </button>
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={draft.length >= MAX_WHAT_IFS}
+            onClick={() => setAdding(true)}
+          >
+            Add a what-if...
+          </button>
           <label>
             Look ahead{" "}
             <Select
@@ -210,10 +276,38 @@ function ForecastView() {
           </label>
         </div>
       </div>
-      {compareId && comparison.error && (
+      {!drafting && compareId && comparison.error && (
         <p role="alert" className="text-sm text-red-600">
           {comparison.error}
         </p>
+      )}
+      {drafting && previewError && (
+        <p role="alert" className="text-sm text-red-600">
+          {previewError}
+        </p>
+      )}
+      {adding && (
+        <AddWhatIfDialog
+          currency={data.currency}
+          dates={{
+            min: data.days.find((d) => d.date > data.today)?.date ?? data.today,
+            max: data.days.at(-1)?.date ?? data.today,
+          }}
+          onAdd={(a) => setDraft((d) => [...d, a])}
+          onClose={() => setAdding(false)}
+        />
+      )}
+      {saving && (
+        <SaveWhatIfsDialog
+          adjustments={combined}
+          onSaved={(saved) => {
+            setSaving(false);
+            setDraft([]);
+            scenarios.reload();
+            setChosen(String(saved.id));
+          }}
+          onClose={() => setSaving(false)}
+        />
       )}
       {managing && (
         <ScenarioDialog
@@ -252,7 +346,25 @@ function ForecastView() {
       <AnnotatedForecast
         forecast={data}
         compare={compared ? { label: compared.scenario.name, days: compared.alt.days } : null}
+        onAddWhatIf={draft.length < MAX_WHAT_IFS ? (a) => setDraft((d) => [...d, a]) : undefined}
+        drafted={draft.map((a) => a.date)}
       />
+      {drafting && (
+        <div className="space-y-1">
+          <WhatIfChips
+            draft={draft}
+            currency={data.currency}
+            onRemove={(i) => setDraft((d) => d.filter((_, at) => at !== i))}
+            onClear={() => setDraft([])}
+            onSave={() => setSaving(true)}
+          />
+          {draft.length >= MAX_WHAT_IFS && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              That is the most what-ifs at once. Remove one, or save them as a scenario.
+            </p>
+          )}
+        </div>
+      )}
       {compared && (
         <div className="space-y-1 text-sm">
           <p className="text-violet-700 dark:text-violet-300">

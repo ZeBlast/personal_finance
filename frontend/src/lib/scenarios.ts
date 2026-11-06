@@ -66,6 +66,15 @@ export function describeAdjustment(
   }
 }
 
+/** The most what-ifs a draft holds before it must be saved or trimmed. */
+export const MAX_WHAT_IFS = 20;
+
+/** What the dashed line is called when it includes unsaved what-ifs. Pure. */
+export function draftName(scenarioName: string | null, count: number): string {
+  if (scenarioName === null) return "your what-ifs";
+  return `${scenarioName} + ${count} what-if${count === 1 ? "" : "s"}`;
+}
+
 /** How far a scenario's figure is from the plan's: "$10.00 lower", "$10.00 higher" or "the same". Pure. */
 export function differenceText(minor: number, currency: string): string {
   if (minor === 0) return "the same";

@@ -16,6 +16,8 @@ import {
   createScenario,
   deleteScenario,
   listScenarios,
+  adjustmentSchema,
+  previewAdjustments,
   scenarioBodySchema,
   updateScenario,
 } from "../services/scenario.service.js";
@@ -173,6 +175,18 @@ export function planningRoutes(db: AppDb): Router {
   });
   router.post("/forecast/scenarios", (req, res) => {
     res.status(201).json(createScenario(db, scenarioBodySchema.parse(req.body)));
+  });
+  // Before the /:id paths. A draft list worked out like a saved scenario's compare; writes nothing.
+  router.post("/forecast/scenarios/preview", (req, res) => {
+    const body = z
+      .object({
+        adjustments: z.array(adjustmentSchema).min(1).max(50),
+        days: z.number().int().min(7).max(MAX_FORECAST_DAYS).optional(),
+        today: day.optional(),
+      })
+      .strict()
+      .parse(req.body);
+    res.json(previewAdjustments(db, body.adjustments, body));
   });
   router.get("/forecast/scenarios/:id/compare", (req, res) => {
     const q = z

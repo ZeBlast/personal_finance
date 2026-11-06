@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMeasuredWidth } from "../../hooks/useMeasuredWidth";
 import { formatAxisMoney, formatMinor } from "../../lib/money";
 import { formatDay } from "../../lib/time";
 import { lowestOf, lowestTile, withExtraSpend } from "../../lib/views";
 import type { Forecast, ForecastDay } from "../../types/planning";
+import { WhatIfForm, type OneOffAdjustment } from "./WhatIfForm";
 
 const PAD = { left: 56, right: 12, top: 26, bottom: 24 };
 
@@ -12,24 +13,73 @@ export function stepLine(points: Array<{ x: number; y: number }>): string {
   return points.map((p, i) => (i === 0 ? `M${p.x},${p.y}` : `H${p.x}V${p.y}`)).join("");
 }
 
+/** The day (index) nearest a pointer at `clientX`, given the plot's left edge on screen and size. Pure. */
+export function nearestDayIndex(
+  clientX: number,
+  plotLeft: number,
+  plotWidth: number,
+  count: number,
+): number {
+  const at = ((clientX - plotLeft) / Math.max(1, plotWidth)) * (count - 1);
+  return Math.max(0, Math.min(count - 1, Math.round(at)));
+}
+
+/** Where a pop-up opened by a click goes: beside the click, kept inside the chart's box. Pure. */
+export function popoverPosition(
+  click: { x: number; y: number },
+  box: { width: number; height: number },
+  size: { width: number; height: number },
+): { left: number; top: number } {
+  return {
+    left: Math.max(0, Math.min(click.x + 8, box.width - size.width)),
+    top: Math.max(0, Math.min(click.y, box.height - size.height)),
+  };
+}
+
+const POPOVER = { width: 256, height: 290 };
+
 /**
  * The days ahead: cash as steps, the lowest point named, and a mark on each day money moves. Hover a
  * day for its figures. With `whatIf`, a slider tries out a one-off purchase and draws the result.
+ * With `onAddWhatIf`, a click on a later day asks for an amount and hands back a one-off for it;
+ * `drafted` marks the days of what-ifs already added.
  */
 export function AnnotatedForecast({
   forecast,
   height = 300,
   whatIf = true,
   compare = null,
+  onAddWhatIf,
+  drafted = [],
 }: {
   forecast: Forecast;
   height?: number;
   whatIf?: boolean;
   /** A saved scenario's days, drawn as a second dashed line over the same window. */
   compare?: { label: string; days: ForecastDay[] } | null;
+  onAddWhatIf?: (a: OneOffAdjustment) => void;
+  drafted?: string[];
 }) {
   const { ref, width } = useMeasuredWidth();
   const [hover, setHover] = useState<number | null>(null);
+  const [asking, setAsking] = useState<{ date: string; left: number; top: number } | null>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  // Esc or a press outside the pop-up puts it away.
+  useEffect(() => {
+    if (!asking) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setAsking(null);
+    };
+    const onPress = (e: PointerEvent): void => {
+      if (!popover.current?.contains(e.target as Node)) setAsking(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPress);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPress);
+    };
+  }, [asking]);
   const [extra, setExtra] = useState(0);
   const [day, setDay] = useState(forecast.days[0]?.date ?? forecast.today);
   const money = (n: number) => formatMinor(n, forecast.currency);
@@ -65,7 +115,7 @@ export function AnnotatedForecast({
   );
   // Top and zero, then the bottom or the middle, whichever has room for its label.
   const ticks = [...new Set([top, 0, Math.abs(y(bottom) - y(0)) > 16 ? bottom : top / 2])];
-  const shown = hover === null ? null : days[hover]!;
+  const shown = hover === null || asking ? null : days[hover]!;
   // A sensible range for the slider: up to what is in the bank, at least $500.
   const sliderMax = Math.max(50_000, Math.ceil(forecast.startBalanceMinor / 10_000) * 10_000);
 
@@ -77,12 +127,25 @@ export function AnnotatedForecast({
           aria-label={`Cash over the next ${days.length} days, from ${money(forecast.startBalanceMinor)} to ${money(forecast.endBalanceMinor)}. ${lowName} ${money(low.balanceMinor)} on ${formatDay(low.date)}. The table below lists each day money moves.`}
           width={width}
           height={height}
-          className="block"
+          className={`block ${onAddWhatIf ? "cursor-crosshair" : ""}`}
           onPointerLeave={() => setHover(null)}
           onPointerMove={(e) => {
             const box = e.currentTarget.getBoundingClientRect();
-            const at = ((e.clientX - box.left - PAD.left) / plotWidth) * (days.length - 1);
-            setHover(Math.max(0, Math.min(days.length - 1, Math.round(at))));
+            setHover(nearestDayIndex(e.clientX, box.left + PAD.left, plotWidth, days.length));
+          }}
+          onClick={(e) => {
+            if (!onAddWhatIf) return;
+            const box = e.currentTarget.getBoundingClientRect();
+            const px = e.clientX - box.left;
+            // Only the plot counts, and only a day after today.
+            if (px < PAD.left || px > width - PAD.right) return;
+            const date =
+              days[nearestDayIndex(e.clientX, box.left + PAD.left, plotWidth, days.length)]!.date;
+            if (date <= forecast.today) return;
+            setAsking({
+              date,
+              ...popoverPosition({ x: px, y: e.clientY - box.top }, { width, height }, POPOVER),
+            });
           }}
         >
           {ticks.map((v) => (
@@ -167,6 +230,21 @@ export function AnnotatedForecast({
               />
             );
           })}
+          {drafted.map((date) => {
+            const at = days.findIndex((d) => d.date === date);
+            if (at < 0) return null;
+            return (
+              <circle
+                key={date}
+                data-testid="whatif-mark"
+                cx={x(at)}
+                cy={y((other?.days[at] ?? days[at]!).balanceMinor)}
+                r={4}
+                strokeWidth={2}
+                className="fill-violet-500 stroke-white dark:fill-violet-400 dark:stroke-slate-900"
+              />
+            );
+          })}
           {lowAt >= 0 && (
             <text
               x={lowOnRight ? x(lowAt) - 6 : x(lowAt) + 6}
@@ -189,6 +267,28 @@ export function AnnotatedForecast({
             />
           )}
         </svg>
+        {asking && onAddWhatIf && (
+          <div
+            ref={popover}
+            role="dialog"
+            aria-label={`Add a what-if on ${formatDay(asking.date)}`}
+            style={{ left: asking.left, top: asking.top, width: POPOVER.width }}
+            className="absolute z-20 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+          >
+            <h3 className="mb-2 text-sm font-semibold">
+              Add a what-if on {formatDay(asking.date)}
+            </h3>
+            <WhatIfForm
+              currency={forecast.currency}
+              date={asking.date}
+              onAdd={(a) => {
+                setAsking(null);
+                onAddWhatIf(a);
+              }}
+              onCancel={() => setAsking(null)}
+            />
+          </div>
+        )}
         {shown && hover !== null && (
           <div
             style={{ left: Math.max(0, Math.min(x(hover) + 10, width - 228)), top: 2 }}

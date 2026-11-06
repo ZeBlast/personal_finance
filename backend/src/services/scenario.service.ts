@@ -181,12 +181,7 @@ export function deleteScenario(db: AppDb, id: number): void {
   db.delete(forecastScenarios).where(eq(forecastScenarios.id, id)).run();
 }
 
-/** The forecast as it is and as it would be with the scenario, and how the lowest and last days differ (scenario minus now). The lowest is the screens' figure: after today when today is the low point. */
-export function compareScenario(
-  db: AppDb,
-  id: number,
-  opts: { days?: number | undefined; today?: string | undefined } = {},
-): {
+export interface ScenarioComparison {
   scenario: ScenarioDto;
   base: Forecast;
   alt: Forecast;
@@ -194,8 +189,41 @@ export function compareScenario(
   endChangeMinor: number;
   /** Indexes of adjustments whose series, plan or goal was not found in this forecast. */
   unmatched: number[];
-} {
-  const scenario = get(db, id);
+}
+
+type CompareOpts = { days?: number | undefined; today?: string | undefined };
+
+/** The forecast as it is and as it would be with the scenario, and how the lowest and last days differ (scenario minus now). The lowest is the screens' figure: after today when today is the low point. */
+export function compareScenario(db: AppDb, id: number, opts: CompareOpts = {}): ScenarioComparison {
+  return compareAdjustments(db, get(db, id), opts);
+}
+
+/**
+ * The same comparison for a list of adjustments that is not saved (a draft from the chart). Nothing
+ * is written; the "scenario" in the answer is the list under a placeholder name and no id (0).
+ */
+export function previewAdjustments(
+  db: AppDb,
+  adjustments: ScenarioAdjustment[],
+  opts: CompareOpts = {},
+  now = new Date().toISOString(),
+): ScenarioComparison {
+  const scenario = {
+    id: 0,
+    name: "Your what-ifs",
+    adjustments,
+    skipped: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return compareAdjustments(db, scenario, opts);
+}
+
+function compareAdjustments(
+  db: AppDb,
+  scenario: ScenarioDto,
+  opts: CompareOpts,
+): ScenarioComparison {
   const base = cashForecast(db, { days: opts.days, today: opts.today });
   const matched = new Set<number>();
   const alt = cashForecast(db, {
