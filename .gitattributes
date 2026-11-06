@@ -1,0 +1,3 @@
+# Keep text files with LF line endings in every checkout, whatever core.autocrlf says, so the
+# formatter (which expects LF) passes on Windows too. Git still detects binary files itself.
+* text=auto eol=lf
