@@ -103,6 +103,24 @@ describe("the page", () => {
     expect(calls.some((c) => c.path === "/accounts/2/statements?count=12")).toBe(true);
   });
 
+  it("picks a card from anywhere on its row, not just its name", async () => {
+    fakeBackend({
+      "/accounts": [card(1, "Blue card"), card(2, "Red card")],
+      "/bills": [bill(1, 12345, "2026-11-20"), bill(2, 6789, "2026-11-22")],
+      "/accounts/1/statements?count=2": statements(5),
+      "/accounts/2/statements?count=2": statements(5),
+      "/accounts/1/statements?count=12": statements(5),
+      "/accounts/2/statements?count=12": statements(5),
+    });
+    show();
+    await screen.findByRole("heading", { name: "Blue card" });
+    await userEvent.click(await screen.findByText("$67.89"));
+    await screen.findByRole("heading", { name: "Red card" });
+    expect(screen.getByRole("button", { name: "Red card" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+  });
+
   it("shows a statement whose days were set on the card, not in Card bills", async () => {
     const closed = {
       end: "2026-10-05",

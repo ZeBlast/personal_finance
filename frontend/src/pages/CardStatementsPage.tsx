@@ -80,8 +80,13 @@ function CardRow({
   const openSoFar = bill?.next?.balanceSoFarMinor ?? open?.newBalanceMinor ?? open?.chargesMinor;
 
   return (
+    // The whole row picks the card; the name stays a button so the keyboard can reach it. Links and
+    // buttons inside the row keep their own job.
     <tr
-      className={`border-t border-slate-100 dark:border-slate-800 ${selected ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest("a, button")) onSelect();
+      }}
+      className={`cursor-pointer border-t border-slate-100 dark:border-slate-800 ${selected ? "bg-blue-50 dark:bg-blue-950/40" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"}`}
     >
       <td className="py-1.5 pr-3 pl-2">
         <button
