@@ -121,4 +121,18 @@ describe("clicking the chart for a what-if", () => {
     render(<AnnotatedForecast forecast={forecast} drafted={["2026-11-02"]} />);
     expect(screen.getAllByTestId("whatif-mark")).toHaveLength(1);
   });
+
+  it("marks two what-ifs on the same day, and fades a line that is out of date", () => {
+    const lower = days.map((d) => ({ ...d, balanceMinor: d.balanceMinor - 5_000 }));
+    render(
+      <AnnotatedForecast
+        forecast={forecast}
+        compare={{ label: "x", days: lower }}
+        drafted={["2026-11-02", "2026-11-02"]}
+        stale
+      />,
+    );
+    expect(screen.getAllByTestId("whatif-mark")).toHaveLength(2);
+    expect(screen.getByTestId("scenario-line").getAttribute("class")).toContain("opacity-40");
+  });
 });

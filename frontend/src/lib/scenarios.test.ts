@@ -142,6 +142,7 @@ describe("tileChangeText", () => {
     expect(tileChangeText(-108_037, "USD")).toBe("$1,080.37 lower with the scenario");
     expect(tileChangeText(500, "USD")).toBe("$5.00 higher with the scenario");
     expect(tileChangeText(0, "USD")).toBe("Same with the scenario");
+    expect(tileChangeText(-500, "USD", "your what-ifs")).toBe("$5.00 lower with your what-ifs");
   });
 });
 

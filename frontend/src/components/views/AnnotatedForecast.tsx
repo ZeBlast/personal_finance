@@ -51,6 +51,7 @@ export function AnnotatedForecast({
   compare = null,
   onAddWhatIf,
   drafted = [],
+  stale = false,
 }: {
   forecast: Forecast;
   height?: number;
@@ -59,6 +60,8 @@ export function AnnotatedForecast({
   compare?: { label: string; days: ForecastDay[] } | null;
   onAddWhatIf?: (a: OneOffAdjustment) => void;
   drafted?: string[];
+  /** The comparison line is for an older draft while a new one is worked out: drawn faded. */
+  stale?: boolean;
 }) {
   const { ref, width } = useMeasuredWidth();
   const [hover, setHover] = useState<number | null>(null);
@@ -193,7 +196,7 @@ export function AnnotatedForecast({
               fill="none"
               strokeWidth={2}
               strokeDasharray="7 4"
-              className="stroke-violet-500 dark:stroke-violet-400"
+              className={`stroke-violet-500 dark:stroke-violet-400 ${stale ? "opacity-40" : ""}`}
             />
           )}
           {tried && (
@@ -230,12 +233,12 @@ export function AnnotatedForecast({
               />
             );
           })}
-          {drafted.map((date) => {
+          {drafted.map((date, n) => {
             const at = days.findIndex((d) => d.date === date);
             if (at < 0) return null;
             return (
               <circle
-                key={date}
+                key={`${date}-${n}`}
                 data-testid="whatif-mark"
                 cx={x(at)}
                 cy={y((other?.days[at] ?? days[at]!).balanceMinor)}

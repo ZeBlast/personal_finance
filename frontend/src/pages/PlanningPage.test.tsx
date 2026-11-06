@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -137,7 +137,8 @@ describe("cash forecast what-ifs from the chart", () => {
     expect(await screen.findByText(/^−\$150\.00 · What-if · /)).toBeTruthy();
     expect(await screen.findByTestId("scenario-line")).toBeTruthy();
     expect(screen.getAllByTestId("whatif-mark")).toHaveLength(1);
-    expect(screen.getByText(/With “your what-ifs”/)).toBeTruthy();
+    expect(screen.getByText(/^With your what-ifs: lowest/)).toBeTruthy();
+    expect(screen.getByText("$50.00 lower with your what-ifs")).toBeTruthy();
     const previews = () => calls.filter((c) => c.path === "/forecast/scenarios/preview");
     expect(previews()).toHaveLength(1);
     expect(previews()[0]!.body).toEqual({ adjustments: [draftEntry], days: 60 });
@@ -174,7 +175,8 @@ describe("cash forecast what-ifs from the chart", () => {
     );
     await addThroughDialog(user, "150");
     await screen.findByText(/^−\$150\.00 · What-if · /);
-    await screen.findByText(/With “Rent goes up \+ 1 what-if”/);
+    await screen.findByText(/^With Rent goes up \+ 1 what-if: lowest/);
+    expect(screen.getByText("$50.00 lower with Rent goes up + 1 what-if")).toBeTruthy();
     const previews = calls.filter((c) => c.path === "/forecast/scenarios/preview");
     expect(previews.at(-1)!.body).toEqual({ adjustments: [fee, draftEntry], days: 60 });
 
@@ -188,6 +190,50 @@ describe("cash forecast what-ifs from the chart", () => {
     expect(post?.body).toEqual({ name: "Trip", adjustments: [fee, draftEntry] });
     expect(screen.queryByText(/^−\$150\.00 · What-if · /)).toBeNull();
     expect(window.localStorage.getItem("pf.forecast.compare")).toBe(JSON.stringify("7"));
+  });
+
+  it("stops adding when the scenario's changes plus the draft would pass the limit", async () => {
+    const full: Scenario = { ...scenario, adjustments: Array.from({ length: 50 }, () => fee) };
+    const calls = fakeBackend({
+      "/forecast?days=60": forecast,
+      "/forecast/scenarios": [full],
+      "/forecast/scenarios/1/compare?days=60": {
+        scenario: full,
+        base: forecast,
+        alt,
+        lowestChangeMinor: 0,
+        endChangeMinor: 0,
+        unmatched: [],
+      },
+      "/insights/recurring": { series: [] },
+      "/planned": [],
+      "/goals": [],
+    });
+    render(
+      <MemoryRouter>
+        <PlanningPage />
+      </MemoryRouter>,
+    );
+    const add = await screen.findByRole("button", { name: "Add a what-if..." });
+    expect((add as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/You can add up to 0 what-ifs on top of this scenario/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("img"), { clientX: 600, clientY: 100 });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.some((c) => c.path.includes("preview"))).toBe(false);
+  });
+
+  it("asks for a smaller amount instead of sending one the backend would refuse", async () => {
+    window.localStorage.setItem("pf.forecast.compare", JSON.stringify(""));
+    const calls = fakeBackend({ "/forecast?days=60": forecast, "/forecast/scenarios": [] });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <PlanningPage />
+      </MemoryRouter>,
+    );
+    await addThroughDialog(user, "2000000000");
+    expect(screen.getByText(/too large/)).toBeTruthy();
+    expect(calls.some((c) => c.path.includes("preview"))).toBe(false);
   });
 
   it("keeps the draft and shows an error when the preview fails", async () => {

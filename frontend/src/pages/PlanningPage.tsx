@@ -14,8 +14,8 @@ import { formatMinor, parseMoneyToMinor } from "../lib/money";
 import {
   comparisonSentence,
   describeAdjustment,
+  draftLimit,
   draftName,
-  MAX_WHAT_IFS,
   tileChangeText,
   unmatchedNote,
 } from "../lib/scenarios";
@@ -141,7 +141,11 @@ function ForecastView() {
     () => [...(selected?.adjustments ?? []), ...draft],
     [selected, draft],
   );
+  // False from a change until its answer arrives: the line on show is for an older draft.
+  const [fresh, setFresh] = useState(false);
+  const limit = draftLimit(selected?.adjustments.length ?? 0);
   useEffect(() => {
+    setFresh(false);
     if (draft.length === 0) {
       setPreview(null);
       setPreviewError(null);
@@ -158,9 +162,12 @@ function ForecastView() {
           if (stale) return;
           setPreview(result);
           setPreviewError(null);
+          setFresh(true);
         })
         .catch((e: unknown) => {
-          if (!stale) setPreviewError(errorMessage(e, "Could not work out your what-ifs."));
+          if (stale) return;
+          setPreview(null);
+          setPreviewError(errorMessage(e, "Could not work out your what-ifs."));
         });
     }, 250);
     return () => {
@@ -178,6 +185,7 @@ function ForecastView() {
           scenario: {
             ...live.scenario,
             name: draftName(selected?.name ?? null, draft.length),
+            skipped: selected?.skipped ?? 0,
           },
         }
       : live;
@@ -211,6 +219,8 @@ function ForecastView() {
   const held = holdBackSummary(data.days);
   const low = lowestTile(data);
   const altLow = compared ? lowestTile(compared.alt) : null;
+  // What the tiles and sentence say the figures are "with": the saved scenario, or the what-ifs.
+  const withWhat = drafting && compared ? compared.scenario.name : undefined;
 
   return (
     <div className="space-y-4">
@@ -223,14 +233,18 @@ function ForecastView() {
             warn={low.balanceMinor < 0}
             change={
               compared && altLow
-                ? tileChangeText(altLow.balanceMinor - low.balanceMinor, data.currency)
+                ? tileChangeText(altLow.balanceMinor - low.balanceMinor, data.currency, withWhat)
                 : undefined
             }
           />
           <Stat
             label={`In ${days} days`}
             value={money(data.endBalanceMinor)}
-            change={compared ? tileChangeText(compared.endChangeMinor, data.currency) : undefined}
+            change={
+              compared
+                ? tileChangeText(compared.endChangeMinor, data.currency, withWhat)
+                : undefined
+            }
           />
         </dl>
         <div className="flex flex-wrap items-end gap-3 text-sm">
@@ -255,7 +269,7 @@ function ForecastView() {
           <button
             type="button"
             className={buttonClass}
-            disabled={draft.length >= MAX_WHAT_IFS}
+            disabled={draft.length >= limit}
             onClick={() => setAdding(true)}
           >
             Add a what-if...
@@ -317,7 +331,7 @@ function ForecastView() {
           days={days}
           pickers={pickers}
           unmatched={
-            compared
+            compared && !drafting
               ? {
                   scenarioId: compared.scenario.id,
                   adjustments: compared.unmatched.map((i) => compared.scenario.adjustments[i]!),
@@ -346,29 +360,31 @@ function ForecastView() {
       <AnnotatedForecast
         forecast={data}
         compare={compared ? { label: compared.scenario.name, days: compared.alt.days } : null}
-        onAddWhatIf={draft.length < MAX_WHAT_IFS ? (a) => setDraft((d) => [...d, a]) : undefined}
+        onAddWhatIf={draft.length < limit ? (a) => setDraft((d) => [...d, a]) : undefined}
         drafted={draft.map((a) => a.date)}
+        stale={drafting && !fresh}
       />
       {drafting && (
-        <div className="space-y-1">
-          <WhatIfChips
-            draft={draft}
-            currency={data.currency}
-            onRemove={(i) => setDraft((d) => d.filter((_, at) => at !== i))}
-            onClear={() => setDraft([])}
-            onSave={() => setSaving(true)}
-          />
-          {draft.length >= MAX_WHAT_IFS && (
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              That is the most what-ifs at once. Remove one, or save them as a scenario.
-            </p>
-          )}
-        </div>
+        <WhatIfChips
+          draft={draft}
+          currency={data.currency}
+          onRemove={(i) => setDraft((d) => d.filter((_, at) => at !== i))}
+          onClear={() => setDraft([])}
+          onSave={() => setSaving(true)}
+        />
+      )}
+      {draft.length >= limit && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {selected
+            ? `You can add up to ${limit} what-ifs on top of this scenario.`
+            : `You can add up to ${limit} what-ifs at once.`}{" "}
+          {drafting ? "Remove one, or save them as a scenario." : ""}
+        </p>
       )}
       {compared && (
         <div className="space-y-1 text-sm">
           <p className="text-violet-700 dark:text-violet-300">
-            {comparisonSentence(compared, data.currency)}
+            {comparisonSentence(compared, data.currency, !drafting)}
           </p>
           {compared.scenario.skipped > 0 && (
             <p className="text-xs text-amber-700 dark:text-amber-400">

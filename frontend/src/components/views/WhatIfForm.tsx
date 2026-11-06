@@ -3,6 +3,9 @@ import { parseMoneyToMinor } from "../../lib/money";
 import type { ScenarioAdjustment } from "../../types/planning";
 import { inputClass, primaryClass, buttonClass } from "../common/styles";
 
+/** The most the backend takes for one amount, in minor units. */
+const MAX_AMOUNT = 100_000_000_000;
+
 export type OneOffAdjustment = Extract<ScenarioAdjustment, { kind: "one_off" }>;
 
 /**
@@ -35,6 +38,7 @@ export function WhatIfForm({
     const minor = parseMoneyToMinor(amount, currency);
     const day = date ?? picked;
     if (minor === null) return setProblem("Enter an amount above zero.");
+    if (minor > MAX_AMOUNT) return setProblem("That amount is too large. Enter a smaller one.");
     if (!day || (dates && (day < dates.min || day > dates.max)))
       return setProblem("Pick a day in the forecast, after today.");
     onAdd({

@@ -69,6 +69,14 @@ export function describeAdjustment(
 /** The most what-ifs a draft holds before it must be saved or trimmed. */
 export const MAX_WHAT_IFS = 20;
 
+/** The backend takes at most this many changes in one preview (or saved scenario). */
+const MAX_CHANGES = 50;
+
+/** How many what-ifs fit on top of a scenario's own changes. Pure. */
+export function draftLimit(scenarioChanges: number): number {
+  return Math.max(0, Math.min(MAX_WHAT_IFS, MAX_CHANGES - scenarioChanges));
+}
+
 /** What the dashed line is called when it includes unsaved what-ifs. Pure. */
 export function draftName(scenarioName: string | null, count: number): string {
   if (scenarioName === null) return "your what-ifs";
@@ -82,19 +90,25 @@ export function differenceText(minor: number, currency: string): string {
 }
 
 /** What sits under a tile: "$10.00 lower with the scenario" (not a balance, so no sign). Pure. */
-export function tileChangeText(minor: number, currency: string): string {
-  if (minor === 0) return "Same with the scenario";
-  return `${differenceText(minor, currency)} with the scenario`;
+export function tileChangeText(minor: number, currency: string, what = "the scenario"): string {
+  if (minor === 0) return `Same with ${what}`;
+  return `${differenceText(minor, currency)} with ${what}`;
 }
 
 /** How a scenario moves the lowest and last days against the plan. Pure. */
-export function comparisonSentence(c: ScenarioComparison, currency: string): string {
+export function comparisonSentence(
+  c: ScenarioComparison,
+  currency: string,
+  /** True for a saved scenario's name (quoted); false for unsaved what-ifs. */
+  quoted = true,
+): string {
   const { lowestChangeMinor: low, endChangeMinor: end } = c;
+  const name = quoted ? `“${c.scenario.name}”` : c.scenario.name;
   if (low === 0 && end === 0) {
-    return `With “${c.scenario.name}”: the lowest and the end balance are the same as your plan.`;
+    return `With ${name}: the lowest and the end balance are the same as your plan.`;
   }
   const figures = `lowest ${differenceText(low, currency)}, end ${differenceText(end, currency)}`;
-  return `With “${c.scenario.name}”: ${figures}${low !== 0 && end !== 0 ? " than" : " compared with"} your plan.`;
+  return `With ${name}: ${figures}${low !== 0 && end !== 0 ? " than" : " compared with"} your plan.`;
 }
 
 /** The note for a change that did nothing in the forecast: ended before today, or matched nothing. Pure. */
