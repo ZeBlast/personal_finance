@@ -42,7 +42,10 @@ export function toast(
     for (const old of toasts.slice(0, toasts.length - MAX_SHOWN)) clearTimer(old.id);
     toasts = toasts.slice(-MAX_SHOWN);
   }
-  timers.set(id, setTimeout(() => dismissToast(id), duration));
+  timers.set(
+    id,
+    setTimeout(() => dismissToast(id), duration),
+  );
   emit();
   return id;
 }
