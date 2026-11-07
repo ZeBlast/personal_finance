@@ -31,6 +31,7 @@ const bill = (accountId: number, remainingMinor: number, dueOn: string, status =
       daysUntilDue: 3,
     },
     next: { closesOn: "2026-11-05", dueOn: "2026-11-28", balanceSoFarMinor: 1200 },
+    statementDays: null,
   }) as CardBill;
 
 const statements = (closingDay: number | null) => ({
@@ -144,7 +145,7 @@ describe("the page", () => {
     await screen.findByText("$456.00");
     screen.getByText("$78.00");
     screen.getByText("Not tracked");
-    screen.getByRole("link", { name: "Track in Planning" });
+    screen.getByRole("link", { name: "Count this bill in the forecast" });
     // Nothing to pay can only be claimed about cards whose payments are tracked.
     expect(screen.queryByText(/Nothing left to pay/)).toBeNull();
     expect(screen.queryByText(/Set the closing day/)).toBeNull();

@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { accounts } from "../../../drizzle/schema.js";
+import { accounts, cardBills } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, lastOfMonth } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
@@ -124,7 +124,11 @@ const checkDay = (day: number | null, what: string): void => {
   }
 };
 
-/** Sets (or, with null, clears) a card's statement closing and due days. */
+/**
+ * Sets (or, with null, clears) a card's statement closing and due days. A card whose bill is
+ * counted on Card bills keeps the same days there: a new closing day moves the bill, a cleared
+ * closing day stops counting it, and a cleared due day keeps the bill's (a bill needs one).
+ */
 export function setStatementSettings(
   db: AppDb,
   accountId: number,
@@ -134,12 +138,28 @@ export function setStatementSettings(
   requireCard(db, accountId);
   checkDay(settings.closingDay, "closing");
   checkDay(settings.dueDay, "due");
-  const dueDay = settings.closingDay === null ? null : settings.dueDay;
-  db.update(accounts)
-    .set({ statementClosingDay: settings.closingDay, statementDueDay: dueDay, updatedAt: now })
-    .where(eq(accounts.id, accountId))
-    .run();
-  return { closingDay: settings.closingDay, dueDay };
+  return db.transaction((tx) => {
+    const bill = tx
+      .select({ dueDay: cardBills.dueDay })
+      .from(cardBills)
+      .where(eq(cardBills.accountId, accountId))
+      .get();
+    const closingDay = settings.closingDay;
+    const dueDay = closingDay === null ? null : (settings.dueDay ?? bill?.dueDay ?? null);
+    tx.update(accounts)
+      .set({ statementClosingDay: closingDay, statementDueDay: dueDay, updatedAt: now })
+      .where(eq(accounts.id, accountId))
+      .run();
+    if (bill && closingDay === null) {
+      tx.delete(cardBills).where(eq(cardBills.accountId, accountId)).run();
+    } else if (bill && closingDay !== null && dueDay !== null) {
+      tx.update(cardBills)
+        .set({ closingDay, dueDay, updatedAt: now })
+        .where(eq(cardBills.accountId, accountId))
+        .run();
+    }
+    return { closingDay, dueDay };
+  });
 }
 
 const MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;

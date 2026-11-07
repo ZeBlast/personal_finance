@@ -60,6 +60,8 @@ export interface CardBill {
     minimumMinor: number | null;
     autopay: boolean;
   } | null;
+  /** For a card whose bill is not counted yet: the days already set for its statements. */
+  statementDays: { closingDay: number; dueDay: number | null } | null;
   statement: {
     closedOn: string;
     dueOn: string;

@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeBackend } from "../test/fakeBackend";
 import type { Forecast, Scenario } from "../types/planning";
-import { PlanningPage } from "./PlanningPage";
+import { CardBillsPage, PlanningPage } from "./PlanningPage";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -258,5 +258,49 @@ describe("cash forecast what-ifs from the chart", () => {
     await addThroughDialog(user, "20");
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/^−\$20\.00 · What-if · /)).toBeTruthy();
+  });
+});
+
+describe("card bills", () => {
+  it("offers the days already set for the card's statements instead of saying none are set", async () => {
+    const calls = fakeBackend({
+      "/bills": [
+        {
+          accountId: 4,
+          name: "Visa",
+          institutionName: null,
+          color: null,
+          currency: "USD",
+          currentBalanceMinor: 12_000,
+          settings: null,
+          statementDays: { closingDay: 15, dueDay: 10 },
+          statement: null,
+          next: null,
+        },
+      ],
+      "PUT /accounts/4/bill": null,
+    });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <CardBillsPage />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(/Statement closes on day 15, payment due on day 10\. Not counted/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Bill dates not set/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Count this bill in the forecast" }));
+    expect((screen.getByLabelText("Statement closes on day") as HTMLInputElement).value).toBe("15");
+    expect((screen.getByLabelText("Payment due on day") as HTMLInputElement).value).toBe("10");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "PUT")?.body).toEqual({
+        closingDay: 15,
+        dueDay: 10,
+        minimumMinor: null,
+        autopay: false,
+      }),
+    );
   });
 });

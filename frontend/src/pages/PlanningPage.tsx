@@ -635,7 +635,11 @@ function BillsView() {
                   </span>
                 )}
                 <button type="button" className={buttonClass} onClick={() => setEditing(b)}>
-                  {b.settings ? "Edit dates" : "Set bill dates"}
+                  {b.settings
+                    ? "Edit dates"
+                    : b.statementDays
+                      ? "Count this bill in the forecast"
+                      : "Set bill dates"}
                 </button>
               </div>
             </div>
@@ -670,7 +674,15 @@ function BillsView() {
               </dl>
             ) : (
               <p className="mt-1 text-sm text-slate-500">
-                {b.settings ? "The bank has not given this card's balance." : "Bill dates not set."}{" "}
+                {b.settings
+                  ? "The bank has not given this card's balance."
+                  : b.statementDays
+                    ? `Statement closes on day ${b.statementDays.closingDay}${
+                        b.statementDays.dueDay === null
+                          ? ""
+                          : `, payment due on day ${b.statementDays.dueDay}`
+                      }. Not counted in the forecast yet.`
+                    : "Bill dates not set."}{" "}
                 Balance now:{" "}
                 {b.currentBalanceMinor === null ? "unknown" : money(b.currentBalanceMinor)}
               </p>
@@ -706,8 +718,10 @@ function Info({ label, value, note }: { label: string; value: string; note?: str
 }
 
 function BillDialog({ bill, onClose }: { bill: CardBill; onClose: (saved: boolean) => void }) {
-  const [closingDay, setClosingDay] = useState(String(bill.settings?.closingDay ?? ""));
-  const [dueDay, setDueDay] = useState(String(bill.settings?.dueDay ?? ""));
+  // A card's days are one fact: those already set for its statements start the form.
+  const known = bill.settings ?? bill.statementDays;
+  const [closingDay, setClosingDay] = useState(String(known?.closingDay ?? ""));
+  const [dueDay, setDueDay] = useState(String(known?.dueDay ?? ""));
   const [minimum, setMinimum] = useState(
     bill.settings?.minimumMinor != null ? (bill.settings.minimumMinor / 100).toFixed(2) : "",
   );
@@ -799,7 +813,7 @@ function BillDialog({ bill, onClose }: { bill: CardBill; onClose: (saved: boolea
               disabled={busy}
               onClick={() => void clear()}
             >
-              Remove dates
+              Stop counting this bill
             </button>
           )}
           <button

@@ -34,8 +34,13 @@ export interface CardBill {
   currency: string;
   /** What is owed on the card now (null when the bank gave no balance). */
   currentBalanceMinor: number | null;
-  /** Null until the user sets the card's closing and due days. */
+  /** Null until the card's bill is counted (the user chose to track it here). */
   settings: BillSettings | null;
+  /**
+   * For a card whose bill is not counted yet: the closing and due days already set for its
+   * statements (on Card statements or Accounts), so the page can offer them. Null otherwise.
+   */
+  statementDays: { closingDay: number; dueDay: number | null } | null;
   statement: {
     closedOn: string;
     dueOn: string;
@@ -104,12 +109,20 @@ export function setBillSettings(
     }
   }
   const values = { ...input, updatedAt: now };
-  db.insert(cardBills)
-    .values({ accountId, ...values, createdAt: now })
-    .onConflictDoUpdate({ target: cardBills.accountId, set: values })
-    .run();
+  db.transaction((tx) => {
+    tx.insert(cardBills)
+      .values({ accountId, ...values, createdAt: now })
+      .onConflictDoUpdate({ target: cardBills.accountId, set: values })
+      .run();
+    // The card's days are one fact: its statements use the same ones.
+    tx.update(accounts)
+      .set({ statementClosingDay: input.closingDay, statementDueDay: input.dueDay, updatedAt: now })
+      .where(eq(accounts.id, accountId))
+      .run();
+  });
 }
 
+/** Stops counting the card's bill. Its days stay for its statements. */
 export function clearBillSettings(db: AppDb, accountId: number): void {
   db.delete(cardBills).where(eq(cardBills.accountId, accountId)).run();
 }
@@ -141,11 +154,17 @@ export function listBills(
       currency: card.currency,
       currentBalanceMinor: card.currentBalanceMinor,
       settings: null,
+      statementDays: null,
       statement: null,
       next: null,
     };
     const s = settings.get(card.id);
-    if (!s) return base;
+    if (!s) {
+      if (card.statementClosingDay !== null) {
+        base.statementDays = { closingDay: card.statementClosingDay, dueDay: card.statementDueDay };
+      }
+      return base;
+    }
     base.settings = {
       closingDay: s.closingDay,
       dueDay: s.dueDay,

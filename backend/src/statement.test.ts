@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { accounts } from "../../drizzle/schema.js";
+import fs from "node:fs";
+import path from "node:path";
+import { eq, sql } from "drizzle-orm";
+import { accounts, cardBills } from "../../drizzle/schema.js";
 import { statementPeriods, statements } from "./services/statement.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
@@ -168,5 +170,115 @@ describe("a card's statements", () => {
       .call("put", `/api/accounts/${card}/statement-settings`)
       .send({ closingDay: null })
       .expect(200);
+  });
+});
+
+describe("a card's closing and due days", () => {
+  it("are the same on Card statements and Card bills, whichever page sets them", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const card = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Visa", kind: "credit_card" })
+        .expect(201)
+    ).body.id as number;
+    const bill = async () =>
+      (
+        (await t.call("get", "/api/bills").expect(200)).body as Array<{
+          accountId: number;
+          settings: { closingDay: number; dueDay: number; minimumMinor: number | null } | null;
+          statementDays: { closingDay: number; dueDay: number | null } | null;
+        }>
+      ).find((b) => b.accountId === card)!;
+    const statementDays = async () => {
+      const s = (await t.call("get", `/api/accounts/${card}/statements`).expect(200)).body;
+      return { closingDay: s.closingDay, dueDay: s.dueDay };
+    };
+
+    // Set on Card statements: Card bills knows them, without counting the bill yet.
+    await t
+      .call("put", `/api/accounts/${card}/statement-settings`)
+      .send({ closingDay: 15, dueDay: 10 })
+      .expect(200);
+    expect(await bill()).toMatchObject({
+      settings: null,
+      statementDays: { closingDay: 15, dueDay: 10 },
+    });
+
+    // Set on Card bills: Card statements uses them.
+    await t
+      .call("put", `/api/accounts/${card}/bill`)
+      .send({ closingDay: 20, dueDay: 12, minimumMinor: 3500, autopay: false })
+      .expect(200);
+    expect(await statementDays()).toEqual({ closingDay: 20, dueDay: 12 });
+    expect((await bill()).statementDays).toBeNull();
+
+    // Changed on Card statements: the bill moves too and keeps its minimum.
+    await t
+      .call("put", `/api/accounts/${card}/statement-settings`)
+      .send({ closingDay: 25, dueDay: 18 })
+      .expect(200);
+    expect((await bill()).settings).toMatchObject({
+      closingDay: 25,
+      dueDay: 18,
+      minimumMinor: 3500,
+    });
+    // A bill needs a due day, so clearing only that one keeps the bill's.
+    await t
+      .call("put", `/api/accounts/${card}/statement-settings`)
+      .send({ closingDay: 26, dueDay: null })
+      .expect(200);
+    expect(await statementDays()).toEqual({ closingDay: 26, dueDay: 18 });
+
+    // No longer counted as a bill: the days stay for Card statements.
+    await t.call("delete", `/api/accounts/${card}/bill`).expect(204);
+    expect(await statementDays()).toEqual({ closingDay: 26, dueDay: 18 });
+    expect(await bill()).toMatchObject({
+      settings: null,
+      statementDays: { closingDay: 26, dueDay: 18 },
+    });
+
+    // Cleared on Card statements: a card with no closing day has no bill either.
+    await t
+      .call("put", `/api/accounts/${card}/bill`)
+      .send({ closingDay: 5, dueDay: 1, minimumMinor: null, autopay: true })
+      .expect(200);
+    await t
+      .call("put", `/api/accounts/${card}/statement-settings`)
+      .send({ closingDay: null })
+      .expect(200);
+    expect(await bill()).toMatchObject({ settings: null, statementDays: null });
+  });
+
+  it("set on Card bills before they were kept once reach the card's statements", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const card = (
+      await t
+        .call("post", "/api/accounts/manual")
+        .send({ name: "Visa", kind: "credit_card" })
+        .expect(201)
+    ).body.id as number;
+    // A bill stored the old way: only on Card bills.
+    t.db
+      .insert(cardBills)
+      .values({
+        accountId: card,
+        closingDay: 9,
+        dueDay: 3,
+        minimumMinor: null,
+        autopay: false,
+        createdAt: "",
+        updatedAt: "",
+      })
+      .run();
+    const migration = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../../drizzle/migrations/0055_card_days_once.sql"),
+      "utf8",
+    );
+    t.db.run(sql.raw(migration));
+    const s = (await t.call("get", `/api/accounts/${card}/statements`).expect(200)).body;
+    expect({ closingDay: s.closingDay, dueDay: s.dueDay }).toEqual({ closingDay: 9, dueDay: 3 });
   });
 });

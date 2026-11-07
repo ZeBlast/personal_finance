@@ -57,8 +57,8 @@ export function chosenCard(cards: Account[], asked: string | null): Account | nu
 }
 
 /**
- * A card's latest closed statement. A card's days can be set in either of two places: Card bills,
- * which also tracks what has been paid, or its Statements, which gives the figures but not that.
+ * A card's latest closed statement. Its closing and due days are the same here and on Card bills;
+ * a card whose bill is counted there also shows what has been paid.
  */
 function CardRow({
   card,
@@ -136,7 +136,7 @@ function CardRow({
               title="Card bills, under Planning, tracks what has been paid and adds the bill to your forecast."
               className="text-xs text-blue-700 underline dark:text-blue-300"
             >
-              Track in Planning
+              Count this bill in the forecast
             </Link>
           </td>
         </>
