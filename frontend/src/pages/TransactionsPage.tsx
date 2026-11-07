@@ -44,7 +44,7 @@ export function categoryListLabel(
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }
 
-interface Filters {
+export interface Filters {
   q: string;
   accountId: string;
   category: string; // "" = all, "none" = uncategorized, a category ID, or several ("3,7,none")
@@ -71,6 +71,32 @@ const NO_FILTERS: Filters = {
   to: "",
   dateBasis: "",
 };
+
+/**
+ * The filters behind the Filter button that are on, each as a short label for a removable chip.
+ * The search and the account have their own controls in view, so they get no chip. Pure.
+ */
+export function filterChips(
+  filters: Filters,
+  options: Array<{ id: number; name: string }>,
+): Array<{ key: keyof Filters; label: string }> {
+  const chips: Array<{ key: keyof Filters; label: string }> = [];
+  const add = (key: keyof Filters, label: string) => chips.push({ key, label });
+  if (filters.institution) {
+    add("institution", filters.institution === "manual" ? "Kept by hand" : filters.institution);
+  }
+  if (filters.category) add("category", categoryListLabel(filters.category, options));
+  if (filters.direction) {
+    add("direction", filters.direction === "in" ? "Money in only" : "Money out only");
+  }
+  if (filters.pending) add("pending", filters.pending === "true" ? "Pending only" : "Posted only");
+  if (filters.online) add("online", filters.online === "true" ? "Online only" : "Not online");
+  if (filters.transfer) add("transfer", "Transfers missing the other side");
+  if (filters.from) add("from", `From ${formatDay(filters.from)}`);
+  if (filters.to) add("to", `To ${formatDay(filters.to)}`);
+  if (filters.dateBasis) add("dateBasis", "Dates by posted date");
+  return chips;
+}
 
 const controlClass =
   "rounded border border-slate-300 bg-white px-2 py-2 text-sm dark:border-slate-600 dark:bg-slate-800";
@@ -151,6 +177,8 @@ export function TransactionsPage() {
   const [sort, setSort] = useState<TransactionSort>("txdate_desc");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  /** Whether the Filter panel (every filter but the search and the account) is open. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<Transaction | null>(null);
@@ -340,6 +368,7 @@ export function TransactionsPage() {
   );
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const filtered = Object.values(filters).some((v) => v !== "") || search !== "";
+  const chips = filterChips(filters, options);
 
   function setFilter<K extends keyof Filters>(key: K, value: Filters[K]): void {
     setFilters((f) => ({ ...f, [key]: value }));
@@ -599,138 +628,191 @@ export function TransactionsPage() {
         />
       )}
 
-      <div className="flex flex-wrap items-end gap-2" role="search">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search merchant, recipient, sender, category, notes"
-          aria-label="Search transactions"
-          className={`${controlClass} w-72`}
-        />
-        <Select
-          aria-label="Account"
-          value={filters.accountId}
-          onChange={(e) => setFilter("accountId", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">All accounts</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {accountLabel(a.name, a.institutionName)}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label="Institution"
-          value={filters.institution}
-          onChange={(e) => setFilter("institution", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">All institutions</option>
-          {institutions.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-          {accounts.some((a) => !a.institutionName) && <option value="manual">Kept by hand</option>}
-        </Select>
-        <Select
-          aria-label="Category"
-          value={filters.category}
-          onChange={(e) => setFilter("category", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">All categories</option>
-          <option value="none">Uncategorized</option>
-          {filters.category.includes(",") && (
-            // Several categories, from a chart (Insights): kept until another is chosen.
-            <option value={filters.category}>{categoryListLabel(filters.category, options)}</option>
-          )}
-          {options.map((o) => (
-            <option key={o.id} value={o.id} data-depth={o.depth}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label="Money in or out"
-          value={filters.direction}
-          onChange={(e) => setFilter("direction", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">Money in and out</option>
-          <option value="in">Money in only</option>
-          <option value="out">Money out only</option>
-        </Select>
-        <Select
-          aria-label="Status"
-          value={filters.pending}
-          onChange={(e) => setFilter("pending", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">Pending and posted</option>
-          <option value="true">Pending only</option>
-          <option value="false">Posted only</option>
-        </Select>
-        <Select
-          aria-label="Online purchases"
-          value={filters.online}
-          onChange={(e) => setFilter("online", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">Online and not online</option>
-          <option value="true">Online only</option>
-          <option value="false">Not online</option>
-        </Select>
-        <Select
-          aria-label="Transfers"
-          value={filters.transfer}
-          onChange={(e) => setFilter("transfer", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">All transactions</option>
-          <option value="unmatched">Transfers missing the other side</option>
-        </Select>
-        <Select
-          aria-label="Which date From and To use"
-          value={filters.dateBasis}
-          onChange={(e) => setFilter("dateBasis", e.target.value)}
-          className={controlClass}
-        >
-          <option value="">By transaction date</option>
-          <option value="posted">By posted date</option>
-        </Select>
-        <label className="text-xs text-slate-500">
-          From
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-end gap-2" role="search">
           <input
-            type="date"
-            value={filters.from}
-            onChange={(e) => setFilter("from", e.target.value)}
-            className={`${controlClass} ml-1`}
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search merchant, recipient, sender, category, notes"
+            aria-label="Search transactions"
+            className={`${controlClass} w-72`}
           />
-        </label>
-        <label className="text-xs text-slate-500">
-          To
-          <input
-            type="date"
-            value={filters.to}
-            onChange={(e) => setFilter("to", e.target.value)}
-            className={`${controlClass} ml-1`}
-          />
-        </label>
-        {filtered && (
+          <Select
+            aria-label="Account"
+            value={filters.accountId}
+            onChange={(e) => setFilter("accountId", e.target.value)}
+            className={controlClass}
+          >
+            <option value="">All accounts</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {accountLabel(a.name, a.institutionName)}
+              </option>
+            ))}
+          </Select>
           <button
             type="button"
-            onClick={() => {
-              setSearch("");
-              setFilters(NO_FILTERS);
-              setPage(1);
-            }}
-            className="rounded px-2 py-2 text-sm text-blue-600 underline"
+            aria-expanded={filtersOpen}
+            aria-controls="transaction-filters"
+            onClick={() => setFiltersOpen((o) => !o)}
+            className={`${controlClass} inline-flex items-center gap-1.5 ${filtersOpen ? "border-blue-400 dark:border-blue-500" : ""}`}
           >
-            Clear filters
+            Filter
+            {chips.length > 0 && (
+              <span className="rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white">
+                {chips.length}
+              </span>
+            )}
+            <span aria-hidden="true" className="text-xs text-slate-400">
+              {filtersOpen ? "▲" : "▼"}
+            </span>
           </button>
+        </div>
+        <div
+          id="transaction-filters"
+          hidden={!filtersOpen}
+          className="rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/50"
+        >
+          <div className="flex flex-wrap items-end gap-2">
+            <Select
+              aria-label="Institution"
+              value={filters.institution}
+              onChange={(e) => setFilter("institution", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">All institutions</option>
+              {institutions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+              {accounts.some((a) => !a.institutionName) && (
+                <option value="manual">Kept by hand</option>
+              )}
+            </Select>
+            <Select
+              aria-label="Category"
+              value={filters.category}
+              onChange={(e) => setFilter("category", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">All categories</option>
+              <option value="none">Uncategorized</option>
+              {filters.category.includes(",") && (
+                // Several categories, from a chart (Insights): kept until another is chosen.
+                <option value={filters.category}>
+                  {categoryListLabel(filters.category, options)}
+                </option>
+              )}
+              {options.map((o) => (
+                <option key={o.id} value={o.id} data-depth={o.depth}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            <Select
+              aria-label="Money in or out"
+              value={filters.direction}
+              onChange={(e) => setFilter("direction", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">Money in and out</option>
+              <option value="in">Money in only</option>
+              <option value="out">Money out only</option>
+            </Select>
+            <Select
+              aria-label="Status"
+              value={filters.pending}
+              onChange={(e) => setFilter("pending", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">Pending and posted</option>
+              <option value="true">Pending only</option>
+              <option value="false">Posted only</option>
+            </Select>
+            <Select
+              aria-label="Online purchases"
+              value={filters.online}
+              onChange={(e) => setFilter("online", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">Online and not online</option>
+              <option value="true">Online only</option>
+              <option value="false">Not online</option>
+            </Select>
+            <Select
+              aria-label="Transfers"
+              value={filters.transfer}
+              onChange={(e) => setFilter("transfer", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">All transactions</option>
+              <option value="unmatched">Transfers missing the other side</option>
+            </Select>
+            <Select
+              aria-label="Which date From and To use"
+              value={filters.dateBasis}
+              onChange={(e) => setFilter("dateBasis", e.target.value)}
+              className={controlClass}
+            >
+              <option value="">By transaction date</option>
+              <option value="posted">By posted date</option>
+            </Select>
+            <label className="text-xs text-slate-500">
+              From
+              <input
+                type="date"
+                value={filters.from}
+                onChange={(e) => setFilter("from", e.target.value)}
+                className={`${controlClass} ml-1`}
+              />
+            </label>
+            <label className="text-xs text-slate-500">
+              To
+              <input
+                type="date"
+                value={filters.to}
+                onChange={(e) => setFilter("to", e.target.value)}
+                className={`${controlClass} ml-1`}
+              />
+            </label>
+          </div>
+        </div>
+        {(chips.length > 0 || filtered) && (
+          <ul aria-label="Filters in use" className="flex flex-wrap items-center gap-1.5">
+            {chips.map((c) => (
+              <li
+                key={c.key}
+                className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 py-0.5 pr-1 pl-2.5 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-200"
+              >
+                {c.label}
+                <button
+                  type="button"
+                  aria-label={`Remove filter: ${c.label}`}
+                  onClick={() => setFilter(c.key, "")}
+                  className="rounded-full px-1 leading-none hover:bg-blue-100 dark:hover:bg-blue-900"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+            {filtered && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setFilters(NO_FILTERS);
+                    setPage(1);
+                  }}
+                  className="rounded px-2 py-0.5 text-xs text-blue-600 underline dark:text-blue-300"
+                >
+                  Clear filters
+                </button>
+              </li>
+            )}
+          </ul>
         )}
       </div>
 
