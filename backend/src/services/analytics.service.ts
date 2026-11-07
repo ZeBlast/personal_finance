@@ -100,7 +100,15 @@ export function debtPaidSum(oneAccount: boolean): SQL {
     : sql`sum(case ${DEBT_KIND} when 'debt' then -t.amount_minor when 'funding' then t.amount_minor else 0 end)`;
 }
 
-const MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
+const OWN_MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
+/**
+ * The merchant a transaction's money counts under. A refund linked to a purchase counts under the
+ * purchase's merchant, the way it counts on the purchase's date and in its category, so "Outdoor
+ * Store" nets to what was kept instead of a separate "OUTDOOR STORE REFUND" taking it back.
+ */
+const MERCHANT = sql`(case when t.refund_of_id is null then ${OWN_MERCHANT} else coalesce(
+  (select coalesce(nullif(trim(o.merchant_name_user), ''), o.merchant_name, o.name)
+    from transactions o where o.id = t.refund_of_id), ${OWN_MERCHANT}) end)`;
 
 export const GROUPS = [
   "none",
@@ -279,9 +287,7 @@ function whereClauses(
       .trim()
       .toLowerCase()
       .replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-    parts.push(
-      sql`lower(coalesce(t.merchant_name_user, t.merchant_name, t.name)) like ${like} escape '\\'`,
-    );
+    parts.push(sql`lower(${MERCHANT}) like ${like} escape '\\'`);
   }
   if (q.tagId !== undefined) {
     parts.push(

@@ -60,6 +60,47 @@ async function setup() {
   return { t, add, charge, refund, months, byCategory, link };
 }
 
+describe("refunds in the month report", () => {
+  it("counts what was kept, and leaves a purchase refunded in full out of the largest", async () => {
+    const { t, add, charge, refund, link } = await setup();
+    const tent = await add({
+      date: "2026-09-12",
+      merchant: "Tent Shop",
+      amountMinor: 8000,
+      direction: "out",
+    });
+    const tentBack = await add({
+      date: "2026-09-20",
+      merchant: "Tent Shop",
+      amountMinor: 2000,
+      direction: "in",
+    });
+    await link(refund, charge);
+    await link(tentBack, tent);
+    const r = (await t.call("get", "/api/reports/month?month=2026-09").expect(200)).body;
+    // $50 refunded in full (in October, but counted against September's purchase) and $20 of $80.
+    expect(r.spendingMinor).toBe(6000);
+    expect(r.largest).toEqual([
+      expect.objectContaining({ merchant: "Tent Shop", amountMinor: 6000 }),
+    ]);
+    const october = (await t.call("get", "/api/reports/month?month=2026-10").expect(200)).body;
+    expect(october.spendingMinor).toBe(0);
+    expect(october.incomeMinor).toBe(0);
+  });
+
+  it("takes a linked refund off its purchase's merchant, not a merchant of its own", async () => {
+    const { t, charge, refund, link } = await setup();
+    await link(refund, charge);
+    const rows = (
+      await t
+        .call("get", "/api/analytics/summary?from=2026-09-01&to=2026-10-31&groupBy=merchant")
+        .expect(200)
+    ).body.rows as Array<{ label: string; spendingMinor: number }>;
+    expect(rows.filter((r) => r.spendingMinor !== 0)).toEqual([]);
+    expect(rows.some((r) => /refund/i.test(r.label))).toBe(false);
+  });
+});
+
 describe("linking a refund with its charge", () => {
   it("takes the charge back out of spending, in its month and category", async () => {
     const { t, add, charge, refund, months, byCategory, link } = await setup();

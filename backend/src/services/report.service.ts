@@ -112,18 +112,25 @@ export function monthReport(db: AppDb, month: string): MonthReport {
     amountMinor: number;
     accountName: string;
   }>(sql`
-    select t.id as id, coalesce(t.authorized_date, t.date) as date,
-      coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name) as merchant,
-      t.amount_minor as amountMinor, a.name as accountName
-    from transactions t
-      join accounts a on a.id = t.account_id
-      left join plaid_items p on p.id = a.plaid_item_id
-    where coalesce(t.authorized_date, t.date) between ${from} and ${to}
-      and t.amount_minor > 0 and ${countedAccount()}
-      and (p.environment = ${environment} or a.plaid_item_id is null)
-      and a.type <> 'investment'
-      and ${NOT_TRANSFER}
-    order by t.amount_minor desc limit 5`);
+    select id, date, merchant, amountMinor, accountName from (
+      select t.id as id, coalesce(t.authorized_date, t.date) as date,
+        coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name) as merchant,
+        -- What the purchase cost once its linked refunds came back, as spending counts it.
+        t.amount_minor + coalesce((select sum(r.amount_minor) from transactions r
+          where r.refund_of_id = t.id), 0) as amountMinor,
+        a.name as accountName
+      from transactions t
+        join accounts a on a.id = t.account_id
+        left join plaid_items p on p.id = a.plaid_item_id
+      where coalesce(t.authorized_date, t.date) between ${from} and ${to}
+        and t.amount_minor > 0 and ${countedAccount()}
+        and (p.environment = ${environment} or a.plaid_item_id is null)
+        and a.type <> 'investment'
+        and ${NOT_TRANSFER}
+    )
+    -- A purchase refunded in full cost nothing, so it is not among the largest.
+    where amountMinor > 0
+    order by amountMinor desc limit 5`);
 
   const budgets = budgetMonth(db, month, environment, { detail: true });
   const period = periodSummary(db, from, to, undefined, environment, undefined, "posted");
