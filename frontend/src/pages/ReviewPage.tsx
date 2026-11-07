@@ -7,7 +7,7 @@ import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { CategorySelect } from "../components/common/CategorySelect";
 import { askConfirm } from "../components/common/ConfirmHost";
 import { ConfidenceBadge, matchReason } from "../components/transactions/RefundLink";
-import { TransactionDetail, useWideScreen } from "../components/transactions/TransactionDetail";
+import { TransactionDetail } from "../components/transactions/TransactionDetail";
 import { formatMinor } from "../lib/money";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
@@ -36,9 +36,8 @@ function AllClear({ children }: { children: string }) {
 
 /** Tidying up: recent transactions worth a look, and possible duplicates. */
 export function ReviewPage() {
-  // The transaction being looked at: beside the queue on a wide window, over it otherwise.
+  // The transaction being looked at, in a dialog over the queue.
   const [inspecting, setInspecting] = useState<Transaction | null>(null);
-  const wide = useWideScreen();
   const queue = useApi<ReviewQueue>("/review");
   const dupes = useApi<DuplicatePair[]>("/duplicates");
   const loose = useApi<{ items: Transaction[]; total: number }>("/review/uncategorized");
@@ -390,11 +389,10 @@ export function ReviewPage() {
         <TransactionDetail
           key={inspecting.id}
           transaction={inspecting}
-          variant={wide ? "panel" : "modal"}
           categories={categories ?? []}
           onClose={() => setInspecting(null)}
-          onSaved={(updated) => {
-            setInspecting(wide ? updated : null);
+          onSaved={() => {
+            setInspecting(null);
             queue.reload();
             loose.reload();
             dupes.reload();

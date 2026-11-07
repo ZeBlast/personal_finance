@@ -38,8 +38,6 @@ interface Props {
   onSaved: (updated: Transaction, rule?: { name: string; changed: number }) => void;
   /** Offered when set: closes this and opens the split editor. */
   onSplit?: (() => void) | undefined;
-  /** A dialog over the page (the default), or a panel beside the list on wide screens. */
-  variant?: "modal" | "panel";
 }
 
 const inputClass =
@@ -67,7 +65,6 @@ export function TransactionDetail({
   onClose,
   onSaved,
   onSplit,
-  variant = "modal",
 }: Props) {
   const transaction = t;
   const id = useId();
@@ -469,28 +466,6 @@ export function TransactionDetail({
     </>
   );
 
-  if (variant === "panel") {
-    // Beside the list on wide screens: the list stays in view while one row is edited.
-    return (
-      <aside
-        aria-label={`Transaction: ${t.merchant}`}
-        className="pf-slide-in-right sticky top-0 max-h-[calc(100vh-2rem)] w-[26rem] shrink-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-      >
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <h2 className="text-lg font-semibold">{t.merchant}</h2>
-          <button
-            type="button"
-            onClick={requestClose}
-            aria-label="Close the details"
-            className="rounded px-2 text-xl leading-none text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            ×
-          </button>
-        </div>
-        {body}
-      </aside>
-    );
-  }
   return (
     <Modal title="Transaction" onClose={requestClose} wide dismissible>
       {body}
@@ -514,11 +489,6 @@ function useMediaQuery(query: string): boolean {
     return () => media.removeEventListener("change", update);
   }, [query]);
   return matches;
-}
-
-/** True when the window is wide enough to show details beside a list instead of over it. */
-export function useWideScreen(minWidth = 1280): boolean {
-  return useMediaQuery(`(min-width: ${minWidth}px)`);
 }
 
 /** True when the window is narrower than `width`, so a wide table should drop columns. */

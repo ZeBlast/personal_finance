@@ -4,11 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { usePreviousPage } from "../hooks/usePreviousPage";
 import { api, errorMessage } from "../api/client";
 import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
-import {
-  TransactionDetail,
-  useNarrowScreen,
-  useWideScreen,
-} from "../components/transactions/TransactionDetail";
+import { TransactionDetail, useNarrowScreen } from "../components/transactions/TransactionDetail";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { accountLabel } from "../lib/accountLabel";
 import {
@@ -324,18 +320,14 @@ export function TransactionsPage() {
   }, [flash, data]);
 
   const open = (t: Transaction) => (t.source === "manual" ? setManualDialog(t) : setSelected(t));
-  // On a wide window the details sit beside the table, and one click opens them.
-  const wide = useWideScreen(1536);
   // On a narrow window the account and posted date move under the merchant, and the Online box
   // (also in the details) goes, so the amount stays in view.
   const narrow = useNarrowScreen(1100);
-  // With the details open beside it, or on a narrow window, the table drops its less-used columns.
-  const compact = (wide && selected !== null) || narrow;
-  const detail = (t: Transaction, variant: "modal" | "panel") => (
+  // A transaction's details open in a dialog over the table, whatever the window's width.
+  const detail = (t: Transaction) => (
     <TransactionDetail
       key={t.id}
       transaction={t}
-      variant={variant}
       categories={categories ?? []}
       onClose={() => setSelected(null)}
       onSplit={() => {
@@ -344,8 +336,7 @@ export function TransactionsPage() {
       }}
       onSaved={(updated, rule) => {
         replaceRow(updated);
-        // Beside the table the saved row stays open; a dialog closes.
-        setSelected(variant === "panel" ? updated : null);
+        setSelected(null);
         if (rule) {
           // How many it moved, and the way to undo that, are in the toast.
           setNotice(`Rule “${rule.name}” created.`);
@@ -952,7 +943,7 @@ export function TransactionsPage() {
                       sort={sort}
                       onSort={setSort}
                     />
-                    {!compact && (
+                    {!narrow && (
                       <SortHeader
                         label="Posted"
                         ascending="date_asc"
@@ -969,14 +960,14 @@ export function TransactionsPage() {
                       onSort={setSort}
                     />
                     <th className="px-2 py-2 font-medium">Category</th>
-                    {!compact && <th className="px-2 py-2 font-medium">Tags</th>}
+                    {!narrow && <th className="px-2 py-2 font-medium">Tags</th>}
                     {!narrow && (
                       <th className="w-px px-1 py-2 text-center font-medium" title="Bought online">
                         Online
                       </th>
                     )}
                     {!narrow && <th className="px-2 py-2 font-medium">Account</th>}
-                    {!compact && <th className="px-2 py-2 font-medium">Recipient / sender</th>}
+                    {!narrow && <th className="px-2 py-2 font-medium">Recipient / sender</th>}
                     <SortHeader
                       label="Amount"
                       ascending="amount_asc"
@@ -997,7 +988,6 @@ export function TransactionsPage() {
                       onClick={(e) => {
                         if (onControl(e)) return;
                         setHighlight(t.id);
-                        if (wide && t.source !== "manual") setSelected(t);
                       }}
                       onDoubleClick={(e) => {
                         if (onControl(e)) return;
@@ -1031,7 +1021,7 @@ export function TransactionsPage() {
                       <td className="px-2 py-2 whitespace-nowrap">
                         {formatDay(t.authorizedDate ?? t.date)}
                       </td>
-                      {!compact && (
+                      {!narrow && (
                         <td className="px-2 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400">
                           {t.pending ? "Pending" : formatDay(t.date)}
                         </td>
@@ -1131,7 +1121,7 @@ export function TransactionsPage() {
                           </span>
                         )}
                       </td>
-                      {!compact && (
+                      {!narrow && (
                         <td className="w-44 min-w-36 px-2 py-2">
                           <TransactionTags t={t} />
                         </td>
@@ -1168,7 +1158,7 @@ export function TransactionsPage() {
                           <AccountCell t={t} />
                         </td>
                       )}
-                      {!compact && (
+                      {!narrow && (
                         <td className="max-w-32 px-2 py-2 break-words text-slate-600 dark:text-slate-300">
                           {(t.amountMinor > 0 ? t.recipient : t.sender) ?? ""}
                         </td>
@@ -1223,7 +1213,6 @@ export function TransactionsPage() {
             </div>
           )}
         </div>
-        {wide && selected && detail(selected, "panel")}
       </div>
 
       {manualDialog && (
@@ -1265,7 +1254,7 @@ export function TransactionsPage() {
           }}
         />
       )}
-      {!wide && selected && detail(selected, "modal")}
+      {selected && detail(selected)}
     </section>
   );
 }

@@ -57,6 +57,16 @@ const purchase = {
   onlineEdited: false,
   providerOnline: false,
   notes: null,
+  details: {
+    datetime: null,
+    authorizedDatetime: null,
+    originalDescription: null,
+    location: null,
+    merchant: null,
+    categoryConfidence: null,
+    payment: null,
+    counterparties: [],
+  },
 } as unknown as Transaction;
 
 function show() {
@@ -109,6 +119,20 @@ describe("the transactions table", () => {
       "Amount",
     ]);
     expect(screen.queryByText(/Everyday Checking · /)).toBeNull();
+  });
+});
+
+describe("editing a transaction", () => {
+  it("opens in a dialog even on a wide window, and a single click only selects the row", async () => {
+    windowWidth(1700);
+    show();
+    const user = userEvent.setup();
+    const name = await screen.findByText("Corner Grocer");
+    await user.click(name.closest("tr")!.firstElementChild!.nextElementSibling!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Corner Grocer" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 });
 
