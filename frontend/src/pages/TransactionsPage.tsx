@@ -4,7 +4,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { usePreviousPage } from "../hooks/usePreviousPage";
 import { api, errorMessage } from "../api/client";
 import { ManualTransactionDialog } from "../components/transactions/ManualTransactionDialog";
-import { TransactionDetail, useWideScreen } from "../components/transactions/TransactionDetail";
+import {
+  TransactionDetail,
+  useNarrowScreen,
+  useWideScreen,
+} from "../components/transactions/TransactionDetail";
 import { categoryOptions, useCategories } from "../hooks/useCategories";
 import { accountLabel } from "../lib/accountLabel";
 import {
@@ -79,6 +83,7 @@ function SortHeader({
   sort,
   onSort,
   align,
+  sticky = false,
 }: {
   label: string;
   ascending: TransactionSort;
@@ -86,12 +91,14 @@ function SortHeader({
   sort: TransactionSort;
   onSort: (sort: TransactionSort) => void;
   align?: "right";
+  /** Stays in view at the right edge when the table scrolls sideways. */
+  sticky?: boolean;
 }) {
   const active = sort === ascending || sort === descending;
   return (
     <th
       aria-sort={active ? (sort === ascending ? "ascending" : "descending") : "none"}
-      className={`px-2 py-2 font-medium ${align === "right" ? "text-right" : ""}`}
+      className={`px-2 py-2 font-medium ${align === "right" ? "text-right" : ""} ${sticky ? "sticky right-0 bg-slate-50 dark:bg-slate-800" : ""}`}
     >
       <button
         type="button"
@@ -291,8 +298,11 @@ export function TransactionsPage() {
   const open = (t: Transaction) => (t.source === "manual" ? setManualDialog(t) : setSelected(t));
   // On a wide window the details sit beside the table, and one click opens them.
   const wide = useWideScreen(1536);
-  // With the details open beside it, the table drops its less-used columns to keep rows short.
-  const compact = wide && selected !== null;
+  // On a narrow window the account and posted date move under the merchant, and the Online box
+  // (also in the details) goes, so the amount stays in view.
+  const narrow = useNarrowScreen(1100);
+  // With the details open beside it, or on a narrow window, the table drops its less-used columns.
+  const compact = (wide && selected !== null) || narrow;
   const detail = (t: Transaction, variant: "modal" | "panel") => (
     <TransactionDetail
       key={t.id}
@@ -878,10 +888,12 @@ export function TransactionsPage() {
                     />
                     <th className="px-2 py-2 font-medium">Category</th>
                     {!compact && <th className="px-2 py-2 font-medium">Tags</th>}
-                    <th className="w-px px-1 py-2 text-center font-medium" title="Bought online">
-                      Online
-                    </th>
-                    <th className="px-2 py-2 font-medium">Account</th>
+                    {!narrow && (
+                      <th className="w-px px-1 py-2 text-center font-medium" title="Bought online">
+                        Online
+                      </th>
+                    )}
+                    {!narrow && <th className="px-2 py-2 font-medium">Account</th>}
                     {!compact && <th className="px-2 py-2 font-medium">Recipient / sender</th>}
                     <SortHeader
                       label="Amount"
@@ -890,6 +902,7 @@ export function TransactionsPage() {
                       sort={sort}
                       onSort={setSort}
                       align="right"
+                      sticky
                     />
                   </tr>
                 </thead>
@@ -914,7 +927,7 @@ export function TransactionsPage() {
                           ? "Older than the history of your other accounts, so what paid for it can't be matched. Click to select, double-click to edit"
                           : "Click to select, double-click to edit"
                       }
-                      className={`cursor-default transition-colors duration-700 ${
+                      className={`group cursor-default transition-colors duration-700 ${
                         t.beforeOtherHistory ? "opacity-50 " : ""
                       }${
                         flash === t.id
@@ -963,6 +976,16 @@ export function TransactionsPage() {
                           </span>
                         )}
                         <TransferNote t={t} />
+                        {narrow && (
+                          <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                            {t.accountName}
+                            {t.pending
+                              ? " · Pending"
+                              : t.authorizedDate !== null && t.authorizedDate !== t.date
+                                ? ` · posted ${formatDay(t.date)}`
+                                : ""}
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap">
                         {t.splits.length > 0 && t.splitValid ? (
@@ -1031,40 +1054,54 @@ export function TransactionsPage() {
                           <TransactionTags t={t} />
                         </td>
                       )}
-                      <td className="w-px px-1 py-2 text-center">
-                        {/* The pencil sits on the box's corner without widening the column. */}
-                        <span className="relative inline-block align-middle">
-                          <input
-                            type="checkbox"
-                            checked={t.online}
-                            onChange={(e) => void quickOnline(t, e.target.checked)}
-                            aria-label={`Bought online: ${t.merchant}`}
-                            title={
-                              t.onlineEdited
-                                ? "Changed by you. Click again to go back to the bank's answer."
-                                : "From the bank's payment channel. Click to change it."
-                            }
-                            className="block h-4 w-4"
-                          />
-                          {t.onlineEdited && (
-                            <span
-                              className="absolute -top-2 -right-2 text-[10px] text-slate-400"
-                              title={`Changed by you (the bank says ${t.providerOnline ? "online" : "not online"})`}
-                            >
-                              ✎
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="max-w-56 min-w-32 px-2 py-2">
-                        <AccountCell t={t} />
-                      </td>
+                      {!narrow && (
+                        <td className="w-px px-1 py-2 text-center">
+                          {/* The pencil sits on the box's corner without widening the column. */}
+                          <span className="relative inline-block align-middle">
+                            <input
+                              type="checkbox"
+                              checked={t.online}
+                              onChange={(e) => void quickOnline(t, e.target.checked)}
+                              aria-label={`Bought online: ${t.merchant}`}
+                              title={
+                                t.onlineEdited
+                                  ? "Changed by you. Click again to go back to the bank's answer."
+                                  : "From the bank's payment channel. Click to change it."
+                              }
+                              className="block h-4 w-4"
+                            />
+                            {t.onlineEdited && (
+                              <span
+                                className="absolute -top-2 -right-2 text-[10px] text-slate-400"
+                                title={`Changed by you (the bank says ${t.providerOnline ? "online" : "not online"})`}
+                              >
+                                ✎
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                      )}
+                      {!narrow && (
+                        <td className="max-w-56 min-w-32 px-2 py-2">
+                          <AccountCell t={t} />
+                        </td>
+                      )}
                       {!compact && (
                         <td className="max-w-32 px-2 py-2 break-words text-slate-600 dark:text-slate-300">
                           {(t.amountMinor > 0 ? t.recipient : t.sender) ?? ""}
                         </td>
                       )}
-                      <td className="min-w-28 px-2 py-2 text-right whitespace-nowrap">
+                      {/* The amount stays in view when the table scrolls sideways, so it needs a
+                          solid background: the row's own colour, made opaque. */}
+                      <td
+                        className={`sticky right-0 min-w-28 px-2 py-2 text-right whitespace-nowrap transition-colors duration-700 ${
+                          flash === t.id
+                            ? "bg-amber-200 dark:bg-[#613519]"
+                            : highlight === t.id || checked.has(t.id)
+                              ? "bg-blue-50 dark:bg-[#131e3f]"
+                              : "bg-white group-hover:bg-slate-50 dark:bg-slate-900 dark:group-hover:bg-[#162032]"
+                        }`}
+                      >
                         <AmountCell t={t} />
                       </td>
                     </tr>

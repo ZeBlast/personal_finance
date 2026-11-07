@@ -498,10 +498,9 @@ export function TransactionDetail({
   );
 }
 
-/** True when the window is wide enough to show details beside a list instead of over it. */
-export function useWideScreen(minWidth = 1280): boolean {
-  const query = `(min-width: ${minWidth}px)`;
-  const [wide, setWide] = useState(() =>
+/** Whether the window matches a media query, kept up to date (false where it can't be asked). */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia(query).matches
       : false,
@@ -509,9 +508,20 @@ export function useWideScreen(minWidth = 1280): boolean {
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia(query);
-    const update = () => setWide(media.matches);
+    const update = () => setMatches(media.matches);
+    update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, [query]);
-  return wide;
+  return matches;
+}
+
+/** True when the window is wide enough to show details beside a list instead of over it. */
+export function useWideScreen(minWidth = 1280): boolean {
+  return useMediaQuery(`(min-width: ${minWidth}px)`);
+}
+
+/** True when the window is narrower than `width`, so a wide table should drop columns. */
+export function useNarrowScreen(width: number): boolean {
+  return useMediaQuery(`(max-width: ${width - 0.02}px)`);
 }
