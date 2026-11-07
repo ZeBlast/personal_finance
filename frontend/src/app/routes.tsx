@@ -133,8 +133,9 @@ export const areas: AppArea[] = [
   },
   {
     path: "/sandbox",
-    label: "What-if",
-    sections: [{ path: "/sandbox", label: "What-if calculator", Page: SandboxPage }],
+    // "What-if" means a change tried on the Cash forecast; this page is a pay and tax calculator.
+    label: "Calculator",
+    sections: [{ path: "/sandbox", label: "Pay & tax calculator", Page: SandboxPage }],
   },
   {
     path: "/settings",

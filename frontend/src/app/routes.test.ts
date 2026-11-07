@@ -11,7 +11,7 @@ describe("navigation areas", () => {
       "Accounts",
       "Reports",
       "Taxes",
-      "What-if",
+      "Calculator",
       "Settings",
     ]);
     const paths = routes.map((r) => r.path);

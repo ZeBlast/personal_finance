@@ -350,7 +350,7 @@ export function AnnotatedForecast({
       {whatIf && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
           <label className="flex min-w-56 flex-1 items-center gap-2">
-            <span className="shrink-0">What if I spend</span>
+            <span className="shrink-0">Try spending</span>
             <input
               type="range"
               min={0}

@@ -241,7 +241,7 @@ function MathSandbox() {
     <section className="flex h-full min-h-[40rem] flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">What-if calculator</h1>
+          <h1 className="text-2xl font-semibold">Pay &amp; tax calculator</h1>
           {graph && result && (
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {scenarioSentence(graph, result, money)}
@@ -892,7 +892,7 @@ export function SandboxPage() {
       >
         {(
           [
-            ["math", "Maths nodes"],
+            ["math", "Building blocks"],
             ["flow", "Cash-flow map (experimental)"],
           ] as const
         ).map(([value, label]) => (
