@@ -11,6 +11,7 @@ import type { DailyBrief } from "../widgets/DailyBriefWidget";
 import {
   attentionItems,
   cashFlowModel,
+  forecastStatus,
   heatmapWeeks,
   holdBackLine,
   holdBackSummary,
@@ -76,6 +77,53 @@ describe("the forecast's lowest tile", () => {
       lowest: { date: "2026-11-01", balanceMinor: 100_000 },
     };
     expect(lowestTile(only)).toMatchObject({ date: "2026-11-01", afterToday: false });
+  });
+});
+
+describe("the forecast's status line", () => {
+  const day = (date: string, balanceMinor: number) => ({
+    date,
+    balanceMinor,
+    changeMinor: 0,
+    events: [],
+  });
+  const d = (iso: string) => formatDay(iso);
+
+  it("says the accounts stay above zero, and the lowest point", () => {
+    expect(forecastStatus(forecast, money)).toEqual({
+      below: false,
+      chip: "Stays above zero",
+      text: `Lowest $400 on ${d("2026-11-02")}, in the next 3 days`,
+    });
+  });
+
+  it("says when they go below zero, how far, and when they come back", () => {
+    const dip = {
+      ...forecast,
+      days: [
+        day("2026-11-01", 5_000),
+        day("2026-11-02", -1_000),
+        day("2026-11-03", -3_000),
+        day("2026-11-04", 2_000),
+      ],
+      lowest: { date: "2026-11-03", balanceMinor: -3_000 },
+    };
+    expect(forecastStatus(dip, money)).toEqual({
+      below: true,
+      chip: "Below zero",
+      text: `From ${d("2026-11-02")}, lowest $-30 on ${d("2026-11-03")} · back above zero ${d("2026-11-04")}`,
+    });
+  });
+
+  it("says when they are still below zero at the end, and names one day once", () => {
+    const stuck = {
+      ...forecast,
+      days: [day("2026-11-01", 5_000), day("2026-11-02", -1_000)],
+      lowest: { date: "2026-11-02", balanceMinor: -1_000 },
+    };
+    expect(forecastStatus(stuck, money).text).toBe(
+      `${d("2026-11-02")}, lowest $-10 · still below zero on ${d("2026-11-02")}`,
+    );
   });
 });
 

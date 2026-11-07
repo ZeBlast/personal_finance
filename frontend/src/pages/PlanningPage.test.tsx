@@ -138,7 +138,11 @@ describe("cash forecast what-ifs from the chart", () => {
     expect(await screen.findByTestId("scenario-line")).toBeTruthy();
     expect(screen.getAllByTestId("whatif-mark")).toHaveLength(1);
     expect(screen.getByText(/^With your what-ifs: lowest/)).toBeTruthy();
-    expect(screen.getByText("$50.00 lower with your what-ifs")).toBeTruthy();
+    // The tile leads with the what-ifs' own figure, and the list says what is being compared.
+    expect(screen.getByText(/ with your what-ifs \(\$50\.00 lower\)$/)).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /Compare with/ }).textContent).toContain(
+      "Your what-ifs (not saved)",
+    );
     const previews = () => calls.filter((c) => c.path === "/forecast/scenarios/preview");
     expect(previews()).toHaveLength(1);
     expect(previews()[0]!.body).toEqual({ adjustments: [draftEntry], days: 60 });
@@ -176,7 +180,7 @@ describe("cash forecast what-ifs from the chart", () => {
     await addThroughDialog(user, "150");
     await screen.findByText(/^−\$150\.00 · What-if · /);
     await screen.findByText(/^With Rent goes up \+ 1 what-if: lowest/);
-    expect(screen.getByText("$50.00 lower with Rent goes up + 1 what-if")).toBeTruthy();
+    expect(screen.getByText(/ with Rent goes up \+ 1 what-if \(\$50\.00 lower\)$/)).toBeTruthy();
     const previews = calls.filter((c) => c.path === "/forecast/scenarios/preview");
     expect(previews.at(-1)!.body).toEqual({ adjustments: [fee, draftEntry], days: 60 });
 

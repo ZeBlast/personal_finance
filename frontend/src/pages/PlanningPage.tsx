@@ -16,12 +16,13 @@ import {
   describeAdjustment,
   draftLimit,
   draftName,
+  draftOptionLabel,
   tileChangeText,
   unmatchedNote,
 } from "../lib/scenarios";
 import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
-import { holdBackLine, holdBackSummary, lowestTile } from "../lib/views";
+import { forecastStatus, holdBackLine, holdBackSummary, lowestTile } from "../lib/views";
 import { CADENCE_LABEL } from "../lib/insights";
 import type {
   BillStatus,
@@ -45,6 +46,40 @@ export function legacyPlanningPath(view: string | null): string | null {
   return null;
 }
 
+/** The Compare with value that stands for the unsaved what-ifs on the chart. */
+const DRAFT_OPTION = "draft";
+
+/**
+ * The forecast's answer at a glance: a chip that says whether the bank accounts go below zero, and
+ * a line with when, how far and when they recover. With `with`, the same for a comparison.
+ */
+function ForecastStatusLine({
+  status,
+  with: what,
+}: {
+  status: { below: boolean; chip: string; text: string };
+  with?: string;
+}) {
+  return (
+    <p
+      className="flex flex-wrap items-center gap-2 text-sm"
+      role={status.below ? "alert" : undefined}
+    >
+      {what && <span className="text-violet-700 dark:text-violet-300">With {what}:</span>}
+      <span
+        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+          status.below
+            ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200"
+            : "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200"
+        }`}
+      >
+        {status.chip}
+      </span>
+      <span className="text-slate-700 dark:text-slate-200">{status.text}</span>
+    </p>
+  );
+}
+
 /** The Cash forecast page, at /planning: the first of the Planning tabs. */
 export function PlanningPage() {
   const [params] = useSearchParams();
@@ -52,12 +87,8 @@ export function PlanningPage() {
   if (moved) return <Navigate to={moved} replace />;
   return (
     <section className="max-w-5xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Cash forecast</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Where the money in your bank accounts is heading.
-        </p>
-      </div>
+      {/* The forecast's own status line takes the subtitle's place, right under the title. */}
+      <h1 className="text-2xl font-semibold">Cash forecast</h1>
       <ForecastView />
     </section>
   );
@@ -224,6 +255,15 @@ function ForecastView() {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-1">
+        <ForecastStatusLine status={forecastStatus(data, money)} />
+        {compared && (
+          <ForecastStatusLine
+            status={forecastStatus(compared.alt, money)}
+            with={withWhat ?? `“${compared.scenario.name}”`}
+          />
+        )}
+      </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <dl className="grid grid-cols-3 gap-3 text-sm">
           <Stat label="In the bank today" value={money(data.startBalanceMinor)} />
@@ -233,7 +273,12 @@ function ForecastView() {
             warn={low.balanceMinor < 0}
             change={
               compared && altLow
-                ? tileChangeText(altLow.balanceMinor - low.balanceMinor, data.currency, withWhat)
+                ? tileChangeText(
+                    altLow.balanceMinor - low.balanceMinor,
+                    data.currency,
+                    withWhat,
+                    altLow.balanceMinor,
+                  )
                 : undefined
             }
           />
@@ -242,7 +287,12 @@ function ForecastView() {
             value={money(data.endBalanceMinor)}
             change={
               compared
-                ? tileChangeText(compared.endChangeMinor, data.currency, withWhat)
+                ? tileChangeText(
+                    compared.endChangeMinor,
+                    data.currency,
+                    withWhat,
+                    compared.alt.endBalanceMinor,
+                  )
                 : undefined
             }
           />
@@ -250,11 +300,20 @@ function ForecastView() {
         <div className="flex flex-wrap items-end gap-3 text-sm">
           <label>
             Compare with{" "}
+            {/* With unsaved what-ifs, the list says that is what is being compared. Picking a
+                saved scenario then lays the what-ifs on top of it instead. */}
             <Select
-              value={compareId}
-              onChange={(e) => setChosen(e.target.value)}
+              value={drafting ? DRAFT_OPTION : compareId}
+              onChange={(e) => {
+                if (e.target.value !== DRAFT_OPTION) setChosen(e.target.value);
+              }}
               className="rounded border border-slate-300 px-2 py-1 dark:border-slate-600"
             >
+              {drafting && (
+                <option value={DRAFT_OPTION}>
+                  {draftOptionLabel(selected?.name ?? null, draft.length)}
+                </option>
+              )}
               <option value="">Nothing</option>
               {(scenarios.data ?? []).map((s) => (
                 <option key={s.id} value={String(s.id)}>
@@ -348,14 +407,6 @@ function ForecastView() {
           }}
           onClose={() => setManaging(false)}
         />
-      )}
-      {data.lowest.balanceMinor < 0 && (
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200"
-        >
-          Your bank accounts are expected to go below zero on {formatDay(data.lowest.date)}.
-        </p>
       )}
       <AnnotatedForecast
         forecast={data}

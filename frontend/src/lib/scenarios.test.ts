@@ -6,6 +6,7 @@ import {
   describeAdjustment,
   forecastedSeries,
   signedMoney,
+  draftOptionLabel,
   tileChangeText,
   unmatchedNote,
 } from "./scenarios";
@@ -143,6 +144,20 @@ describe("tileChangeText", () => {
     expect(tileChangeText(500, "USD")).toBe("$5.00 higher with the scenario");
     expect(tileChangeText(0, "USD")).toBe("Same with the scenario");
     expect(tileChangeText(-500, "USD", "your what-ifs")).toBe("$5.00 lower with your what-ifs");
+  });
+
+  it("leads with the comparison's own figure when it has one", () => {
+    expect(tileChangeText(-40_665, "USD", "your what-ifs", -59_365)).toBe(
+      "-$593.65 with your what-ifs ($406.65 lower)",
+    );
+    expect(tileChangeText(0, "USD", "your what-ifs", 1_000)).toBe("Same with your what-ifs");
+  });
+});
+
+describe("draftOptionLabel", () => {
+  it("names unsaved what-ifs in the Compare with list", () => {
+    expect(draftOptionLabel(null, 2)).toBe("Your what-ifs (not saved)");
+    expect(draftOptionLabel("New laptop", 1)).toBe("New laptop + 1 what-if (not saved)");
   });
 });
 

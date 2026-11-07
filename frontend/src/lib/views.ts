@@ -66,6 +66,35 @@ export function lowestTile(forecast: Pick<Forecast, "today" | "lowest" | "days">
     : { ...forecast.lowest, afterToday: false };
 }
 
+/**
+ * The forecast's answer in one line, for the top of the Cash forecast: whether the bank accounts go
+ * below zero, when, how far, and when they come back. Pure.
+ */
+export function forecastStatus(
+  forecast: Pick<Forecast, "today" | "lowest" | "days">,
+  money: (n: number) => string,
+): { below: boolean; chip: string; text: string } {
+  const low = lowestTile(forecast);
+  const firstBelow = forecast.days.find((d) => d.balanceMinor < 0);
+  if (!firstBelow) {
+    return {
+      below: false,
+      chip: "Stays above zero",
+      text: `Lowest ${money(low.balanceMinor)} on ${formatDay(low.date)}, in the next ${forecast.days.length} days`,
+    };
+  }
+  const deepest = lowestOf(forecast.days)!;
+  const back = forecast.days.find((d) => d.date > firstBelow.date && d.balanceMinor >= 0);
+  const lowest =
+    deepest.date === firstBelow.date
+      ? `${formatDay(firstBelow.date)}, lowest ${money(deepest.balanceMinor)}`
+      : `From ${formatDay(firstBelow.date)}, lowest ${money(deepest.balanceMinor)} on ${formatDay(deepest.date)}`;
+  const after = back
+    ? `back above zero ${formatDay(back.date)}`
+    : `still below zero on ${formatDay(forecast.days.at(-1)!.date)}`;
+  return { below: true, chip: "Below zero", text: `${lowest} · ${after}` };
+}
+
 export interface AttentionItem {
   text: string;
   to: string;

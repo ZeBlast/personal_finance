@@ -89,10 +89,25 @@ export function differenceText(minor: number, currency: string): string {
   return `${formatMinor(Math.abs(minor), currency)} ${minor < 0 ? "lower" : "higher"}`;
 }
 
-/** What sits under a tile: "$10.00 lower with the scenario" (not a balance, so no sign). Pure. */
-export function tileChangeText(minor: number, currency: string, what = "the scenario"): string {
+/**
+ * What sits under a tile: "$10.00 lower with the scenario". Given the comparison's own figure, it
+ * leads with that, so nobody has to subtract: "−$593.65 with your what-ifs ($406.65 lower)". Pure.
+ */
+export function tileChangeText(
+  minor: number,
+  currency: string,
+  what = "the scenario",
+  altMinor?: number,
+): string {
   if (minor === 0) return `Same with ${what}`;
-  return `${differenceText(minor, currency)} with ${what}`;
+  if (altMinor === undefined) return `${differenceText(minor, currency)} with ${what}`;
+  return `${formatMinor(altMinor, currency)} with ${what} (${differenceText(minor, currency)})`;
+}
+
+/** The Compare with option that stands for unsaved what-ifs: "Your what-ifs (not saved)". Pure. */
+export function draftOptionLabel(scenarioName: string | null, count: number): string {
+  const name = draftName(scenarioName, count);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} (not saved)`;
 }
 
 /** How a scenario moves the lowest and last days against the plan. Pure. */
