@@ -42,11 +42,12 @@ describe("month arithmetic", () => {
 });
 
 describe("resolvePeriod", () => {
-  it("this month runs from the 1st to today, compared with the same days of last month", () => {
+  it("this month is the whole month, compared with the same days of last month", () => {
+    // Anything already recorded for the month counts, as on the calendar and the month report.
     const p = resolvePeriod("this-month", at(2026, 10, 5));
     expect(p).toMatchObject({
       from: "2026-10-01",
-      to: "2026-10-05",
+      to: "2026-10-31",
       previous: { from: "2026-09-01", to: "2026-09-05" },
     });
   });
@@ -70,7 +71,7 @@ describe("resolvePeriod", () => {
     const p = resolvePeriod("this-month", at(2026, 1, 15));
     expect(p).toMatchObject({
       from: "2026-01-01",
-      to: "2026-01-15",
+      to: "2026-01-31",
       previous: { from: "2025-12-01", to: "2025-12-15" },
     });
   });
@@ -109,10 +110,10 @@ describe("resolvePeriod", () => {
     expect(days(p90.previous.from, p90.previous.to)).toBe(90);
   });
 
-  it("this year runs from January 1, compared with the same point last year", () => {
+  it("this year is the whole year, compared with the same point last year", () => {
     expect(resolvePeriod("this-year", at(2026, 10, 5))).toMatchObject({
       from: "2026-01-01",
-      to: "2026-10-05",
+      to: "2026-12-31",
       previous: { from: "2025-01-01", to: "2025-10-05" },
     });
     expect(resolvePeriod("this-year", at(2028, 2, 29)).previous).toEqual({

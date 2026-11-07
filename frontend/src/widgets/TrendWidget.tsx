@@ -4,7 +4,7 @@ import { LineChart } from "../components/charts/LineChart";
 import { useApi } from "../hooks/useApi";
 import { summaryPath } from "../lib/analytics";
 import { formatMinor } from "../lib/money";
-import { resolvePeriod } from "../lib/period";
+import { resolvePeriod, throughToday } from "../lib/period";
 import type { Summary } from "../types/analytics";
 import { includeTransfersField, periodField, scopeFields, scopeOf } from "./fields";
 import { ScopeCaption } from "./ScopeCaption";
@@ -98,7 +98,7 @@ export default defineWidget({
     const { data, error, loading } = useApi<Summary>(
       summaryPath({
         from: period.from,
-        to: period.to,
+        to: throughToday(period),
         groupBy: bucket,
         fill: true,
         includeTransfers: config.includeTransfers,

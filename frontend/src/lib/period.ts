@@ -103,7 +103,7 @@ export function resolvePeriod(preset: string, now: Date = new Date()): ResolvedP
       )}`;
       return {
         from: `${year}-01-01`,
-        to: todayDay,
+        to: `${year}-12-31`,
         label: "this year",
         previous: { from: `${year - 1}-01-01`, to: prevEnd },
         previousLabel: "the same point last year",
@@ -123,15 +123,26 @@ export function resolvePeriod(preset: string, now: Date = new Date()): ResolvedP
       // this-month
       const prev = shiftMonth(month, -1);
       const sameDay = Math.min(now.getDate(), Number(lastOfMonth(prev).slice(8)));
+      // To the month's end, like the calendar and the month report: anything already recorded for
+      // this month counts, even when dated after today (a pending charge, a time-zone edge).
       return {
         from: firstOfMonth(month),
-        to: todayDay,
+        to: lastOfMonth(month),
         label: "this month",
         previous: { from: firstOfMonth(prev), to: `${prev}-${pad(sameDay)}` },
         previousLabel: "the same days last month",
       };
     }
   }
+}
+
+/**
+ * The last day of a period that has already happened: its end, or today if that is sooner. For
+ * charts that should not draw empty days still to come, and for per-day averages.
+ */
+export function throughToday(period: DateRange, now: Date = new Date()): string {
+  const todayDay = toDay(now);
+  return period.to < todayDay ? period.to : todayDay;
 }
 
 /** The last `count` months up to and including this one: from the 1st of the first, to today. */

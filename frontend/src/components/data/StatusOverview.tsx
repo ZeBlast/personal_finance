@@ -83,7 +83,9 @@ export function statusItems(
   items.push({
     label: "Data",
     value: healthy ? "Checked, no problems" : "Needs a look",
-    detail: `${(d.counts["transactions"] ?? 0).toLocaleString()} transactions${
+    // Every transaction in the file, hidden accounts and other connection modes included, so it can
+    // be more than the Transactions page lists: worded as what is stored.
+    detail: `${(d.counts["transactions"] ?? 0).toLocaleString()} transactions stored${
       d.recentProblems.length > 0
         ? ` · ${d.recentProblems.length} recent sync problem${d.recentProblems.length === 1 ? "" : "s"}`
         : ""

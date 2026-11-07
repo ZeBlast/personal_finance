@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { appearanceConfig, readAppearance } from "./appearance";
 import { fromGrid, GRID_COLUMNS, toGrid } from "./layout";
-import { formatMetric, metricValue } from "./SummaryNumberWidget";
+import { comparisonText, formatMetric, metricValue } from "./SummaryNumberWidget";
 
 describe("a widget's appearance", () => {
   it("reads a title, a hidden title bar and an accent, ignoring anything invalid", () => {
@@ -69,5 +69,27 @@ describe("the summary number", () => {
     expect(formatMetric("count", 1_234)).toMatch(/1.?234/);
     expect(formatMetric("savings-rate", 0.7)).toBe("70%");
     expect(formatMetric("savings-rate", null)).toBe("—");
+  });
+
+  it("compares in percent only against a positive figure", () => {
+    const last = "the same days last month";
+    expect(comparisonText("spending", 9_000, 10_000, last)).toEqual({
+      text: "▼ 10% vs the same days last month ($100.00)",
+      better: true,
+    });
+    // Left over went from -$1,970.28 to $656.01: a percent of a negative figure means nothing.
+    expect(comparisonText("net", 65_601, -197_028, last)).toEqual({
+      text: "$2,626.29 more than the same days last month (-$1,970.28)",
+      better: true,
+    });
+    expect(comparisonText("spending", 5_000, 0, last)?.text).toBe(
+      "$50.00 more than the same days last month ($0.00)",
+    );
+    expect(comparisonText("net", 0, 0, last)).toEqual({
+      text: "Same as the same days last month",
+      better: null,
+    });
+    expect(comparisonText("savings-rate", 0.2, -0.1, last)).toBeNull();
+    expect(comparisonText("spending", null, 100, last)).toBeNull();
   });
 });
