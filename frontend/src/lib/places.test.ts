@@ -1,0 +1,120 @@
+import { describe, expect, it } from "vitest";
+import type { PlacePurchase } from "../types/places";
+import {
+  cellKey,
+  filterPurchases,
+  groupPlaces,
+  habits,
+  paceText,
+  recency,
+  rhythm,
+  weekdayOf,
+} from "./places";
+
+let nextId = 1;
+const buy = (over: Partial<PlacePurchase>): PlacePurchase => ({
+  id: nextId++,
+  date: "2026-10-05",
+  datetime: null,
+  merchant: "Cafe",
+  amountMinor: 500,
+  category: null,
+  lat: 40,
+  lon: -89,
+  city: "Springfield",
+  ...over,
+});
+
+describe("groupPlaces", () => {
+  it("joins visits to the same shop at the same spot, and keeps the months visited", () => {
+    const places = groupPlaces([
+      buy({ date: "2026-08-01", amountMinor: 400 }),
+      buy({ date: "2026-08-20", amountMinor: 600 }),
+      buy({ date: "2026-10-02", amountMinor: 1_000 }),
+      buy({ merchant: "Cafe", lat: 41, lon: -88 }),
+      buy({ merchant: "Online", lat: null, lon: null }),
+    ]);
+    expect(places).toHaveLength(2);
+    expect(places[0]).toMatchObject({
+      merchant: "Cafe",
+      totalMinor: 2_000,
+      visits: 3,
+      months: ["2026-08", "2026-10"],
+      firstDate: "2026-08-01",
+      lastDate: "2026-10-02",
+    });
+  });
+});
+
+describe("recency", () => {
+  it("is full for a month, then fades over a year", () => {
+    expect(recency("2026-10-01", "2026-10-20")).toBe(1);
+    expect(recency("2025-10-01", "2026-10-20")).toBe(0);
+    const mid = recency("2026-04-20", "2026-10-20");
+    expect(mid).toBeGreaterThan(0.3);
+    expect(mid).toBeLessThan(0.7);
+  });
+});
+
+describe("rhythm", () => {
+  it("counts purchases by weekday and local hour, and keeps the ones with no time apart", () => {
+    const at = (date: string, hour: number) =>
+      new Date(`${date}T${String(hour).padStart(2, "0")}:15:00`).toISOString();
+    const r = rhythm([
+      buy({ date: "2026-10-05", datetime: at("2026-10-05", 8), amountMinor: 300 }), // a Monday
+      buy({ date: "2026-10-12", datetime: at("2026-10-12", 8), amountMinor: 500 }),
+      buy({ date: "2026-10-09", datetime: null }), // a Friday, no time
+    ]);
+    expect(weekdayOf("2026-10-05")).toBe(0);
+    expect(r.cells[0]![8]).toEqual({ count: 2, totalMinor: 800 });
+    expect(r.noTime[4]).toBe(1);
+    expect(r.maxCount).toBe(2);
+  });
+});
+
+describe("habits", () => {
+  it("finds frequent shops and how their pace changed", () => {
+    const dates = [
+      "2026-01-01",
+      "2026-01-03",
+      "2026-01-05",
+      "2026-01-07",
+      "2026-01-11",
+      "2026-01-15",
+      "2026-01-19",
+    ];
+    const h = habits(
+      [...dates.map((date) => buy({ date })), buy({ merchant: "Rare", date: "2026-01-02" })],
+      4,
+    );
+    expect(h).toHaveLength(1);
+    expect(h[0]).toMatchObject({ merchant: "Cafe", visits: 7 });
+    expect(h[0]!.gapEarlier).toBe(2);
+    expect(h[0]!.gapLater).toBe(4);
+    expect(paceText(h[0]!)).toBe("every 2 days, slowing to every 4");
+  });
+
+  it("describes a steady pace plainly", () => {
+    expect(paceText({ merchant: "x", dates: [], visits: 6, gapEarlier: 7, gapLater: 7 })).toBe(
+      "every 7 days",
+    );
+    expect(paceText({ merchant: "x", dates: [], visits: 6, gapEarlier: 8, gapLater: 3 })).toBe(
+      "every 8 days, speeding up to every 3",
+    );
+  });
+});
+
+describe("filterPurchases", () => {
+  it("keeps purchases in the chosen hours and in view", () => {
+    const morning = new Date("2026-10-05T08:15:00").toISOString();
+    const night = new Date("2026-10-05T21:15:00").toISOString();
+    const a = buy({ datetime: morning, lat: 40, lon: -89 });
+    const b = buy({ datetime: night, lat: 40, lon: -89 });
+    const c = buy({ datetime: morning, lat: 45, lon: -80 });
+    const cells = new Set([cellKey(0, 8)]);
+    expect(filterPurchases([a, b, c], { cells }).map((p) => p.id)).toEqual([a.id, c.id]);
+    const bounds = { west: -90, south: 39, east: -88, north: 41 };
+    expect(filterPurchases([a, b, c], { cells, bounds }).map((p) => p.id)).toEqual([a.id]);
+    expect(filterPurchases([a, b, c], {})).toHaveLength(3);
+  });
+});
