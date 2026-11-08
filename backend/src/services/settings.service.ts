@@ -91,6 +91,14 @@ export const settingsSchema = z.object({
     .url()
     .max(200)
     .refine((u) => /^https:\/\//.test(u), "Use an https:// address."),
+  /**
+   * A random tag for this copy of the app, made once, sent beside the app's name to the address
+   * lookup server so it can tell copies apart. Nothing personal; null until the first lookup.
+   */
+  geocodeInstallId: z
+    .string()
+    .regex(/^[0-9a-f]{8}$/)
+    .nullable(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -122,6 +130,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mapTilesOnline: false,
   geocodeEnabled: false,
   geocodeServer: "https://nominatim.openstreetmap.org",
+  geocodeInstallId: null,
 };
 
 export function getSettings(db: AppDb): Settings {

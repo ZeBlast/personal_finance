@@ -151,6 +151,7 @@ describe("settings", () => {
       mapTilesOnline: false,
       geocodeEnabled: false,
       geocodeServer: "https://nominatim.openstreetmap.org",
+      geocodeInstallId: null,
     });
   });
 

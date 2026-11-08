@@ -164,6 +164,33 @@ describe("the geocoder", () => {
     expect(g.status().pending).toBe(0);
   });
 
+  it("names the app and this copy's own random tag, the same every time", async () => {
+    const t = await withAddresses();
+    await t.call("patch", "/api/settings").send({ geocodeEnabled: true }).expect(200);
+    const fake = fakeNominatim({});
+    const { g } = geocoderFor(t, fake.fetchImpl);
+    await g.start();
+    await g.idle();
+    const agents = new Set(fake.calls.map((c) => c.userAgent));
+    expect(agents.size).toBe(1);
+    const agent = [...agents][0]!;
+    expect(agent).toMatch(
+      /^PersonalFinance\/9\.9\.9 \(\+https:\/\/github\.com\/ZeBlast\/personal_finance; install [0-9a-f]{8}\)$/,
+    );
+    const tag = agent.match(/install ([0-9a-f]{8})/)![1];
+    const settings = await t.call("get", "/api/settings").expect(200);
+    expect(settings.body.geocodeInstallId).toBe(tag);
+
+    // Another copy of the app gets its own tag.
+    const other = await withAddresses();
+    await other.call("patch", "/api/settings").send({ geocodeEnabled: true }).expect(200);
+    const fake2 = fakeNominatim({});
+    const { g: g2 } = geocoderFor(other, fake2.fetchImpl);
+    await g2.start();
+    await g2.idle();
+    expect(fake2.calls[0]!.userAgent).not.toContain(tag);
+  });
+
   it("stops at the first refusal and keeps the rest for later", async () => {
     const t = await withAddresses();
     await t.call("patch", "/api/settings").send({ geocodeEnabled: true }).expect(200);

@@ -2,7 +2,8 @@ import { inArray, sql } from "drizzle-orm";
 import { geocodeCache } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError } from "../utils/errors.js";
-import { getSettings } from "./settings.service.js";
+import { randomBytes } from "node:crypto";
+import { getSettings, updateSettings } from "./settings.service.js";
 
 /**
  * Finds coordinates for purchases whose bank sent a street address but no latitude and longitude,
@@ -17,7 +18,7 @@ import { getSettings } from "./settings.service.js";
  * - Every answer is kept, including "not found", so the same address is never asked twice.
  * - The first refusal (429, 403, 418), server error or network failure stops the run. Nothing is
  *   retried in a loop; the rest waits until the user starts again.
- * - Requests name the app in the User-Agent. Only the shop's street address, city, state, postal
+ * - Requests name the app (and this copy's random tag) in the User-Agent. Only the shop's street address, city, state, postal
  *   code and country are sent: never the merchant, amounts, dates or anything about the user.
  * - The server is a setting, so the service can be switched without a new version.
  */
@@ -153,7 +154,18 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const maxPerRun = options.maxPerRun ?? MAX_PER_RUN;
-  const userAgent = `PersonalFinance/${options.version} (+${PROJECT_URL})`;
+  /**
+   * The app's name and project, which is what the usage policy asks for, plus this copy's random
+   * tag (made once and kept), so the server can tell copies apart without anything personal.
+   */
+  const userAgent = (): string => {
+    let tag = getSettings(db).geocodeInstallId;
+    if (tag === null) {
+      tag = randomBytes(4).toString("hex");
+      updateSettings(db, { geocodeInstallId: tag });
+    }
+    return `PersonalFinance/${options.version} (+${PROJECT_URL}; install ${tag})`;
+  };
   // Kept across runs, so starting again right away still waits the interval.
   let lastRequestAt = -Infinity;
   let run: Promise<void> | null = null;
@@ -172,7 +184,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
     state.message = message;
   };
 
-  async function lookUp(server: string, p: Pending): Promise<"ok" | "stop"> {
+  async function lookUp(server: string, agent: string, p: Pending): Promise<"ok" | "stop"> {
     const wait = Math.max(0, lastRequestAt + MIN_INTERVAL_MS - Date.now());
     await sleep(wait);
     if (cancel) {
@@ -196,7 +208,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
     let response: Response;
     try {
       response = await fetchImpl(url, {
-        headers: { "User-Agent": userAgent, Accept: "application/json" },
+        headers: { "User-Agent": agent, Accept: "application/json" },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch {
@@ -267,9 +279,10 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
         message: null,
       });
       cancel = false;
+      const agent = userAgent();
       run = (async () => {
         for (const p of batch) {
-          if ((await lookUp(settings.geocodeServer, p)) === "stop") return;
+          if ((await lookUp(settings.geocodeServer, agent, p)) === "stop") return;
         }
         if (todo.length > batch.length) {
           end("limit", `Looked up ${batch.length}. Start again for the next ones.`);

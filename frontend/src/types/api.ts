@@ -41,6 +41,8 @@ export interface Settings {
   geocodeEnabled: boolean;
   /** The Nominatim server asked. */
   geocodeServer: string;
+  /** This copy's random tag, sent beside the app's name with address lookups (null until the first). */
+  geocodeInstallId: string | null;
 }
 
 export interface PlaidStatus {
