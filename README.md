@@ -9,6 +9,8 @@ encrypted on disk and never goes to anyone else's server.
 - **Planning tools**: a month plan, the year ahead, a long-range outlook, "can I afford it?" and a
   safety net of how many months your cash would last
 - **Reports and insights**: where the money goes, subscriptions, taxes, refunds and transfers
+- **Places & rhythm**: a map of where you spend, the hours of your week, and the shops that have
+  become habits (map images and address lookups from OpenStreetMap only when you turn them on)
 
 ## Install
 
