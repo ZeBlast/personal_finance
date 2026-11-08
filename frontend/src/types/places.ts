@@ -14,6 +14,20 @@ export interface PlacePurchase {
   city: string | null;
 }
 
+/** GET /api/geocode/status: address lookups for the map. */
+export interface GeocodeStatus {
+  enabled: boolean;
+  server: string;
+  running: boolean;
+  total: number;
+  done: number;
+  found: number;
+  notFound: number;
+  pending: number;
+  stopped: "cancelled" | "refused" | "failed" | "limit" | null;
+  message: string | null;
+}
+
 export interface Places {
   currency: string;
   from: string;

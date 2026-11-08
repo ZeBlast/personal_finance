@@ -47,12 +47,15 @@ export function PlacesMap({
   online,
   money,
   onBounds,
+  frameKey,
 }: {
   places: Place[];
   today: string;
   online: boolean;
   money: (n: number) => string;
   onBounds: (b: Bounds) => void;
+  /** When this changes (say, address lookups placed more purchases), the map frames the places again. */
+  frameKey?: string | number;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -68,7 +71,7 @@ export function PlacesMap({
   /** Frames the places once, after the map has loaded (a style applies its own view as it loads). */
   const frame = (m: MapLibreMap): void => {
     const shown = placesRef.current;
-    if (fitted.current || shown.length === 0 || !m.loaded()) return;
+    if (fitted.current || shown.length === 0 || !m.isStyleLoaded()) return;
     const lons = shown.map((p) => p.lon);
     const lats = shown.map((p) => p.lat);
     m.fitBounds(
@@ -113,6 +116,11 @@ export function PlacesMap({
       map.current = null;
     };
   }, [online]);
+
+  // Frame them again when told to.
+  useEffect(() => {
+    fitted.current = false;
+  }, [frameKey]);
 
   // Frame the places the first time there are some.
   useEffect(() => {

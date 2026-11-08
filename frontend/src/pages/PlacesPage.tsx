@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import { Loading } from "../components/common/Loading";
+import { AddressLookups } from "../components/places/AddressLookups";
 import { HabitBarcodes } from "../components/places/HabitBarcodes";
 import { PlacesMap } from "../components/places/PlacesMap";
 import { RhythmGrid } from "../components/places/RhythmGrid";
@@ -30,7 +31,7 @@ export function PlacesPage() {
   const now = today();
   const [months, setMonths] = useState(12);
   const from = `${shiftMonth(now.slice(0, 7), -months)}-${now.slice(8, 10) > "28" ? "28" : now.slice(8, 10)}`;
-  const { data, error, loading } = useApi<Places>(`/places?from=${from}&to=${now}`);
+  const { data, error, loading, reload } = useApi<Places>(`/places?from=${from}&to=${now}`);
   const settings = useApi<Settings>("/settings");
   const online = settings.data?.mapTilesOnline ?? false;
   const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
@@ -158,7 +159,9 @@ export function PlacesPage() {
               online={online}
               money={money}
               onBounds={setBounds}
+              frameKey={data.withPlace}
             />
+            <AddressLookups onFound={reload} />
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <button
                 type="button"
