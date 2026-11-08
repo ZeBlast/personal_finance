@@ -33,6 +33,7 @@
 ### Task 1: Essentials setting and Safety net service
 
 **Files:**
+
 - Modify: `backend/src/services/settings.service.ts` (schema + default), `frontend/src/types/api.ts` (Settings type)
 - Modify: `backend/src/services/brief.service.ts` — extract `cashAccounts(db, settings)` and `goalMoneyInCash(db, accounts)`; brief uses them unchanged
 - Modify: `backend/src/services/forecast.service.ts` — export `cancelledSeries`
@@ -40,6 +41,7 @@
 - Test: `backend/src/safety-net.test.ts`
 
 **Interfaces — Produces:**
+
 - Setting `essentialCategoryIds: number[]` (max 500, default `[]`).
 - `cashAccounts(db: AppDb, settings: Settings): AccountDto[]` and `goalMoneyInCash(db: AppDb, accounts: AccountDto[]): { reservedMinor: number; reservedFor: Array<{ accountName: string; amountMinor: number }> }` exported from `brief.service.ts`.
 - `runwayMonths(freeCashMinor: number, monthlyMinor: number): number | null` — null when monthly ≤ 0; never negative (free cash below 0 → 0); one decimal.
@@ -72,6 +74,7 @@ Widget `id: "safety-net"`, group `Accounts`, config `{ target: 6 }` (number 1–
 **Files:** Create `backend/src/services/afford.service.ts`; modify `plan-tools.routes.ts`; test `backend/src/afford.test.ts`.
 
 **Interfaces — Produces:**
+
 - `suffixLows(days: Array<{ date: string; balanceMinor: number }>): number[]` — `out[i]` = min balance of `days[i..]`. Pure.
 - `affordOn(days, amountMinor, floorMinor, date): { ok: boolean; lowest: { date: string; balanceMinor: number } }` — buying on `date` lowers every day ≥ date; `lowest` is the lowest day ≥ date after the purchase. Pure.
 - `earliestAffordable(days, amountMinor, floorMinor): string | null`. Pure, O(n).
@@ -89,6 +92,7 @@ Widget `id: "safety-net"`, group `Accounts`, config `{ target: 6 }` (number 1–
 **Files:** Create `frontend/src/widgets/AffordWidget.tsx`; add `affordSentence(a: AffordAnswer, money): { headline: string; detail: string; ok: boolean | null }` to `planTools.ts` + tests.
 
 Widget `id: "afford"`, group `Tools`, config `{ buffer: 0 }`. Form: amount, optional "What is it?" (max 60), optional date. Answer lines:
+
 - asked & ok → "Yes, on {day}." / "Your cash is lowest on {day} at {money}, {margin} above what you keep."
 - asked & not ok, earliest → "Not on {day}. The earliest is {earliest}."
 - no earliest → "Not in the next {n} days." plus plans: "Save {perMonth} a month for {m} months" with **Make it a goal** → `POST /goals { name: what || "A purchase", targetMinor, targetDate: by }`, toast on success.
@@ -101,18 +105,26 @@ Widget `id: "afford"`, group `Tools`, config `{ buffer: 0 }`. Form: amount, opti
 **Files:** Create `backend/src/services/plan-dates.ts`, `backend/src/services/month-plan.service.ts`; modify routes; tests `backend/src/plan-dates.test.ts`, `backend/src/month-plan.test.ts`.
 
 **Interfaces — Produces:**
+
 - `seriesDatesIn(lastDate: string, cadence: Cadence, from: string, to: string): string[]` — the series' dates in `[from, to]`, walking back from `lastDate` by its cadence then forward with `nextAfter`. Pure. Used by Tasks 5 and 7.
 - `activeSeries(db, today): RecurringSeries[]` in `plan-dates.ts` — active, not dismissed, not cancelled (on or before the month's start).
 - `monthPlan(db, { month?, today? }): MonthPlan`:
 
 ```ts
 type PlanKind = "income" | "bill" | "cap" | "usual" | "goal" | "debt";
-interface PlanLine { kind: PlanKind; label: string; amountMinor: number; note?: string }
+interface PlanLine {
+  kind: PlanKind;
+  label: string;
+  amountMinor: number;
+  note?: string;
+}
 interface MonthPlan {
-  currency: string; month: string; today: string;
-  lines: PlanLine[];               // amounts positive; kind says direction
+  currency: string;
+  month: string;
+  today: string;
+  lines: PlanLine[]; // amounts positive; kind says direction
   totals: Record<PlanKind, number>;
-  leftMinor: number;               // income − everything else
+  leftMinor: number; // income − everything else
   actual: { incomeMinor: number; spendingMinor: number; through: string } | null; // null for future months
 }
 ```
@@ -140,10 +152,34 @@ Layout: month picker (‹ month ›), big "Left to plan" figure, then grouped se
 **Interfaces — Produces:** `yearAhead(db, { today? }): YearAhead` and `GET /api/year-ahead`:
 
 ```ts
-type YearItemKind = "yearly" | "quarterly" | "planned" | "extra_paycheck" | "goal_date" | "debt_paid_off" | "fund_target";
-interface YearItem { date: string; label: string; amountMinor: number /* signed */; kind: YearItemKind }
-interface YearMonth { month: string; incomeMinor: number; billsMinor: number; capsMinor: number; netMinor: number; short: boolean; items: YearItem[] }
-interface YearAhead { currency: string; today: string; months: YearMonth[] /* 12, starting this month */ }
+type YearItemKind =
+  | "yearly"
+  | "quarterly"
+  | "planned"
+  | "extra_paycheck"
+  | "goal_date"
+  | "debt_paid_off"
+  | "fund_target";
+interface YearItem {
+  date: string;
+  label: string;
+  amountMinor: number /* signed */;
+  kind: YearItemKind;
+}
+interface YearMonth {
+  month: string;
+  incomeMinor: number;
+  billsMinor: number;
+  capsMinor: number;
+  netMinor: number;
+  short: boolean;
+  items: YearItem[];
+}
+interface YearAhead {
+  currency: string;
+  today: string;
+  months: YearMonth[]; /* 12, starting this month */
+}
 ```
 
 Rules: income/bills from `activeSeries` × `seriesDatesIn` and planned occurrences, same cap de-duplication as Task 5; caps from `budgetMonth` per month. Items: quarterly/yearly series occurrences; planned items that do not repeat; a month where an incoming weekly/biweekly series has more dates than its usual (biweekly 3, weekly 5) → `extra_paycheck`; unreached goals' `targetDate`; `debtOverview(db).plan.debts[].payoffMonth` → that month; caps with `fundTargetDate`. `short = netMinor < 0`.
@@ -168,11 +204,18 @@ Layout: a 12-column strip (wraps to 3×4 / 2×6 on narrow screens): month name, 
 
 ```ts
 interface OutlookInputs {
-  currency: string; today: string;
-  cashMinor: number; investmentsMinor: number; otherAssetsMinor: number; debtMinor: number; netWorthMinor: number; // from overview()
-  monthlyIncomeMinor: number; monthlySpendingMinor: number; monthsAveraged: number; // last 12 complete months with any activity
-  debtBalances: number[];           // debtOverview(db).plan.balances (month 0 = now)
-  debtFreeMonths: number | null;    // plan.months
+  currency: string;
+  today: string;
+  cashMinor: number;
+  investmentsMinor: number;
+  otherAssetsMinor: number;
+  debtMinor: number;
+  netWorthMinor: number; // from overview()
+  monthlyIncomeMinor: number;
+  monthlySpendingMinor: number;
+  monthsAveraged: number; // last 12 complete months with any activity
+  debtBalances: number[]; // debtOverview(db).plan.balances (month 0 = now)
+  debtFreeMonths: number | null; // plan.months
   goals: Array<{ name: string; targetDate: string | null; remainingMinor: number }>;
 }
 ```
@@ -184,6 +227,7 @@ interface OutlookInputs {
 **Files:** Create `frontend/src/lib/outlook.ts` + `frontend/src/lib/outlook.test.ts`, `frontend/src/pages/OutlookPage.tsx`; tab `{ path: "/planning/outlook", label: "Long-range" }` last in Planning.
 
 **Interfaces — Produces:**
+
 - `projectOutlook(i: OutlookInputs, o: { years: number; savingPerMonthMinor: number; rates: [number, number, number]; multiple: number }): { points: Array<{ year: number; low: number; mid: number; high: number }>; workOptionalYear: number | null; debtFreeYear: number | null }`.
 
 Model, per year k (0…years): investments(k) = investments(k−1)·(1+r) + saving·12; cash and other assets stay; debt = `debtBalances[12k]` (0 past the end); net = cash + investments + other − debt. `workOptionalYear` = first k where mid cash + investments ≥ multiple × monthlySpending × 12. Defaults: years 30, rates `[0.03, 0.05, 0.07]`, multiple 25, saving = max(0, income − spending).

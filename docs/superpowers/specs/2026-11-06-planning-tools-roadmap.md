@@ -2,22 +2,28 @@
 
 _Roadmap, 2026-11-06. Drafted from a read-through of the app; the user asked for a plan without a Q&A round, so the priorities below are my calls and are marked as such._
 
+> **Status, 2026-11-08:** this was drafted from an older branch. On `master`, tool 1 (Scenarios)
+> already existed as saved what-ifs compared with the cash forecast, so it was left out. Tools 2–6
+> were built on the `planning-tools` branch: the Safety net and Can I afford it? dashboard widgets,
+> and the Month plan, Year ahead and Long-range tabs under Planning. See
+> `docs/superpowers/plans/2026-11-08-planning-tools.md`.
+
 ## What the app already has for planning
 
-| Tool | Where | What it answers |
-| --- | --- | --- |
-| Cash-flow forecast | Planning > Forecast & bills | Bank cash day by day for up to 180 days: expected items, detected recurring, card bills, debt-plan extra (`forecast.service.ts`) |
-| Daily brief | Dashboard | Safe to spend until next income = lowest cash before payday − goal money − buffer (`brief.service.ts`) |
-| Card bills, paychecks | Planning tabs | When cards are due; detected pay dates |
-| Calendar planned items | Calendar | One-off or repeating expected transactions, with exceptions |
-| Subscriptions + Coming up | Planning > Subscriptions | Trials, renewals, price rises |
-| Spending caps | Planning > Spending caps | Per-category monthly caps, repeating, rollover, pace, sinking funds (`fund_target_*`) |
-| Goals | Planning > Goals | Target, date, linked accounts, needed per month |
-| Debt payoff | Planning > Debt payoff | Avalanche/snowball with extra payment, vs minimums only |
-| Spending monitors | Reports | A slice of spending vs usual, with month-end pace |
-| What-if calculator | What-if | Node playground: income, expenses, maths, taxes, "From my data" averages; cash-flow map |
-| TSP outlook | Accounts > Investments | Retirement range from the funds' real yearly returns |
-| Reminders | Settings | Bills due, sign-ins, caps nearly used |
+| Tool                      | Where                       | What it answers                                                                                                                  |
+| ------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Cash-flow forecast        | Planning > Forecast & bills | Bank cash day by day for up to 180 days: expected items, detected recurring, card bills, debt-plan extra (`forecast.service.ts`) |
+| Daily brief               | Dashboard                   | Safe to spend until next income = lowest cash before payday − goal money − buffer (`brief.service.ts`)                           |
+| Card bills, paychecks     | Planning tabs               | When cards are due; detected pay dates                                                                                           |
+| Calendar planned items    | Calendar                    | One-off or repeating expected transactions, with exceptions                                                                      |
+| Subscriptions + Coming up | Planning > Subscriptions    | Trials, renewals, price rises                                                                                                    |
+| Spending caps             | Planning > Spending caps    | Per-category monthly caps, repeating, rollover, pace, sinking funds (`fund_target_*`)                                            |
+| Goals                     | Planning > Goals            | Target, date, linked accounts, needed per month                                                                                  |
+| Debt payoff               | Planning > Debt payoff      | Avalanche/snowball with extra payment, vs minimums only                                                                          |
+| Spending monitors         | Reports                     | A slice of spending vs usual, with month-end pace                                                                                |
+| What-if calculator        | What-if                     | Node playground: income, expenses, maths, taxes, "From my data" averages; cash-flow map                                          |
+| TSP outlook               | Accounts > Investments      | Retirement range from the funds' real yearly returns                                                                             |
+| Reminders                 | Settings                    | Bills due, sign-ins, caps nearly used                                                                                            |
 
 **The gap.** Each piece answers its own question well, but they do not talk to each other:
 
@@ -34,12 +40,14 @@ So the theme of this roadmap is **connect the pieces you already have**, rather 
 **What it is.** A named scenario is a short list of changes laid over your real data. The app shows _now_ vs _with this scenario_ side by side.
 
 Changes a scenario can hold:
+
 - a one-off amount on a date (a vacation, a car repair, a bonus)
 - a new repeating amount from a date (new rent, a raise, a car payment)
 - stop a detected recurring item or subscription from a date
 - change the debt plan's extra payment, or a cap, from a date
 
 What it shows, both ways:
+
 - the forecast line (two lines on one chart) and its lowest point
 - safe to spend today
 - each goal's projected reach date
@@ -48,6 +56,7 @@ What it shows, both ways:
 **Why first.** Biggest payoff for the least new machinery: `cashForecast` already builds a day-by-day list of events, and `simulatePayoff` already projects debt. A scenario is extra events fed into the same functions.
 
 **Build notes.**
+
 - Backend: let `cashForecast` take an extra list of events (and a list of series keys to drop). New table `scenarios` (name, changes as JSON). Route `POST /scenarios/:id/preview` returns baseline and scenario summaries.
 - "Make it real": turn a scenario's changes into calendar planned items (and dismiss stopped series) in one step, with Undo.
 - Lives as a second tab on the What-if area ("Scenarios" beside "What-if calculator"). _My call_; it could equally live under Planning.
@@ -56,6 +65,7 @@ What it shows, both ways:
 ### 2. Can I afford it? — a quick front door to scenarios
 
 **What it is.** Type an amount (and optionally a date). The answer is one of:
+
 - **Yes, on that date.** Cash stays above your buffer; lowest point is $Y on day Z. Safe to spend drops by $W.
 - **Not then — earliest is {date}.** The first day the purchase keeps cash above the buffer through the forecast.
 - **Save for it.** $N a month gets you there by {date}, with a button that creates the goal.
@@ -82,6 +92,7 @@ During and after the month, each line shows planned vs actual, and "Start next m
 **Why.** It answers "is this all affordable?" Today goals can ask for more per month than you have left, and nothing says so. This makes the existing caps, goals and debt extra add up to a plan.
 
 **Build notes.**
+
 - Mostly a read-only roll-up over existing services: `paycheck`, `recurring`, `bills`, `budget`, `goal`, `debt`. New stored data is small: a per-month goal amount override (otherwise use `perMonthMinor`).
 - Feeds the Month report ("plan vs actual") and the daily brief (goal saving already reduces safe to spend).
 - Warn on the Goals page when the goals' per-month total is more than the typical monthly surplus (average income minus spending, the same numbers the What-if "From my data" node uses), and suggest realistic dates.
@@ -98,6 +109,7 @@ During and after the month, each line shows planned vs actual, and "Start next m
 ### 5. Long-range outlook — net worth over years
 
 **What it is.** A chart from today's net worth forward 1–30 years, with a low/middle/high band:
+
 - savings from your real average surplus (adjustable)
 - investment growth: the TSP outlook's method generalized to every investment account (a range of steady rates where fund history is missing)
 - debts falling per the payoff plan
@@ -122,14 +134,14 @@ During and after the month, each line shows planned vs actual, and "Start next m
 
 ## Suggested order and sizing
 
-| # | Tool | Size | Depends on |
-| --- | --- | --- | --- |
-| 1 | Scenarios | Medium-large | forecast + debt services |
-| 2 | Can I afford it? | Small | 1 |
-| 3 | Month plan | Medium | existing services; nicer with 6 |
-| 4 | Year ahead | Medium | — |
-| 5 | Long-range outlook | Medium | nicer with 1 and 6 |
-| 6 | Safety net | Small | — (quick win; could ship first) |
+| #   | Tool               | Size         | Depends on                      |
+| --- | ------------------ | ------------ | ------------------------------- |
+| 1   | Scenarios          | Medium-large | forecast + debt services        |
+| 2   | Can I afford it?   | Small        | 1                               |
+| 3   | Month plan         | Medium       | existing services; nicer with 6 |
+| 4   | Year ahead         | Medium       | —                               |
+| 5   | Long-range outlook | Medium       | nicer with 1 and 6              |
+| 6   | Safety net         | Small        | — (quick win; could ship first) |
 
 Each is its own project: each should get its own design document and implementation plan before building, in this order unless the user re-orders.
 
