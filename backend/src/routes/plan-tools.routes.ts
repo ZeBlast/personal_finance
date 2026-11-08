@@ -4,6 +4,7 @@ import type { AppDb } from "../db/client.js";
 import { affordCheck } from "../services/afford.service.js";
 import { MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthPlan } from "../services/month-plan.service.js";
+import { outlookInputs } from "../services/outlook.service.js";
 import { safetyNet } from "../services/safety-net.service.js";
 import { yearAhead } from "../services/year-ahead.service.js";
 
@@ -54,6 +55,12 @@ export function planToolsRoutes(db: AppDb): Router {
   router.get("/year-ahead", (req, res) => {
     const q = z.object({ today: day.optional() }).parse(req.query);
     res.json(yearAhead(db, q));
+  });
+
+  /** What the long-range outlook starts from. */
+  router.get("/outlook", (req, res) => {
+    const q = z.object({ today: day.optional() }).parse(req.query);
+    res.json(outlookInputs(db, q));
   });
 
   return router;
