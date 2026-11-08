@@ -6,6 +6,8 @@ encrypted on disk and never goes to anyone else's server.
 - **Accounts and transactions** from your banks (through Plaid), CSV imports, or typed in by hand
 - **Spending caps, bills and a calendar** of what is coming up
 - **Goals, debts, investments** (including the TSP) and net worth over time
+- **Planning tools**: a month plan, the year ahead, a long-range outlook, "can I afford it?" and a
+  safety net of how many months your cash would last
 - **Reports and insights**: where the money goes, subscriptions, taxes, refunds and transfers
 
 ## Install

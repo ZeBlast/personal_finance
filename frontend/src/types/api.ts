@@ -33,6 +33,8 @@ export interface Settings {
   dashboardViewsAdded: boolean;
   /** Desktop notifications the user turned on. */
   reminders: { bills: boolean; signIn: boolean; budgets: boolean };
+  /** Categories the safety net counts a month of (a parent includes its subcategories). */
+  essentialCategoryIds: number[];
 }
 
 export interface PlaidStatus {

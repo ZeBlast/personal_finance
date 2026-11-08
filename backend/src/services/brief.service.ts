@@ -1,11 +1,11 @@
 import type { AppDb } from "../db/client.js";
 import { addDays, isRealDate } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
-import { listAccounts } from "./account.service.js";
+import { listAccounts, type AccountSummary } from "./account.service.js";
 import { summarize } from "./analytics.service.js";
 import { cashForecast, type ForecastEvent } from "./forecast.service.js";
 import { goalReservations } from "./goal.service.js";
-import { getSettings } from "./settings.service.js";
+import { getSettings, type Settings } from "./settings.service.js";
 
 /**
  * The daily brief: how much is safe to spend until money next comes in, and where that number
@@ -77,6 +77,33 @@ export interface DailyBrief {
   capHoldBack: { included: boolean; inWindowMinor: number };
 }
 
+/**
+ * The bank accounts whose cash the brief counts: counted in totals, checking/savings/cash, in the
+ * app's currency, with a balance, and hand-kept or in the active bank environment.
+ */
+export function briefCashAccounts(db: AppDb, settings: Settings): AccountSummary[] {
+  return listAccounts(db).filter(
+    (a) =>
+      a.countsInTotals &&
+      a.type === "depository" &&
+      a.currency === settings.currency &&
+      a.currentBalanceMinor !== null &&
+      (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
+  );
+}
+
+/** What goals hold in these accounts: money that is spoken for, not free to spend. */
+export function goalMoneyInCash(
+  db: AppDb,
+  cashAccounts: AccountSummary[],
+): { reservedMinor: number; reservedFor: Array<{ accountName: string; amountMinor: number }> } {
+  const reserved = goalReservations(db);
+  const reservedFor = cashAccounts
+    .map((a) => ({ accountName: a.name, amountMinor: reserved.get(a.id) ?? 0 }))
+    .filter((r) => r.amountMinor > 0);
+  return { reservedFor, reservedMinor: reservedFor.reduce((n, r) => n + r.amountMinor, 0) };
+}
+
 /** A bank balance older than this may be out of date. */
 const STALE_MS = 24 * 60 * 60 * 1000;
 
@@ -144,15 +171,7 @@ export function dailyBrief(
   }
 
   // Goals' money in the bank accounts the forecast counts.
-  const reserved = goalReservations(db);
-  const cashAccounts = listAccounts(db).filter(
-    (a) =>
-      a.countsInTotals &&
-      a.type === "depository" &&
-      a.currency === settings.currency &&
-      a.currentBalanceMinor !== null &&
-      (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
-  );
+  const cashAccounts = briefCashAccounts(db, settings);
   // Balances are as old as the last sync, whatever day the brief is for.
   const dayAgo = new Date(Date.now() - STALE_MS).toISOString();
   const staleAccounts = cashAccounts
@@ -178,10 +197,7 @@ export function dailyBrief(
         (a.itemId === null || a.connectionEnvironment === settings.plaidEnvironment),
     )
     .map((a) => a.name);
-  const reservedFor = cashAccounts
-    .map((a) => ({ accountName: a.name, amountMinor: reserved.get(a.id) ?? 0 }))
-    .filter((r) => r.amountMinor > 0);
-  const reservedMinor = reservedFor.reduce((n, r) => n + r.amountMinor, 0);
+  const { reservedFor, reservedMinor } = goalMoneyInCash(db, cashAccounts);
 
   const free = lowest.balanceMinor - reservedMinor - buffer;
   const safe = Math.max(0, free);

@@ -147,6 +147,7 @@ describe("settings", () => {
       welcomeDismissed: false,
       dashboardViewsAdded: false,
       reminders: { bills: false, signIn: false, budgets: false },
+      essentialCategoryIds: [],
     });
   });
 
