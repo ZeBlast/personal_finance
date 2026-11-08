@@ -28,6 +28,38 @@ export interface AffordAnswer {
   plans: Array<{ months: 3 | 6 | 12; perMonthMinor: number; by: string }>;
 }
 
+export type YearItemKind =
+  | "yearly"
+  | "quarterly"
+  | "planned"
+  | "extra_paycheck"
+  | "goal_date"
+  | "debt_paid_off"
+  | "fund_target";
+
+export interface YearItem {
+  date: string;
+  label: string;
+  amountMinor: number;
+  kind: YearItemKind;
+}
+
+export interface YearMonth {
+  month: string;
+  incomeMinor: number;
+  billsMinor: number;
+  capsMinor: number;
+  netMinor: number;
+  short: boolean;
+  items: YearItem[];
+}
+
+export interface YearAhead {
+  currency: string;
+  today: string;
+  months: YearMonth[];
+}
+
 export type PlanKind = "income" | "bill" | "cap" | "usual" | "goal" | "debt";
 
 export interface PlanLine {

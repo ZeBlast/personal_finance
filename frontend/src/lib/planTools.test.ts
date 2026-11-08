@@ -1,7 +1,52 @@
 import { describe, expect, it } from "vitest";
-import type { AffordAnswer, MonthPlan, SafetyNet } from "../types/planTools";
-import { affordSentence, leftLine, runwayText } from "./planTools";
+import type { AffordAnswer, MonthPlan, SafetyNet, YearAhead } from "../types/planTools";
+import {
+  affordSentence,
+  fundPlan,
+  itemLabel,
+  leftLine,
+  runwayText,
+  shortMonths,
+} from "./planTools";
 import { formatDay } from "./time";
+
+describe("year ahead words", () => {
+  it("names each kind of item", () => {
+    expect(itemLabel("yearly")).toBe("Yearly");
+    expect(itemLabel("extra_paycheck")).toBe("Extra paycheck");
+    expect(itemLabel("debt_paid_off")).toBe("Debt paid off");
+  });
+
+  it("lists the short months", () => {
+    const month = (m: string, short: boolean) => ({
+      month: m,
+      incomeMinor: 0,
+      billsMinor: 0,
+      capsMinor: 0,
+      netMinor: short ? -1 : 1,
+      short,
+      items: [],
+    });
+    const y: YearAhead = {
+      currency: "USD",
+      today: "2026-10-09",
+      months: [month("2026-10", false), month("2026-11", true), month("2026-12", true)],
+    };
+    expect(shortMonths(y)).toEqual(["2026-11", "2026-12"]);
+  });
+
+  it("spreads a saved-up fund over the months through its date", () => {
+    expect(fundPlan(60_000, "2027-03-10", "2026-10")).toEqual({
+      monthsLeft: 6,
+      perMonthMinor: 10_000,
+    });
+    // Due this month: all of it now.
+    expect(fundPlan(60_000, "2026-10-20", "2026-10")).toEqual({
+      monthsLeft: 1,
+      perMonthMinor: 60_000,
+    });
+  });
+});
 
 describe("leftLine", () => {
   const money = (n: number) => `$${n / 100}`;

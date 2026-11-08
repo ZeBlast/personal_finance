@@ -1,8 +1,49 @@
-import type { AffordAnswer, MonthPlan, SafetyNet } from "../types/planTools";
+import type {
+  AffordAnswer,
+  MonthPlan,
+  SafetyNet,
+  YearAhead,
+  YearItemKind,
+} from "../types/planTools";
 import { formatMinor } from "./money";
 import { formatDay } from "./time";
 
 const DAY_MS = 86_400_000;
+
+const ITEM_LABEL: Record<YearItemKind, string> = {
+  yearly: "Yearly",
+  quarterly: "Quarterly",
+  planned: "Expected",
+  extra_paycheck: "Extra paycheck",
+  goal_date: "Goal date",
+  debt_paid_off: "Debt paid off",
+  fund_target: "Fund date",
+};
+
+/** What kind of item a year-ahead entry is, in words. Pure. */
+export function itemLabel(kind: YearItemKind): string {
+  return ITEM_LABEL[kind];
+}
+
+/** The months of the year ahead where more goes out than comes in. Pure. */
+export function shortMonths(y: YearAhead): string[] {
+  return y.months.filter((m) => m.short).map((m) => m.month);
+}
+
+/**
+ * Saving up `amountMinor` by `date`, starting this month: how many months that is (this one
+ * through the date's, at least 1) and how much a month. Pure.
+ */
+export function fundPlan(
+  amountMinor: number,
+  date: string,
+  thisMonth: string,
+): { monthsLeft: number; perMonthMinor: number } {
+  const [y1, m1] = thisMonth.split("-").map(Number) as [number, number];
+  const [y2, m2] = date.split("-").map(Number) as [number, number];
+  const monthsLeft = Math.max(1, (y2 - y1) * 12 + (m2 - m1) + 1);
+  return { monthsLeft, perMonthMinor: Math.ceil(amountMinor / monthsLeft) };
+}
 
 /** What is left of a month's plan, in words. Pure. */
 export function leftLine(
