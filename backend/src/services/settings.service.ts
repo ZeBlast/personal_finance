@@ -77,6 +77,20 @@ export const settingsSchema = z.object({
    * which areas are viewed (never the transactions), and the app otherwise contacts no one.
    */
   mapTilesOnline: z.boolean(),
+  /**
+   * Look up street addresses that came without coordinates, with Nominatim (OpenStreetMap's
+   * geocoder), when the user starts it. Off by default. Only the shop's address is sent.
+   */
+  geocodeEnabled: z.boolean(),
+  /**
+   * The Nominatim server to ask. A setting, so the service can be switched (the usage policy asks
+   * apps to be able to) without a new version.
+   */
+  geocodeServer: z
+    .string()
+    .url()
+    .max(200)
+    .refine((u) => /^https:\/\//.test(u), "Use an https:// address."),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -106,6 +120,8 @@ export const DEFAULT_SETTINGS: Settings = {
   reminders: { bills: false, signIn: false, budgets: false },
   essentialCategoryIds: [],
   mapTilesOnline: false,
+  geocodeEnabled: false,
+  geocodeServer: "https://nominatim.openstreetmap.org",
 };
 
 export function getSettings(db: AppDb): Settings {

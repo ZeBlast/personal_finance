@@ -37,6 +37,10 @@ export interface Settings {
   essentialCategoryIds: number[];
   /** Load map images from OpenFreeMap on the Places page (off: dots on a plain background). */
   mapTilesOnline: boolean;
+  /** Look up street addresses without coordinates with Nominatim, when started. */
+  geocodeEnabled: boolean;
+  /** The Nominatim server asked. */
+  geocodeServer: string;
 }
 
 export interface PlaidStatus {
