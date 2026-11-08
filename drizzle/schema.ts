@@ -1209,7 +1209,7 @@ export const forecastScenarios = sqliteTable("forecast_scenarios", {
  * too (`lat`/`lon` null), for the same reason.
  */
 export const geocodeCache = sqliteTable("geocode_cache", {
-  /** The address as looked up, normalized (see addressKey). */
+  /** What was asked, normalized (see lookupSteps): one row per distinct query. */
   addressKey: text("address_key").primaryKey(),
   lat: real("lat"),
   lon: real("lon"),
@@ -1218,4 +1218,8 @@ export const geocodeCache = sqliteTable("geocode_cache", {
   /** The server asked (so a switch of server is visible). */
   server: text("server").notNull(),
   lookedUpAt: text("looked_up_at").notNull(),
+  /** The way of looking up that asked it; answers from an older way are asked again. */
+  method: integer("method").notNull().default(1),
+  /** How close the answer is: `address`, `shop`, `postcode` or `city`. */
+  precision: text("precision"),
 });

@@ -8,7 +8,16 @@ import { RhythmGrid } from "../components/places/RhythmGrid";
 import { useApi } from "../hooks/useApi";
 import { formatMinor } from "../lib/money";
 import { shiftMonth, today } from "../lib/period";
-import { filterPurchases, groupPlaces, habits, rhythm, type Bounds } from "../lib/places";
+import {
+  beaconsAt,
+  filterPurchases,
+  groupPlaces,
+  habits,
+  mapStyle,
+  rhythm,
+  type Bounds,
+} from "../lib/places";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { formatDay } from "../lib/time";
 import { toast } from "../lib/toast";
 import type { Settings } from "../types/api";
@@ -34,6 +43,13 @@ export function PlacesPage() {
   const { data, error, loading, reload } = useApi<Places>(`/places?from=${from}&to=${now}`);
   const settings = useApi<Settings>("/settings");
   const online = settings.data?.mapTilesOnline ?? false;
+  const theme = settings.data?.mapTheme ?? "auto";
+  const systemDark =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
+  const look = mapStyle(theme, online, systemDark);
+  // Purchases paid online have no shop to visit, so they stay off the map unless asked for.
+  const [showOnline, setShowOnline] = usePersistentState("pf.places.online", false);
   const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
 
   const [cells, setCells] = useState<Set<string>>(new Set());
@@ -60,11 +76,16 @@ export function PlacesPage() {
 
   const purchases = useMemo(() => data?.purchases ?? [], [data]);
   const shown = useMemo(() => {
-    const timed = filterPurchases(purchases, { cells });
+    const timed = filterPurchases(purchases, { cells, online: showOnline });
     if (replayEnd === null) return timed;
     const start = addDays(replayEnd, -REPLAY_DAYS);
     return timed.filter((p) => p.date > start && p.date <= replayEnd);
-  }, [purchases, cells, replayEnd]);
+  }, [purchases, cells, replayEnd, showOnline]);
+  // During a replay, the purchases of its latest week send out a beacon.
+  const beacons = useMemo(
+    () => (replayEnd === null ? [] : beaconsAt(shown, replayEnd, 7)),
+    [shown, replayEnd],
+  );
   const places = useMemo(() => groupPlaces(shown), [shown]);
   const area = inView && bounds ? bounds : undefined;
   const week = useMemo(
@@ -76,9 +97,9 @@ export function PlacesPage() {
     [purchases, cells, area],
   );
 
-  async function setOnline(next: boolean): Promise<void> {
+  async function saveSetting(patch: Partial<Settings>): Promise<void> {
     try {
-      await api("/settings", { method: "PATCH", body: JSON.stringify({ mapTilesOnline: next }) });
+      await api("/settings", { method: "PATCH", body: JSON.stringify(patch) });
       settings.reload();
     } catch (e) {
       toast(errorMessage(e), { kind: "error" });
@@ -137,15 +158,40 @@ export function PlacesPage() {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Where</h2>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={online}
-                  disabled={!settings.data}
-                  onChange={(e) => void setOnline(e.target.checked)}
-                />
-                Show map images (from OpenFreeMap)
-              </label>
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={showOnline}
+                    onChange={(e) => setShowOnline(e.target.checked)}
+                  />
+                  Online purchases
+                </label>
+                <label className="flex items-center gap-2">
+                  Map colours
+                  <select
+                    className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
+                    value={theme}
+                    disabled={!settings.data}
+                    onChange={(e) =>
+                      void saveSetting({ mapTheme: e.target.value as Settings["mapTheme"] })
+                    }
+                  >
+                    <option value="auto">Match the app</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={online}
+                    disabled={!settings.data}
+                    onChange={(e) => void saveSetting({ mapTilesOnline: e.target.checked })}
+                  />
+                  Show map images (from OpenFreeMap)
+                </label>
+              </div>
             </div>
             {!online && (
               <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -156,10 +202,12 @@ export function PlacesPage() {
             <PlacesMap
               places={places}
               today={now}
-              online={online}
+              look={look}
               money={money}
               onBounds={setBounds}
               frameKey={data.withPlace}
+              animate={replayEnd !== null}
+              beacons={beacons}
             />
             <AddressLookups onFound={reload} />
             <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -213,8 +261,9 @@ export function PlacesPage() {
               )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Circle size is what you spent there; each thin ring is a month you went. Blue is
-              recent, fading to grey for places you have not been to in a while.
+              Circle size is what you spent there; each thin ring is a month you went; a dashed
+              outline is an approximate position (a postal code or city). Blue is recent, fading to
+              grey for places you have not been to in a while.
             </p>
           </div>
 

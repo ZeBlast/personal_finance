@@ -2,7 +2,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, errorMessage, insideTauri } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
-import { lookupProgress } from "../../lib/geocode";
+import { lookupProgress, resetNote } from "../../lib/geocode";
+import { askConfirm } from "../common/ConfirmHost";
 import { toast } from "../../lib/toast";
 import type { GeocodeStatus } from "../../types/places";
 
@@ -30,9 +31,11 @@ function Outside({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /**
- * Looking up street addresses that came without a map position, with Nominatim (OpenStreetMap).
- * Off until turned on; runs only when started here, one address every two seconds, with a progress
- * bar while it goes. The backend keeps every answer, so an address is never asked twice.
+ * Finding map positions for purchases that came without one, with Nominatim (OpenStreetMap), from
+ * the street address, the shop and its city, the postal code or the city. Off until turned on;
+ * runs only when started here, one lookup every two seconds, with a progress bar while it goes.
+ * The backend keeps every answer, so nothing is asked twice; "look up all again" clears them, at
+ * most once a week.
  */
 export function AddressLookups({ onFound }: { onFound: () => void }) {
   const { data, error, reload } = useApi<GeocodeStatus>("/geocode/status");
@@ -64,6 +67,26 @@ export function AddressLookups({ onFound }: { onFound: () => void }) {
   const patch = (body: object) =>
     send("/settings", { method: "PATCH", body: JSON.stringify(body) });
 
+  async function lookUpAllAgain(): Promise<void> {
+    const ok = await askConfirm({
+      title: "Look everything up again?",
+      message:
+        "Every saved answer is forgotten and asked again, one every 2 seconds, so any change in how lookups are done applies to all of them. To spare the lookup server, this can be done once a week.",
+      confirmLabel: "Look everything up again",
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api("/geocode/reset", { method: "POST" });
+      await api("/geocode/start", { method: "POST" });
+    } catch (e) {
+      toast(errorMessage(e), { kind: "error" });
+    } finally {
+      setBusy(false);
+      reload();
+    }
+  }
+
   if (error) {
     return (
       <p role="alert" className="text-sm text-red-600 dark:text-red-400">
@@ -86,7 +109,7 @@ export function AddressLookups({ onFound }: { onFound: () => void }) {
             disabled={busy || data.running}
             onChange={(e) => void patch({ geocodeEnabled: e.target.checked })}
           />
-          Look up street addresses with OpenStreetMap (Nominatim)
+          Look up street addresses and shops with OpenStreetMap (Nominatim)
         </label>
         {data.enabled &&
           (data.running ? (
@@ -99,26 +122,41 @@ export function AddressLookups({ onFound }: { onFound: () => void }) {
               Stop
             </button>
           ) : (
-            <button
-              type="button"
-              className={button}
-              disabled={busy || data.pending === 0}
-              onClick={() => void send("/geocode/start", { method: "POST" })}
-            >
-              {data.pending === 0
-                ? "Nothing to look up"
-                : `Look up ${data.pending} ${data.pending === 1 ? "address" : "addresses"}`}
-            </button>
+            <span className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={button}
+                disabled={busy || data.pending === 0}
+                onClick={() => void send("/geocode/start", { method: "POST" })}
+              >
+                {data.pending === 0 ? "Nothing to look up" : "Start lookups"}
+              </button>
+              <button
+                type="button"
+                className={button}
+                disabled={busy || data.resetAvailableAt !== null}
+                title={resetNote(data) ?? undefined}
+                onClick={() => void lookUpAllAgain()}
+              >
+                Look up all again
+              </button>
+            </span>
           ))}
       </div>
 
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Some purchases come with a street address but no map position. Turned on, the app asks
-        Nominatim for their positions when you press the button: only the shop&apos;s address is
-        sent (never the shop&apos;s name, amounts or dates), one every 2 seconds, and every answer
-        is kept so no address is asked twice. Follows the{" "}
+        Some purchases come without a map position. Turned on, the app looks them up when you press
+        Start: first by the street address, then by the shop&apos;s name and city, then by the
+        postal code or city (those show as approximate, with a dashed outline). It sends what is
+        known about the shop and where it is (never amounts, dates or anything about you), one
+        lookup every 2 seconds, and keeps every answer so nothing is asked twice. Follows the{" "}
         <Outside href={POLICY_URL}>Nominatim usage policy</Outside>.
       </p>
+      {data.enabled && resetNote(data) && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Look up all again: {resetNote(data)}
+        </p>
+      )}
 
       {(data.running || data.stopped !== null || data.total > 0 || data.enabled) && (
         <div className="space-y-1" aria-live="polite">

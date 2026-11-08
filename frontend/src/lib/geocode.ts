@@ -1,13 +1,15 @@
 import type { GeocodeStatus } from "../types/places";
+import { formatDay } from "./time";
 
-/** The backend's pace: one address every two seconds at most (Nominatim's usage policy). */
+/** The backend's pace: one lookup every two seconds at most (Nominatim's usage policy). */
 export const SECONDS_PER_LOOKUP = 2;
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 function timeLeft(seconds: number): string {
-  if (seconds < 90)
+  if (seconds < 90) {
     return `About ${plural(Math.max(1, Math.round(seconds)), "second", "seconds")} left.`;
+  }
   return `About ${plural(Math.round(seconds / 60), "minute", "minutes")} left.`;
 }
 
@@ -19,10 +21,9 @@ export function lookupProgress(s: GeocodeStatus): {
   tone: "info" | "warn";
 } {
   if (s.running) {
-    const percent = s.total === 0 ? 0 : Math.round((s.done / s.total) * 100);
     return {
-      percent,
-      text: `Looked up ${s.done} of ${plural(s.total, "address", "addresses")}: ${s.found} found, ${s.notFound} not found.`,
+      percent: s.total === 0 ? 0 : Math.round((s.done / s.total) * 100),
+      text: `Made ${s.done} of ${plural(s.total, "lookup", "lookups")}: ${s.found} found a position, ${s.notFound} found nothing.`,
       eta: timeLeft((s.total - s.done) * SECONDS_PER_LOOKUP),
       tone: "info",
     };
@@ -30,7 +31,7 @@ export function lookupProgress(s: GeocodeStatus): {
   if (s.stopped !== null) {
     return {
       percent: null,
-      text: `${s.message ?? "Stopped."} ${s.done} of ${s.total} were looked up.`,
+      text: `${s.message ?? "Stopped."} ${s.done} of ${plural(s.total, "lookup was", "lookups were")} made.`,
       eta: null,
       tone: s.stopped === "refused" || s.stopped === "failed" ? "warn" : "info",
     };
@@ -38,7 +39,7 @@ export function lookupProgress(s: GeocodeStatus): {
   if (s.total > 0 && s.done === s.total && s.pending === 0) {
     return {
       percent: null,
-      text: `Done: ${s.found} of ${plural(s.total, "address", "addresses")} found on the map.`,
+      text: `Done: ${s.found} of ${plural(s.total, "lookup", "lookups")} found a position.`,
       eta: null,
       tone: "info",
     };
@@ -46,10 +47,17 @@ export function lookupProgress(s: GeocodeStatus): {
   return {
     percent: null,
     text:
-      s.pending === 0
-        ? "Every address with a street has been looked up."
-        : `${plural(s.pending, "address", "addresses")} came without a map position and can be looked up.`,
+      s.unplaced === 0
+        ? "Every purchase with location details has been looked up."
+        : `${plural(s.unplaced, "purchase has", "purchases have")} location details but no map position yet.`,
     eta: null,
     tone: "info",
   };
+}
+
+/** When "look up all again" can next be used, in words, or null when it can be now. Pure. */
+export function resetNote(s: GeocodeStatus): string | null {
+  return s.resetAvailableAt === null
+    ? null
+    : `Available again on ${formatDay(s.resetAvailableAt.slice(0, 10))}.`;
 }

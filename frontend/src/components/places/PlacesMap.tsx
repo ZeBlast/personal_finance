@@ -2,22 +2,23 @@ import maplibregl, { type Map as MapLibreMap, type StyleSpecification } from "ma
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 import { recency, type Bounds, type Place } from "../../lib/places";
+import type { PlacePurchase } from "../../types/places";
 
 /**
  * The map of places. Each place is a circle sized by what was spent there, with one thin ring for
  * every month it was visited (up to a year), and coloured by how recently: bright for this month,
- * fading to grey for places you have stopped going to.
+ * fading to grey for places you have stopped going to. A dashed outline means the position is
+ * only approximate (a postal code's or city's, from an address lookup).
  *
- * The map images come from OpenFreeMap (OpenStreetMap data) only when the user allows it; otherwise
- * the places are drawn on a plain background, and nothing is fetched.
+ * During a replay, places pop in as they are first visited in the window and fade out as it moves
+ * past them, and each purchase sends out a beacon where it happened. All of it rests when the
+ * system asks for reduced motion (see index.css).
+ *
+ * The map images come from OpenFreeMap (OpenStreetMap data) only when the user allows it, in its
+ * light or dark style; otherwise the places are drawn on a plain background, and nothing is fetched.
  */
 
-export const ONLINE_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-
-const dark = (): boolean =>
-  typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-
-function plainStyle(): StyleSpecification {
+function plainStyle(dark: boolean): StyleSpecification {
   return {
     version: 8,
     sources: {},
@@ -25,37 +26,45 @@ function plainStyle(): StyleSpecification {
       {
         id: "background",
         type: "background",
-        paint: { "background-color": dark() ? "#0f172a" : "#f1f5f9" },
+        paint: { "background-color": dark ? "#0f172a" : "#f1f5f9" },
       },
     ],
   };
 }
 
 const MAX_RINGS = 12;
+/** How long a place takes to fade out, matching `pf-place-out` in index.css. */
+const LEAVE_MS = 450;
 
-/** A colour from grey (stale) to blue (fresh). Pure. */
-function freshColour(fresh: number): string {
-  const hue = 215;
+/** A colour from grey (stale) to blue (fresh), lighter on a dark map. Pure. */
+function freshColour(fresh: number, dark: boolean): string {
   const saturation = Math.round(15 + 70 * fresh);
-  const lightness = Math.round(60 - 12 * fresh);
-  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+  const lightness = dark ? Math.round(55 + 15 * fresh) : Math.round(60 - 12 * fresh);
+  return `hsl(215 ${saturation}% ${lightness}%)`;
 }
 
 export function PlacesMap({
   places,
   today,
-  online,
+  look,
   money,
   onBounds,
   frameKey,
+  animate = false,
+  beacons = [],
 }: {
   places: Place[];
   today: string;
-  online: boolean;
+  /** Map images (and their URL) or a plain background, light or dark. */
+  look: { online: boolean; url: string | null; dark: boolean };
   money: (n: number) => string;
   onBounds: (b: Bounds) => void;
   /** When this changes (say, address lookups placed more purchases), the map frames the places again. */
   frameKey?: string | number;
+  /** A replay is running: places fade out as they leave it. */
+  animate?: boolean;
+  /** Purchases to send a beacon from, where they happened. */
+  beacons?: PlacePurchase[];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -63,6 +72,8 @@ export function PlacesMap({
   // Bumped on every move, so the circles follow the map.
   const [, setTick] = useState(0);
   const [hover, setHover] = useState<Place | null>(null);
+  const [leaving, setLeaving] = useState<Place[]>([]);
+  const previous = useRef<Place[]>(places);
   const boundsRef = useRef(onBounds);
   boundsRef.current = onBounds;
   const placesRef = useRef(places);
@@ -88,10 +99,10 @@ export function PlacesMap({
     if (!box.current) return;
     const m = new maplibregl.Map({
       container: box.current,
-      style: online ? ONLINE_STYLE : plainStyle(),
+      style: look.url ?? plainStyle(look.dark),
       center: [-95, 39],
       zoom: 3,
-      attributionControl: online ? { compact: true } : false,
+      attributionControl: look.online ? { compact: true } : false,
     });
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     const moved = () => {
@@ -115,7 +126,8 @@ export function PlacesMap({
       m.remove();
       map.current = null;
     };
-  }, [online]);
+    // Rebuilt only when the look changes; `frame` reads the latest places through a ref.
+  }, [look.online, look.url, look.dark]);
 
   // Frame them again when told to.
   useEffect(() => {
@@ -127,10 +139,64 @@ export function PlacesMap({
     if (map.current) frame(map.current);
   });
 
+  // During a replay, places that drop out of the window fade out instead of vanishing.
+  useEffect(() => {
+    const now = new Set(places.map((p) => p.key));
+    const gone = animate ? previous.current.filter((p) => !now.has(p.key)) : [];
+    previous.current = places;
+    if (gone.length === 0) return;
+    const timer = setTimeout(() => setLeaving([]), LEAVE_MS);
+    setLeaving(gone);
+    return () => clearTimeout(timer);
+  }, [places, animate]);
+
   const m = map.current;
   const biggest = Math.max(1, ...places.map((p) => p.totalMinor));
+  const radius = (p: Place) => 4 + 16 * Math.sqrt(Math.min(p.totalMinor, biggest) / biggest);
   // Smallest drawn last, so it stays clickable on top of a big neighbour.
   const drawn = [...places].sort((a, b) => b.totalMinor - a.totalMinor);
+
+  const drawPlace = (p: Place, out: boolean) => {
+    if (!m) return null;
+    const at = m.project([p.lon, p.lat]);
+    const r = radius(p);
+    const fresh = recency(p.lastDate, today);
+    const colour = freshColour(fresh, look.dark);
+    const rings = Math.min(p.months.length, MAX_RINGS);
+    const dash = p.approx ? "3 2" : undefined;
+    return (
+      <g
+        key={`${out ? "out" : "in"}-${p.key}`}
+        className={`${out ? "pf-place-out" : "pf-place-in pointer-events-auto cursor-pointer"}`}
+        onMouseEnter={out ? undefined : () => setHover(p)}
+        onMouseLeave={out ? undefined : () => setHover((h) => (h?.key === p.key ? null : h))}
+      >
+        {Array.from({ length: rings }, (_, i) => (
+          <circle
+            key={i}
+            cx={at.x}
+            cy={at.y}
+            r={r + 2 + i * 2.5}
+            fill="none"
+            stroke={colour}
+            strokeOpacity={0.55 - (0.35 * i) / MAX_RINGS}
+            strokeWidth={1}
+            strokeDasharray={dash}
+          />
+        ))}
+        <circle
+          cx={at.x}
+          cy={at.y}
+          r={r}
+          fill={colour}
+          fillOpacity={(p.approx ? 0.2 : 0.35) + 0.45 * fresh}
+          stroke={colour}
+          strokeWidth={1.5}
+          strokeDasharray={dash}
+        />
+      </g>
+    );
+  };
 
   return (
     <div className="relative h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
@@ -138,41 +204,22 @@ export function PlacesMap({
       <div ref={box} className="h-full w-full" />
       {m && (
         <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
-          {drawn.map((p) => {
-            const at = m.project([p.lon, p.lat]);
-            const r = 4 + 16 * Math.sqrt(p.totalMinor / biggest);
-            const fresh = recency(p.lastDate, today);
-            const colour = freshColour(fresh);
-            const rings = Math.min(p.months.length, MAX_RINGS);
+          {leaving.map((p) => drawPlace(p, true))}
+          {drawn.map((p) => drawPlace(p, false))}
+          {beacons.map((b) => {
+            if (b.lat === null || b.lon === null) return null;
+            const at = m.project([b.lon, b.lat]);
             return (
-              <g
-                key={p.key}
-                className="pointer-events-auto cursor-pointer"
-                onMouseEnter={() => setHover(p)}
-                onMouseLeave={() => setHover((h) => (h?.key === p.key ? null : h))}
-              >
-                {Array.from({ length: rings }, (_, i) => (
-                  <circle
-                    key={i}
-                    cx={at.x}
-                    cy={at.y}
-                    r={r + 2 + i * 2.5}
-                    fill="none"
-                    stroke={colour}
-                    strokeOpacity={0.55 - (0.35 * i) / MAX_RINGS}
-                    strokeWidth={1}
-                  />
-                ))}
-                <circle
-                  cx={at.x}
-                  cy={at.y}
-                  r={r}
-                  fill={colour}
-                  fillOpacity={0.35 + 0.45 * fresh}
-                  stroke={colour}
-                  strokeWidth={1.5}
-                />
-              </g>
+              <circle
+                key={`beacon-${b.id}`}
+                className="pf-beacon"
+                cx={at.x}
+                cy={at.y}
+                r={9}
+                fill="none"
+                stroke={look.dark ? "#fbbf24" : "#d97706"}
+                strokeWidth={2.5}
+              />
             );
           })}
         </svg>
@@ -188,6 +235,11 @@ export function PlacesMap({
             Last on {hover.lastDate}
             {hover.city ? `, ${hover.city}` : ""}
           </div>
+          {hover.approx && (
+            <div className="text-amber-700 dark:text-amber-300">
+              Approximate position (postal code or city)
+            </div>
+          )}
         </div>
       )}
     </div>
