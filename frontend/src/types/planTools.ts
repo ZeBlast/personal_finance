@@ -60,6 +60,22 @@ export interface YearAhead {
   months: YearMonth[];
 }
 
+export interface OutlookInputs {
+  currency: string;
+  today: string;
+  cashMinor: number;
+  investmentsMinor: number;
+  otherAssetsMinor: number;
+  debtMinor: number;
+  netWorthMinor: number;
+  monthlyIncomeMinor: number;
+  monthlySpendingMinor: number;
+  monthsAveraged: number;
+  debtBalances: number[];
+  debtFreeMonths: number | null;
+  goals: Array<{ name: string; targetDate: string | null; remainingMinor: number }>;
+}
+
 export type PlanKind = "income" | "bill" | "cap" | "usual" | "goal" | "debt";
 
 export interface PlanLine {

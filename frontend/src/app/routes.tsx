@@ -41,6 +41,7 @@ const PlanningPage = lazyPage(() => import("../pages/PlanningPage").then((m) => 
 const CardBillsPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.CardBillsPage));
 const MonthPlanPage = lazyPage(() => import("../pages/MonthPlanPage").then((m) => m.MonthPlanPage));
 const YearAheadPage = lazyPage(() => import("../pages/YearAheadPage").then((m) => m.YearAheadPage));
+const OutlookPage = lazyPage(() => import("../pages/OutlookPage").then((m) => m.OutlookPage));
 const PaychecksPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.PaychecksPage));
 const DebtPage = lazyPage(() => import("../pages/DebtPage").then((m) => m.DebtPage));
 const GoalsPage = lazyPage(() => import("../pages/GoalsPage").then((m) => m.GoalsPage));
@@ -106,6 +107,7 @@ export const areas: AppArea[] = [
       { path: "/planning/budgets", label: "Spending caps", Page: BudgetsPage },
       { path: "/planning/goals", label: "Goals", Page: GoalsPage },
       { path: "/planning/debt", label: "Debt payoff", Page: DebtPage },
+      { path: "/planning/outlook", label: "Long-range", Page: OutlookPage },
     ],
   },
   {
