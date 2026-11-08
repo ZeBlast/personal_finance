@@ -37,7 +37,7 @@ describe("tidying what is looked up", () => {
     expect(cityFromDescription("PAYMENT THANK YOU XX")).toEqual([]);
   });
 
-  it("tries the full address, the street without its unit, the shop, then the postcode and city", () => {
+  it("looks up a purchase with a street address only by that address", () => {
     const steps = lookupSteps({
       merchant: "Corner Cafe",
       address: "100 Main St Ste 2",
@@ -47,22 +47,29 @@ describe("tidying what is looked up", () => {
       country: "US",
       description: null,
     });
-    expect(steps.map((s) => s.precision)).toEqual([
-      "address",
-      "address",
-      "shop",
-      "postcode",
-      "city",
-    ]);
+    expect(steps.map((s) => s.precision)).toEqual(["address", "address"]);
     expect(steps[0]!.params).toMatchObject({ street: "100 Main St Ste 2", city: "Springfield" });
     expect(steps[1]!.params).toMatchObject({ street: "100 Main St" });
-    expect(steps[2]!.params).toMatchObject({
+  });
+
+  it("without a street, tries the shop, then the postcode and city", () => {
+    const steps = lookupSteps({
+      merchant: "Corner Cafe",
+      address: null,
+      city: "Springfield",
+      region: "IL",
+      postalCode: "62701",
+      country: "US",
+      description: null,
+    });
+    expect(steps.map((s) => s.precision)).toEqual(["shop", "postcode", "city"]);
+    expect(steps[0]!.params).toMatchObject({
       q: "Corner Cafe, Springfield, IL",
       countrycodes: "us",
     });
-    expect(steps[3]!.params).toEqual({ postalcode: "62701", country: "US" });
-    expect(steps[4]!.params).toEqual({ city: "Springfield", state: "IL", country: "US" });
-    expect(new Set(steps.map((s) => s.key)).size).toBe(5);
+    expect(steps[1]!.params).toEqual({ postalcode: "62701", country: "US" });
+    expect(steps[2]!.params).toEqual({ city: "Springfield", state: "IL", country: "US" });
+    expect(new Set(steps.map((s) => s.key)).size).toBe(3);
   });
 });
 
@@ -206,6 +213,25 @@ describe("the geocoder", () => {
     await g.start();
     await g.idle();
     expect(fake.calls).toHaveLength(2);
+    expect(g.status()).toMatchObject({ pending: 0, unplaced: 0 });
+  });
+
+  it("leaves a purchase with an address off the map when the address is not found", async () => {
+    const t = await withPurchases([
+      { merchant: "Dentist", address: "100 Nowhere Rd Ste 9", ...springfield },
+    ]);
+    // The shop and postcode would be found, but are never asked.
+    const fake = fakeNominatim({
+      "q:Dentist, Springfield, IL": [39.7, -89.6],
+      "postal:62701": [39.79, -89.65],
+    });
+    const { g } = geocoderFor(t, fake.fetchImpl);
+    await g.start();
+    await g.idle();
+    expect(
+      fake.calls.map((c) => c.params["street"] ?? c.params["q"] ?? c.params["postalcode"]),
+    ).toEqual(["100 Nowhere Rd Ste 9", "100 Nowhere Rd"]);
+    expect(place(t, "Dentist")).toMatchObject({ lat: null, lon: null });
     expect(g.status()).toMatchObject({ pending: 0, unplaced: 0 });
   });
 

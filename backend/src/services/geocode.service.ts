@@ -12,7 +12,9 @@ import { getSettings, updateSettings } from "./settings.service.js";
  *
  * In order, stopping at the first that gives a position:
  *   1. a position already known for the same store or the same street address (nothing is sent),
- *   2. the full street address,             3. the street without its suite or unit,
+ *   then, for a purchase with a street address, only:
+ *   2. the full street address,             3. the street without its suite or unit;
+ *   or, for one without:
  *   4. the shop's name with its city,       5. the postal code (approximate),
  *   6. the city and state (approximate), read from the bank's wording when no city was sent.
  *
@@ -119,10 +121,13 @@ export function lookupSteps(t: Target): Step[] {
     if (!steps.some((s) => s.key === key)) steps.push({ key, params, precision });
   };
   const place = { city, state: region, postalcode: postal, country };
+  // A purchase with a street address is placed by that address or not at all: never by its
+  // shop's name or its postal code or city, which could put it at another branch or nearby.
   if (street) {
     add({ street, ...place }, "address");
     const bare = stripUnit(street);
     if (bare !== "" && bare !== street) add({ street: bare, ...place }, "address");
+    return steps;
   }
   // Without a city from the bank, the one at the end of its wording (US only).
   const fromWording = city === null && t.description ? cityFromDescription(t.description) : [];
