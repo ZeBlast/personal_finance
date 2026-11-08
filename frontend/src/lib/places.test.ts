@@ -21,6 +21,8 @@ const buy = (over: Partial<PlacePurchase>): PlacePurchase => ({
   category: null,
   lat: 40,
   lon: -89,
+  approx: false,
+  online: false,
   city: "Springfield",
   ...over,
 });

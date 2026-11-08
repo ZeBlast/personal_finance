@@ -11,6 +11,10 @@ export interface PlacePurchase {
   category: string | null;
   lat: number | null;
   lon: number | null;
+  /** Only the postal code's or the city's position, from an address lookup. */
+  approx: boolean;
+  /** Paid online rather than in a shop. */
+  online: boolean;
   city: string | null;
 }
 
@@ -23,9 +27,14 @@ export interface GeocodeStatus {
   done: number;
   found: number;
   notFound: number;
+  /** Lookups waiting to be made. */
   pending: number;
+  /** Purchases a lookup could still place. */
+  unplaced: number;
   stopped: "cancelled" | "refused" | "failed" | "limit" | null;
   message: string | null;
+  /** When every answer can next be cleared to look up again, or null when it can be now. */
+  resetAvailableAt: string | null;
 }
 
 export interface Places {
