@@ -67,6 +67,11 @@ export const settingsSchema = z.object({
    * days, banks that need a fresh sign-in, and budgets nearly or fully used.
    */
   reminders: z.object({ bills: z.boolean(), signIn: z.boolean(), budgets: z.boolean() }).strict(),
+  /**
+   * The categories the user cannot go without (rent, groceries, utilities): what the safety net
+   * counts a month of. A parent includes its subcategories. Empty: all spending counts.
+   */
+  essentialCategoryIds: z.array(z.number().int().positive()).max(500),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -94,6 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
   welcomeDismissed: false,
   dashboardViewsAdded: false,
   reminders: { bills: false, signIn: false, budgets: false },
+  essentialCategoryIds: [],
 };
 
 export function getSettings(db: AppDb): Settings {

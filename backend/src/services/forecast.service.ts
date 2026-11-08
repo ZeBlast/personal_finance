@@ -133,7 +133,7 @@ function lastDayOf(month: string): string {
  * subscription marked cancelled (from its day), or one marked cancelled in the subscription review
  * (from when it was marked).
  */
-function cancelledSeries(db: AppDb): Map<string, string> {
+export function cancelledSeries(db: AppDb): Map<string, string> {
   const stops = new Map<string, string>();
   const reviewed = db
     .select({ key: subscriptionReviews.key, on: subscriptionReviews.updatedAt })
