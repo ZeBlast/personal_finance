@@ -82,6 +82,12 @@ export function planToolsRoutes(db: AppDb, geocoder: Geocoder): Router {
     res.status(202).json(geocoder.status());
   });
 
+  /** Forgets every saved answer so all addresses are looked up again (at most once a week). */
+  router.post("/geocode/reset", (_req, res) => {
+    geocoder.reset();
+    res.json(geocoder.status());
+  });
+
   /** Stops the lookups after the one in flight. */
   router.post("/geocode/stop", (_req, res) => {
     geocoder.stop();

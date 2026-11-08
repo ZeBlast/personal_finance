@@ -43,6 +43,10 @@ export interface Settings {
   geocodeServer: string;
   /** This copy's random tag, sent beside the app's name with address lookups (null until the first). */
   geocodeInstallId: string | null;
+  /** When saved address answers were last all cleared. */
+  geocodeResetAt: string | null;
+  /** The Places map's colours. */
+  mapTheme: "auto" | "light" | "dark";
 }
 
 export interface PlaidStatus {

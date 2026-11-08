@@ -99,6 +99,10 @@ export const settingsSchema = z.object({
     .string()
     .regex(/^[0-9a-f]{8}$/)
     .nullable(),
+  /** When every saved address answer was last cleared to be asked again (at most once a week). */
+  geocodeResetAt: z.string().nullable(),
+  /** The Places map's colours: following the app's light or dark look, or always one. */
+  mapTheme: z.enum(["auto", "light", "dark"]),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -131,6 +135,8 @@ export const DEFAULT_SETTINGS: Settings = {
   geocodeEnabled: false,
   geocodeServer: "https://nominatim.openstreetmap.org",
   geocodeInstallId: null,
+  geocodeResetAt: null,
+  mapTheme: "auto",
 };
 
 export function getSettings(db: AppDb): Settings {
