@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
-import type { AffordAnswer, SafetyNet } from "../types/planTools";
-import { affordSentence, runwayText } from "./planTools";
+import type { AffordAnswer, MonthPlan, SafetyNet } from "../types/planTools";
+import { affordSentence, leftLine, runwayText } from "./planTools";
 import { formatDay } from "./time";
+
+describe("leftLine", () => {
+  const money = (n: number) => `$${n / 100}`;
+  const plan = (leftMinor: number): MonthPlan => ({
+    currency: "USD",
+    month: "2026-10",
+    today: "2026-10-09",
+    lines: [{ kind: "income", label: "Pay", amountMinor: 100 }],
+    totals: { income: 100, bill: 0, cap: 0, usual: 0, goal: 0, debt: 0 },
+    leftMinor,
+    actual: null,
+  });
+  it("says every dollar has a job at zero", () => {
+    expect(leftLine(plan(0), money)).toEqual({ text: "Every dollar has a job.", tone: "good" });
+  });
+  it("says how much is not yet planned", () => {
+    expect(leftLine(plan(12_000), money)).toEqual({ text: "$120 not yet planned.", tone: "good" });
+  });
+  it("says how short the plan is", () => {
+    expect(leftLine(plan(-5_000), money)).toEqual({
+      text: "$50 short: the plan asks for more than comes in.",
+      tone: "short",
+    });
+  });
+  it("says so when there is nothing to plan yet", () => {
+    expect(leftLine({ ...plan(0), lines: [] }, money)).toEqual({
+      text: "Nothing expected this month yet.",
+      tone: "good",
+    });
+  });
+});
 
 describe("affordSentence", () => {
   const money = (n: number) => `$${n / 100}`;

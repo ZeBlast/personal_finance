@@ -27,3 +27,22 @@ export interface AffordAnswer {
   earliest: { date: string; lowest: Day } | null;
   plans: Array<{ months: 3 | 6 | 12; perMonthMinor: number; by: string }>;
 }
+
+export type PlanKind = "income" | "bill" | "cap" | "usual" | "goal" | "debt";
+
+export interface PlanLine {
+  kind: PlanKind;
+  label: string;
+  amountMinor: number;
+  note?: string;
+}
+
+export interface MonthPlan {
+  currency: string;
+  month: string;
+  today: string;
+  lines: PlanLine[];
+  totals: Record<PlanKind, number>;
+  leftMinor: number;
+  actual: { incomeMinor: number; spendingMinor: number; through: string } | null;
+}

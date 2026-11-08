@@ -1,8 +1,24 @@
-import type { AffordAnswer, SafetyNet } from "../types/planTools";
+import type { AffordAnswer, MonthPlan, SafetyNet } from "../types/planTools";
 import { formatMinor } from "./money";
 import { formatDay } from "./time";
 
 const DAY_MS = 86_400_000;
+
+/** What is left of a month's plan, in words. Pure. */
+export function leftLine(
+  p: MonthPlan,
+  money: (n: number) => string,
+): { text: string; tone: "good" | "short" } {
+  if (p.lines.length === 0) return { text: "Nothing expected this month yet.", tone: "good" };
+  if (p.leftMinor < 0) {
+    return {
+      text: `${money(-p.leftMinor)} short: the plan asks for more than comes in.`,
+      tone: "short",
+    };
+  }
+  if (p.leftMinor === 0) return { text: "Every dollar has a job.", tone: "good" };
+  return { text: `${money(p.leftMinor)} not yet planned.`, tone: "good" };
+}
 
 /** Whether a purchase fits, in words: a headline answer and the figure behind it. Pure. */
 export function affordSentence(
