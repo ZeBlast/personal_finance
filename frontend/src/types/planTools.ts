@@ -11,3 +11,19 @@ export interface SafetyNet {
   months: number | null;
   essentials: Array<{ id: number; name: string; monthlyMinor: number }>;
 }
+
+type Day = { date: string; balanceMinor: number };
+
+export interface AffordAnswer {
+  currency: string;
+  today: string;
+  amountMinor: number;
+  bufferMinor: number;
+  reservedMinor: number;
+  floorMinor: number;
+  horizonEnd: string;
+  alreadyShort: boolean;
+  asked: { date: string; ok: boolean; lowest: Day; marginMinor: number } | null;
+  earliest: { date: string; lowest: Day } | null;
+  plans: Array<{ months: 3 | 6 | 12; perMonthMinor: number; by: string }>;
+}

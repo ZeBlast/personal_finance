@@ -1,6 +1,68 @@
 import { describe, expect, it } from "vitest";
-import type { SafetyNet } from "../types/planTools";
-import { runwayText } from "./planTools";
+import type { AffordAnswer, SafetyNet } from "../types/planTools";
+import { affordSentence, runwayText } from "./planTools";
+import { formatDay } from "./time";
+
+describe("affordSentence", () => {
+  const money = (n: number) => `$${n / 100}`;
+  const base: AffordAnswer = {
+    currency: "USD",
+    today: "2026-10-09",
+    amountMinor: 40_000,
+    bufferMinor: 0,
+    reservedMinor: 0,
+    floorMinor: 0,
+    horizonEnd: "2027-01-07",
+    alreadyShort: false,
+    asked: null,
+    earliest: null,
+    plans: [],
+  };
+  const low = { date: "2026-10-12", balanceMinor: 5_000 };
+
+  it("says yes for the day asked, with the low point and the room left", () => {
+    const s = affordSentence(
+      {
+        ...base,
+        asked: { date: "2026-10-10", ok: true, lowest: low, marginMinor: 5_000 },
+        earliest: { date: "2026-10-09", lowest: low },
+      },
+      money,
+    );
+    expect(s.ok).toBe(true);
+    expect(s.headline).toBe(`Yes, on ${formatDay("2026-10-10")}.`);
+    expect(s.detail).toBe(
+      `Your cash is lowest on ${formatDay("2026-10-12")} at $50, $50 above what you keep.`,
+    );
+  });
+
+  it("says when instead, when the day asked does not work", () => {
+    const s = affordSentence(
+      {
+        ...base,
+        asked: { date: "2026-10-10", ok: false, lowest: low, marginMinor: -100 },
+        earliest: { date: "2026-10-20", lowest: low },
+      },
+      money,
+    );
+    expect(s.ok).toBe(false);
+    expect(s.headline).toBe(
+      `Not on ${formatDay("2026-10-10")}. The earliest is ${formatDay("2026-10-20")}.`,
+    );
+  });
+
+  it("says today when no day was asked and today works", () => {
+    const s = affordSentence({ ...base, earliest: { date: "2026-10-09", lowest: low } }, money);
+    expect(s).toMatchObject({ ok: true, headline: "Yes, today." });
+  });
+
+  it("says not within the forecast, and warns when it already dips", () => {
+    const s = affordSentence({ ...base, alreadyShort: true }, money);
+    expect(s.ok).toBe(false);
+    expect(s.headline).toBe("Not in the next 90 days.");
+    expect(s.detail).toMatch(/already dips below/);
+  });
+});
 
 const net = (over: Partial<SafetyNet>): SafetyNet => ({
   currency: "USD",

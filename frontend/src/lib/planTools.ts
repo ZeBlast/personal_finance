@@ -1,5 +1,51 @@
-import type { SafetyNet } from "../types/planTools";
+import type { AffordAnswer, SafetyNet } from "../types/planTools";
 import { formatMinor } from "./money";
+import { formatDay } from "./time";
+
+const DAY_MS = 86_400_000;
+
+/** Whether a purchase fits, in words: a headline answer and the figure behind it. Pure. */
+export function affordSentence(
+  a: AffordAnswer,
+  money: (n: number) => string,
+): { headline: string; detail: string; ok: boolean } {
+  const lowLine = (low: { date: string; balanceMinor: number }) =>
+    `Your cash is lowest on ${formatDay(low.date)} at ${money(low.balanceMinor)}, ${money(
+      low.balanceMinor - a.floorMinor,
+    )} above what you keep.`;
+  let out: { headline: string; detail: string; ok: boolean };
+  if (a.asked?.ok) {
+    out = {
+      ok: true,
+      headline: `Yes, on ${formatDay(a.asked.date)}.`,
+      detail: lowLine(a.asked.lowest),
+    };
+  } else if (a.asked && a.earliest) {
+    out = {
+      ok: false,
+      headline: `Not on ${formatDay(a.asked.date)}. The earliest is ${formatDay(a.earliest.date)}.`,
+      detail: lowLine(a.earliest.lowest),
+    };
+  } else if (!a.asked && a.earliest) {
+    out = {
+      ok: true,
+      headline:
+        a.earliest.date === a.today ? "Yes, today." : `Yes, from ${formatDay(a.earliest.date)}.`,
+      detail: lowLine(a.earliest.lowest),
+    };
+  } else {
+    const days = Math.round((Date.parse(a.horizonEnd) - Date.parse(a.today)) / DAY_MS);
+    out = {
+      ok: false,
+      headline: `Not in the next ${days} days.`,
+      detail: "Saving up for it gets you there:",
+    };
+  }
+  if (a.alreadyShort) {
+    out.detail = `${out.detail} Your forecast already dips below your goals and buffer.`;
+  }
+  return out;
+}
 
 /** Words for the planning tools' figures. Pure. */
 
