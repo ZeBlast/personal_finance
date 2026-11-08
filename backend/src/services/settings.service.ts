@@ -72,6 +72,33 @@ export const settingsSchema = z.object({
    * counts a month of. A parent includes its subcategories. Empty: all spending counts.
    */
   essentialCategoryIds: z.array(z.number().int().positive()).max(500),
+  /**
+   * Load map images from OpenFreeMap on the Places page. Off by default: the map host would see
+   * which areas are viewed (never the transactions), and the app otherwise contacts no one.
+   */
+  mapTilesOnline: z.boolean(),
+  /**
+   * Look up street addresses that came without coordinates, with Nominatim (OpenStreetMap's
+   * geocoder), when the user starts it. Off by default. Only the shop's address is sent.
+   */
+  geocodeEnabled: z.boolean(),
+  /**
+   * The Nominatim server to ask. A setting, so the service can be switched (the usage policy asks
+   * apps to be able to) without a new version.
+   */
+  geocodeServer: z
+    .string()
+    .url()
+    .max(200)
+    .refine((u) => /^https:\/\//.test(u), "Use an https:// address."),
+  /**
+   * A random tag for this copy of the app, made once, sent beside the app's name to the address
+   * lookup server so it can tell copies apart. Nothing personal; null until the first lookup.
+   */
+  geocodeInstallId: z
+    .string()
+    .regex(/^[0-9a-f]{8}$/)
+    .nullable(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -100,6 +127,10 @@ export const DEFAULT_SETTINGS: Settings = {
   dashboardViewsAdded: false,
   reminders: { bills: false, signIn: false, budgets: false },
   essentialCategoryIds: [],
+  mapTilesOnline: false,
+  geocodeEnabled: false,
+  geocodeServer: "https://nominatim.openstreetmap.org",
+  geocodeInstallId: null,
 };
 
 export function getSettings(db: AppDb): Settings {

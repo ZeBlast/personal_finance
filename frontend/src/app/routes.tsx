@@ -42,6 +42,7 @@ const CardBillsPage = lazyPage(() => import("../pages/PlanningPage").then((m) =>
 const MonthPlanPage = lazyPage(() => import("../pages/MonthPlanPage").then((m) => m.MonthPlanPage));
 const YearAheadPage = lazyPage(() => import("../pages/YearAheadPage").then((m) => m.YearAheadPage));
 const OutlookPage = lazyPage(() => import("../pages/OutlookPage").then((m) => m.OutlookPage));
+const PlacesPage = lazyPage(() => import("../pages/PlacesPage").then((m) => m.PlacesPage));
 const PaychecksPage = lazyPage(() => import("../pages/PlanningPage").then((m) => m.PaychecksPage));
 const DebtPage = lazyPage(() => import("../pages/DebtPage").then((m) => m.DebtPage));
 const GoalsPage = lazyPage(() => import("../pages/GoalsPage").then((m) => m.GoalsPage));
@@ -128,6 +129,7 @@ export const areas: AppArea[] = [
       { path: "/reports/cash-flow", label: "Cash flow", Page: CashFlowPage },
       { path: "/reports/spending", label: "Spending", Page: InsightsPage },
       { path: "/reports/patterns", label: "Patterns", Page: PatternsPage },
+      { path: "/reports/places", label: "Places & rhythm", Page: PlacesPage },
       { path: "/reports/net-worth", label: "Net worth", Page: AnalyticsPage },
       { path: "/reports/network", label: "Network", Page: NetworkPage },
     ],

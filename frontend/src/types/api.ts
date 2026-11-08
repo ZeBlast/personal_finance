@@ -35,6 +35,14 @@ export interface Settings {
   reminders: { bills: boolean; signIn: boolean; budgets: boolean };
   /** Categories the safety net counts a month of (a parent includes its subcategories). */
   essentialCategoryIds: number[];
+  /** Load map images from OpenFreeMap on the Places page (off: dots on a plain background). */
+  mapTilesOnline: boolean;
+  /** Look up street addresses without coordinates with Nominatim, when started. */
+  geocodeEnabled: boolean;
+  /** The Nominatim server asked. */
+  geocodeServer: string;
+  /** This copy's random tag, sent beside the app's name with address lookups (null until the first). */
+  geocodeInstallId: string | null;
 }
 
 export interface PlaidStatus {

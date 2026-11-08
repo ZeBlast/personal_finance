@@ -5,6 +5,8 @@ import { affordCheck } from "../services/afford.service.js";
 import { MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthPlan } from "../services/month-plan.service.js";
 import { outlookInputs } from "../services/outlook.service.js";
+import { placesData } from "../services/places.service.js";
+import type { Geocoder } from "../services/geocode.service.js";
 import { safetyNet } from "../services/safety-net.service.js";
 import { yearAhead } from "../services/year-ahead.service.js";
 
@@ -14,7 +16,7 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
  * The planning tools that read across the others: the safety net, can I afford it, the month
  * plan, the year ahead and the long-range outlook. Each only reads; nothing here changes data.
  */
-export function planToolsRoutes(db: AppDb): Router {
+export function planToolsRoutes(db: AppDb, geocoder: Geocoder): Router {
   const router = Router();
 
   /** How many months the cash would cover essential spending. */
@@ -61,6 +63,29 @@ export function planToolsRoutes(db: AppDb): Router {
   router.get("/outlook", (req, res) => {
     const q = z.object({ today: day.optional() }).parse(req.query);
     res.json(outlookInputs(db, q));
+  });
+
+  /** Purchases with where and when they happened, for the Places & rhythm page. */
+  router.get("/places", (req, res) => {
+    const q = z.object({ from: day, to: day }).parse(req.query);
+    res.json(placesData(db, q));
+  });
+
+  /** Address lookups for the map: how far along, and what is left. */
+  router.get("/geocode/status", (_req, res) => {
+    res.json(geocoder.status());
+  });
+
+  /** Starts looking up the addresses left (one every two seconds), when lookups are turned on. */
+  router.post("/geocode/start", async (_req, res) => {
+    await geocoder.start();
+    res.status(202).json(geocoder.status());
+  });
+
+  /** Stops the lookups after the one in flight. */
+  router.post("/geocode/stop", (_req, res) => {
+    geocoder.stop();
+    res.json(geocoder.status());
   });
 
   return router;

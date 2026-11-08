@@ -1202,3 +1202,20 @@ export const forecastScenarios = sqliteTable("forecast_scenarios", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+/**
+ * Street addresses already looked up with the geocoder (Nominatim), so the same address is never
+ * asked again: its usage policy requires results to be cached. A lookup that found nothing is kept
+ * too (`lat`/`lon` null), for the same reason.
+ */
+export const geocodeCache = sqliteTable("geocode_cache", {
+  /** The address as looked up, normalized (see addressKey). */
+  addressKey: text("address_key").primaryKey(),
+  lat: real("lat"),
+  lon: real("lon"),
+  /** The geocoder's own name for what it matched, for checking. */
+  matched: text("matched"),
+  /** The server asked (so a switch of server is visible). */
+  server: text("server").notNull(),
+  lookedUpAt: text("looked_up_at").notNull(),
+});

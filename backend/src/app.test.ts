@@ -148,6 +148,10 @@ describe("settings", () => {
       dashboardViewsAdded: false,
       reminders: { bills: false, signIn: false, budgets: false },
       essentialCategoryIds: [],
+      mapTilesOnline: false,
+      geocodeEnabled: false,
+      geocodeServer: "https://nominatim.openstreetmap.org",
+      geocodeInstallId: null,
     });
   });
 

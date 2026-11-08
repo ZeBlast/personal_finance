@@ -18,6 +18,7 @@ import { calendarRoutes } from "./routes/calendar.routes.js";
 import { sandboxRoutes } from "./routes/sandbox.routes.js";
 import { planningRoutes } from "./routes/planning.routes.js";
 import { planToolsRoutes } from "./routes/plan-tools.routes.js";
+import { createGeocoder, type Geocoder } from "./services/geocode.service.js";
 import { trackedSubscriptionsRoutes } from "./routes/tracked-subscriptions.routes.js";
 import { cashbackRoutes } from "./routes/cashback.routes.js";
 import { tspRoutes } from "./routes/tsp.routes.js";
@@ -56,6 +57,8 @@ export interface AppOptions {
   cardPriceClient?: CardPriceClientOptions | undefined;
   /** Development only: also accept requests from the Vite dev server's origin. */
   allowDevOrigin?: boolean | undefined;
+  /** Looks up street addresses for the Places map (tests pass one with a fake fetch). */
+  geocoder?: Geocoder | undefined;
 }
 
 export function createApp({
@@ -72,6 +75,7 @@ export function createApp({
   dataDir,
   migrationsDir,
   cardPriceClient,
+  geocoder = createGeocoder(db, { version }),
 }: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -109,7 +113,7 @@ export function createApp({
   app.use("/api", calendarRoutes(db));
   app.use("/api", cashbackRoutes(db));
   app.use("/api", planningRoutes(db));
-  app.use("/api", planToolsRoutes(db));
+  app.use("/api", planToolsRoutes(db, geocoder));
   app.use("/api", trackedSubscriptionsRoutes(db));
   app.use("/api", sandboxRoutes(db));
   app.use("/api", tspRoutes(db));
