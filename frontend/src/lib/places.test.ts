@@ -1,15 +1,73 @@
 import { describe, expect, it } from "vitest";
 import type { PlacePurchase } from "../types/places";
 import {
+  beaconsAt,
   cellKey,
+  DARK_STYLE,
   filterPurchases,
   groupPlaces,
   habits,
+  LIGHT_STYLE,
+  mapStyle,
   paceText,
   recency,
   rhythm,
   weekdayOf,
 } from "./places";
+
+describe("mapStyle", () => {
+  it("follows the app unless a theme is chosen", () => {
+    expect(mapStyle("auto", true, false)).toEqual({ online: true, url: LIGHT_STYLE, dark: false });
+    expect(mapStyle("auto", true, true)).toEqual({ online: true, url: DARK_STYLE, dark: true });
+    expect(mapStyle("dark", true, false)).toEqual({ online: true, url: DARK_STYLE, dark: true });
+    expect(mapStyle("light", true, true)).toEqual({ online: true, url: LIGHT_STYLE, dark: false });
+  });
+  it("draws a plain background, light or dark, without map images", () => {
+    expect(mapStyle("dark", false, false)).toEqual({ online: false, url: null, dark: true });
+    expect(mapStyle("auto", false, false)).toEqual({ online: false, url: null, dark: false });
+  });
+});
+
+describe("after review of the map's second version", () => {
+  const p = (over: Partial<PlacePurchase>): PlacePurchase => ({
+    id: Math.floor(Math.random() * 1e9),
+    date: "2026-10-05",
+    datetime: null,
+    merchant: "Cafe",
+    amountMinor: 500,
+    category: null,
+    lat: 40,
+    lon: -89,
+    approx: false,
+    online: false,
+    city: null,
+    ...over,
+  });
+
+  it("marks a place approximate only when every visit's position is", () => {
+    expect(groupPlaces([p({ approx: true }), p({ approx: true })])[0]!.approx).toBe(true);
+    expect(groupPlaces([p({ approx: true }), p({ approx: false })])[0]!.approx).toBe(false);
+  });
+
+  it("leaves online purchases out unless they are asked for", () => {
+    const shop = p({});
+    const web = p({ online: true });
+    expect(filterPurchases([shop, web], { online: false }).map((x) => x.id)).toEqual([shop.id]);
+    expect(filterPurchases([shop, web], { online: true })).toHaveLength(2);
+    expect(filterPurchases([shop, web], {})).toHaveLength(2);
+  });
+
+  it("pings the purchases of the latest days of a replay, where they happened", () => {
+    const old = p({ date: "2026-10-01" });
+    const fresh = p({ date: "2026-10-06" });
+    const nowhere = p({ date: "2026-10-07", lat: null, lon: null });
+    expect(beaconsAt([old, fresh, nowhere], "2026-10-07", 7).map((b) => b.id)).toEqual([
+      old.id,
+      fresh.id,
+    ]);
+    expect(beaconsAt([old, fresh, nowhere], "2026-10-07", 3).map((b) => b.id)).toEqual([fresh.id]);
+  });
+});
 
 let nextId = 1;
 const buy = (over: Partial<PlacePurchase>): PlacePurchase => ({

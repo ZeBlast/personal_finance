@@ -479,3 +479,65 @@ details[open] > :not(summary) {
   margin-top: -11px;
   transform: none;
 }
+
+/* Places & rhythm replay: places pop in when first visited, fade out as the window moves past
+   them, and each purchase sends out a beacon where it happened. */
+@keyframes pf-place-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes pf-place-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+@keyframes pf-beacon {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+.pf-place-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pf-place-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.pf-place-out {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pf-place-out 450ms ease-in both;
+}
+.pf-beacon {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pf-beacon 1.4s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-place-in,
+  .pf-place-out {
+    animation: none;
+  }
+  .pf-place-out,
+  .pf-beacon {
+    display: none;
+  }
+}

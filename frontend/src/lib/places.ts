@@ -18,6 +18,8 @@ export interface Place {
   months: string[];
   firstDate: string;
   lastDate: string;
+  /** Every visit's position is only a postal code's or city's (from an address lookup). */
+  approx: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -40,8 +42,10 @@ export function groupPlaces(purchases: PlacePurchase[]): Place[] {
       months: [],
       firstDate: p.date,
       lastDate: p.date,
+      approx: true,
     };
     place.totalMinor += p.amountMinor;
+    if (!p.approx) place.approx = false;
     place.visits += 1;
     const month = p.date.slice(0, 7);
     if (!place.months.includes(month)) place.months.push(month);
@@ -171,9 +175,15 @@ export interface Bounds {
  */
 export function filterPurchases(
   purchases: PlacePurchase[],
-  f: { cells?: Set<string> | undefined; bounds?: Bounds | undefined },
+  f: {
+    cells?: Set<string> | undefined;
+    bounds?: Bounds | undefined;
+    /** false leaves out purchases paid online. */
+    online?: boolean | undefined;
+  },
 ): PlacePurchase[] {
   return purchases.filter((p) => {
+    if (f.online === false && p.online) return false;
     if (f.cells && f.cells.size > 0) {
       if (p.datetime === null) return false;
       const key = cellKey(weekdayOf(localDate(p.datetime)), localHour(p.datetime));
@@ -186,4 +196,28 @@ export function filterPurchases(
     }
     return true;
   });
+}
+
+export const LIGHT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+export const DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+
+/**
+ * The map's look: OpenFreeMap's light or dark style when map images are on, or a plain light or
+ * dark background when they are off. "auto" follows the app's (the system's) light or dark look.
+ */
+export function mapStyle(
+  theme: "auto" | "light" | "dark",
+  online: boolean,
+  systemDark: boolean,
+): { online: boolean; url: string | null; dark: boolean } {
+  const dark = theme === "dark" || (theme === "auto" && systemDark);
+  return { online, url: online ? (dark ? DARK_STYLE : LIGHT_STYLE) : null, dark };
+}
+
+/** The purchases with a position made in the `days` up to `end`: the ones a replay pings. */
+export function beaconsAt(purchases: PlacePurchase[], end: string, days: number): PlacePurchase[] {
+  const start = new Date(Date.parse(`${end}T12:00:00Z`) - days * DAY_MS).toISOString().slice(0, 10);
+  return purchases.filter(
+    (p) => p.lat !== null && p.lon !== null && p.date > start && p.date <= end,
+  );
 }
