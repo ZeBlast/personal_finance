@@ -72,6 +72,11 @@ export const settingsSchema = z.object({
    * counts a month of. A parent includes its subcategories. Empty: all spending counts.
    */
   essentialCategoryIds: z.array(z.number().int().positive()).max(500),
+  /**
+   * Load map images from OpenFreeMap on the Places page. Off by default: the map host would see
+   * which areas are viewed (never the transactions), and the app otherwise contacts no one.
+   */
+  mapTilesOnline: z.boolean(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -100,6 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dashboardViewsAdded: false,
   reminders: { bills: false, signIn: false, budgets: false },
   essentialCategoryIds: [],
+  mapTilesOnline: false,
 };
 
 export function getSettings(db: AppDb): Settings {

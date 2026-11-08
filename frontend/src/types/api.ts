@@ -35,6 +35,8 @@ export interface Settings {
   reminders: { bills: boolean; signIn: boolean; budgets: boolean };
   /** Categories the safety net counts a month of (a parent includes its subcategories). */
   essentialCategoryIds: number[];
+  /** Load map images from OpenFreeMap on the Places page (off: dots on a plain background). */
+  mapTilesOnline: boolean;
 }
 
 export interface PlaidStatus {

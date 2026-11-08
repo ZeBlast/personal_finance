@@ -242,6 +242,12 @@ function enriched(draftHash: number, date: string, asOf: string): boolean {
   return dayNumber(asOf) >= dayNumber(date) + ENRICH_AFTER_DAYS;
 }
 
+/** A point up to about 5 km from the town centre, the same for the same shop. Pure. */
+function spread(centre: number, shop: string, salt: number): number {
+  const offset = ((hash(`${shop}~${salt}`) % 1000) - 500) / 10_000;
+  return Math.round((centre + offset) * 10_000) / 10_000;
+}
+
 /** A believable sample of the extra fields Plaid can send, derived from the transaction itself. */
 function demoDetails(
   draft: Draft,
@@ -263,8 +269,9 @@ function demoDetails(
           region: "IL",
           postalCode: "62701",
           country: "US",
-          lat: 39.7817,
-          lon: -89.6501,
+          // Each shop has its own spot around town, so a map has somewhere to put it.
+          lat: spread(39.7817, merchant ?? draft.name, 0),
+          lon: spread(-89.6501, merchant ?? draft.name, 7),
           storeNumber: String(1 + (h % 400)),
         }
       : null,

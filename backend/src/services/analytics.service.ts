@@ -100,7 +100,7 @@ export function debtPaidSum(oneAccount: boolean): SQL {
     : sql`sum(case ${DEBT_KIND} when 'debt' then -t.amount_minor when 'funding' then t.amount_minor else 0 end)`;
 }
 
-const OWN_MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
+export const OWN_MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
 /**
  * The merchant a transaction's money counts under. A refund linked to a purchase counts under the
  * purchase's merchant, the way it counts on the purchase's date and in its category, so "Outdoor
@@ -252,7 +252,7 @@ export function validateRange(from: string, to: string, groupBy: Group): void {
   }
 }
 
-function whereClauses(
+export function whereClauses(
   q: Pick<
     SummaryQuery,
     | "from"
@@ -313,7 +313,7 @@ interface RawRow {
  * split one in its own category (see transactionSplits). Counts use `count(distinct t.id)` so a
  * split transaction is still one transaction.
  */
-const fromTransactions = sql`from transaction_lines t
+export const fromTransactions = sql`from transaction_lines t
   join accounts a on a.id = t.account_id
   left join plaid_items p on p.id = a.plaid_item_id
   left join categories c on c.id = t.category_id`;

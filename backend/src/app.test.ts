@@ -148,6 +148,7 @@ describe("settings", () => {
       dashboardViewsAdded: false,
       reminders: { bills: false, signIn: false, budgets: false },
       essentialCategoryIds: [],
+      mapTilesOnline: false,
     });
   });
 
