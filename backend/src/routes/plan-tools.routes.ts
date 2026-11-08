@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AppDb } from "../db/client.js";
 import { affordCheck } from "../services/afford.service.js";
 import { MAX_FORECAST_DAYS } from "../services/forecast.service.js";
+import { monthPlan } from "../services/month-plan.service.js";
 import { safetyNet } from "../services/safety-net.service.js";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -32,6 +33,20 @@ export function planToolsRoutes(db: AppDb): Router {
       })
       .parse(req.query);
     res.json(affordCheck(db, q));
+  });
+
+  /** A month's expected income next to everything it has to cover. */
+  router.get("/month-plan", (req, res) => {
+    const q = z
+      .object({
+        month: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/, "Use YYYY-MM")
+          .optional(),
+        today: day.optional(),
+      })
+      .parse(req.query);
+    res.json(monthPlan(db, q));
   });
 
   return router;
