@@ -1,3 +1,4 @@
+import type { Category } from "../types/api";
 import type {
   AffordAnswer,
   MonthPlan,
@@ -23,6 +24,16 @@ const ITEM_LABEL: Record<YearItemKind, string> = {
 /** What kind of item a year-ahead entry is, in words. Pure. */
 export function itemLabel(kind: YearItemKind): string {
   return ITEM_LABEL[kind];
+}
+
+/**
+ * The categories a saved-up fund can go in: active spending categories without a cap this month
+ * (a new cap would quietly replace one that repeats), by name. Pure.
+ */
+export function fundChoices(categories: Category[], cappedIds: Set<number>): Category[] {
+  return categories
+    .filter((c) => c.active && c.incomeTreatment === null && !cappedIds.has(c.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The months of the year ahead where more goes out than comes in. Pure. */

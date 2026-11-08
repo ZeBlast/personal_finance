@@ -3,6 +3,7 @@ import { api, errorMessage } from "../api/client";
 import { ProgressBar } from "../components/charts/ProgressBar";
 import { Modal } from "../components/common/Modal";
 import { useApi } from "../hooks/useApi";
+import { today } from "../lib/period";
 import { runwayText } from "../lib/planTools";
 import { announceDataChanged } from "../lib/syncEvents";
 import type { Category, Settings } from "../types/api";
@@ -111,7 +112,7 @@ export default defineWidget({
     { key: "target", label: "Months you aim for", type: "number", min: 1, max: 24, step: 1 },
   ],
   Component: function SafetyNetWidget({ config }) {
-    const { data, error, loading, reload } = useApi<SafetyNet>("/safety-net");
+    const { data, error, loading, reload } = useApi<SafetyNet>(`/safety-net?today=${today()}`);
     const settings = useApi<Settings>("/settings");
     const [choosing, setChoosing] = useState(false);
     const target = Number(config.target);
@@ -147,7 +148,9 @@ export default defineWidget({
             <button
               type="button"
               onClick={() => setChoosing(true)}
-              className="mt-auto self-start text-sm font-medium text-blue-700 hover:underline dark:text-blue-400"
+              // Until the saved choices load, saving would start from none and clear them.
+              disabled={!settings.data}
+              className="mt-auto self-start text-sm font-medium text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400"
             >
               {data.basis === "essential" ? "Change essentials" : "Choose essentials"}
             </button>

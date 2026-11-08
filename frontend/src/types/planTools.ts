@@ -49,6 +49,8 @@ export interface YearMonth {
   incomeMinor: number;
   billsMinor: number;
   capsMinor: number;
+  /** Usual spending in categories with no cap, less the bills already counted there. */
+  usualMinor: number;
   netMinor: number;
   short: boolean;
   items: YearItem[];
@@ -73,6 +75,10 @@ export interface OutlookInputs {
   monthsAveraged: number;
   debtBalances: number[];
   debtFreeMonths: number | null;
+  /** Debt the payoff plan leaves out (no interest rate entered): owed as it is. */
+  debtOutsidePlanMinor: number;
+  /** What the plan pays a month: card payments come out of what is left over; loan payments free up once paid. */
+  debtPayments: { cardMinor: number; loanMinor: number };
   goals: Array<{ name: string; targetDate: string | null; remainingMinor: number }>;
 }
 

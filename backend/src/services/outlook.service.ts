@@ -29,6 +29,13 @@ export interface OutlookInputs {
   debtBalances: number[];
   /** Months until the plan pays everything off, or null when the payments never catch up. */
   debtFreeMonths: number | null;
+  /** Debt the plan leaves out because its interest rate is not entered: owed as it is. */
+  debtOutsidePlanMinor: number;
+  /**
+   * What the plan pays each month. Card payments are not spending, so they come out of what is
+   * left over; loan payments are already in spending, and free up once the loans are paid.
+   */
+  debtPayments: { cardMinor: number; loanMinor: number };
   goals: Array<{ name: string; targetDate: string | null; remainingMinor: number }>;
 }
 
@@ -58,7 +65,14 @@ export function outlookInputs(
   const average = (pick: (r: (typeof active)[number]) => number): number =>
     monthsAveraged === 0 ? 0 : Math.round(active.reduce((n, r) => n + pick(r), 0) / monthsAveraged);
 
-  const plan = debtOverview(db, { extraMinor: settings.debtExtraInForecastMinor }).plan;
+  const debts = debtOverview(db, { extraMinor: settings.debtExtraInForecastMinor });
+  const plan = debts.plan;
+  const loanMinor = debts.debts
+    .filter((d) => d.aprBps !== null && d.type === "loan")
+    .reduce((n, d) => n + d.minimumMinor, 0);
+  const inPlanMinor = debts.debts
+    .filter((d) => d.aprBps !== null)
+    .reduce((n, d) => n + d.balanceMinor, 0);
 
   return {
     currency: settings.currency,
@@ -73,6 +87,11 @@ export function outlookInputs(
     monthsAveraged,
     debtBalances: plan.balances,
     debtFreeMonths: plan.months,
+    debtOutsidePlanMinor: Math.max(0, now.liabilitiesMinor - inPlanMinor),
+    debtPayments: {
+      cardMinor: inPlanMinor === 0 ? 0 : Math.max(0, plan.monthlyPaymentMinor - loanMinor),
+      loanMinor,
+    },
     goals: listGoals(db, today)
       .filter((g) => !g.reached)
       .map((g) => ({ name: g.name, targetDate: g.targetDate, remainingMinor: g.remainingMinor })),

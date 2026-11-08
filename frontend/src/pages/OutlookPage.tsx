@@ -4,6 +4,7 @@ import { Loading } from "../components/common/Loading";
 import { useApi } from "../hooks/useApi";
 import { formatMinor } from "../lib/money";
 import { defaultSaving, projectOutlook } from "../lib/outlook";
+import { today } from "../lib/period";
 import { formatDay } from "../lib/time";
 import type { OutlookInputs } from "../types/planTools";
 
@@ -20,7 +21,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** Planning > Long-range: net worth over the years, from today's figures and a few assumptions. */
 export function OutlookPage() {
-  const { data, error, loading } = useApi<OutlookInputs>("/outlook");
+  const { data, error, loading } = useApi<OutlookInputs>(`/outlook?today=${today()}`);
   const [saving, setSaving] = useState<string | null>(null);
   const [years, setYears] = useState("30");
   const [low, setLow] = useState("3");
@@ -47,12 +48,17 @@ export function OutlookPage() {
   if (data && outlook) {
     if (data.debtMinor > 0) {
       milestones.push(
-        outlook.debtFreeYear === null
-          ? { when: "Not yet", what: "Debt-free: the payments never catch up with the interest" }
-          : {
-              when: String(startYear + outlook.debtFreeYear),
-              what: "Debt-free, on the payoff plan",
-            },
+        data.debtOutsidePlanMinor > 0
+          ? {
+              when: "Not known",
+              what: `Debt-free: ${money(data.debtOutsidePlanMinor)} of debt has no interest rate yet, so the payoff plan leaves it out`,
+            }
+          : outlook.debtFreeYear === null
+            ? { when: "Not yet", what: "Debt-free: the payments never catch up with the interest" }
+            : {
+                when: String(startYear + outlook.debtFreeYear),
+                what: "Debt-free, on the payoff plan",
+              },
       );
     }
     for (const g of data.goals) {
@@ -92,7 +98,7 @@ export function OutlookPage() {
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <label className="col-span-2 text-xs text-slate-500 dark:text-slate-400">
-              Saved each month
+              Left over each month
               <input
                 className={inputClass}
                 inputMode="decimal"
@@ -186,9 +192,10 @@ export function OutlookPage() {
             </ul>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            An estimate in today&apos;s money: investments grow at a steady rate and your monthly
-            saving goes into them; cash and other assets stay as they are; debts follow your debt
-            payoff plan. Starting from {money(data.netWorthMinor)} of net worth today.
+            An estimate in today&apos;s money: investments grow at a steady rate and what is left
+            over each month goes into them, less card payments while the payoff plan runs; cash and
+            other assets stay as they are; debts follow your debt payoff plan. Starting from{" "}
+            {money(data.netWorthMinor)} of net worth today.
           </p>
         </>
       )}

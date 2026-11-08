@@ -15,6 +15,8 @@ const inputs = (over: Partial<OutlookInputs>): OutlookInputs => ({
   monthsAveraged: 0,
   debtBalances: [0],
   debtFreeMonths: 0,
+  debtOutsidePlanMinor: 0,
+  debtPayments: { cardMinor: 0, loanMinor: 0 },
   goals: [],
   ...over,
 });
@@ -73,6 +75,45 @@ describe("projectOutlook", () => {
     const p = projectOutlook(inputs({ debtFreeMonths: null }), opts);
     expect(p.workOptionalYear).toBeNull();
     expect(p.debtFreeYear).toBeNull();
+  });
+});
+
+describe("projectOutlook, after review", () => {
+  it("keeps debt the plan leaves out, and has no debt-free year while it is there", () => {
+    const p = projectOutlook(
+      inputs({ cashMinor: 50_000, debtMinor: 30_000, debtOutsidePlanMinor: 30_000 }),
+      { ...opts, years: 2 },
+    );
+    expect(p.points.map((x) => x.mid)).toEqual([20_000, 20_000, 20_000]);
+    expect(p.debtFreeYear).toBeNull();
+  });
+
+  it("saves only what card payments leave, until the cards are paid off", () => {
+    // 24,000 on cards paid 2,000 a month: gone after a year.
+    const balances = Array.from({ length: 13 }, (_, m) => 24_000 - m * 2_000);
+    const p = projectOutlook(
+      inputs({
+        debtMinor: 24_000,
+        debtBalances: balances,
+        debtFreeMonths: 12,
+        debtPayments: { cardMinor: 2_000, loanMinor: 0 },
+      }),
+      { ...opts, years: 2, savingPerMonthMinor: 5_000, rates: [0, 0, 0] },
+    );
+    // Year 1: 3,000 a month invested, debt to 0; year 2: all 5,000.
+    expect(p.points.map((x) => x.mid)).toEqual([-24_000, 36_000, 96_000]);
+  });
+
+  it("adds loan payments to saving once the loans are paid off", () => {
+    const p = projectOutlook(
+      inputs({
+        debtBalances: [0],
+        debtFreeMonths: 0,
+        debtPayments: { cardMinor: 0, loanMinor: 500 },
+      }),
+      { ...opts, savingPerMonthMinor: 1_000, rates: [0, 0, 0] },
+    );
+    expect(p.points[1]!.mid).toBe(18_000);
   });
 });
 

@@ -6,7 +6,7 @@ import { Modal } from "../components/common/Modal";
 import { useApi } from "../hooks/useApi";
 import { formatMinor } from "../lib/money";
 import { today } from "../lib/period";
-import { fundPlan, itemLabel, shortMonths } from "../lib/planTools";
+import { fundChoices, fundPlan, itemLabel, shortMonths } from "../lib/planTools";
 import { announceDataChanged } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
 import { toast } from "../lib/toast";
@@ -29,6 +29,9 @@ function SaveForDialog({
   onClose: () => void;
 }) {
   const categories = useApi<Category[]>("/categories");
+  const thisMonthCaps = useApi<{ budgets: Array<{ categoryId: number }> }>(
+    `/budgets?month=${today().slice(0, 7)}&today=${today()}`,
+  );
   const [categoryId, setCategoryId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +39,11 @@ function SaveForDialog({
   const amount = -item.amountMinor;
   const plan = fundPlan(amount, item.date, thisMonth);
   const money = (n: number) => formatMinor(n, currency);
-  const choices = (categories.data ?? [])
-    .filter((c) => c.active && c.incomeTreatment === null)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // A category with a cap already is left out: a new one would quietly replace it.
+  const choices = fundChoices(
+    categories.data ?? [],
+    new Set((thisMonthCaps.data?.budgets ?? []).map((b) => b.categoryId)),
+  );
 
   async function save(): Promise<void> {
     if (!categoryId) {
@@ -120,7 +125,7 @@ function SaveForDialog({
 
 /** Planning > Year ahead: the next twelve months, and the costs that come once a year. */
 export function YearAheadPage() {
-  const { data, error, loading } = useApi<YearAhead>("/year-ahead");
+  const { data, error, loading } = useApi<YearAhead>(`/year-ahead?today=${today()}`);
   const [saving, setSaving] = useState<YearItem | null>(null);
   const currency = data?.currency ?? "USD";
   const money = (n: number) => formatMinor(n, currency);
@@ -128,7 +133,9 @@ export function YearAheadPage() {
   const items = data?.months.flatMap((m) => m.items) ?? [];
   const biggest = Math.max(
     1,
-    ...(data?.months ?? []).map((m) => Math.max(m.incomeMinor, m.billsMinor + m.capsMinor)),
+    ...(data?.months ?? []).map((m) =>
+      Math.max(m.incomeMinor, m.billsMinor + m.capsMinor + m.usualMinor),
+    ),
   );
 
   const summary = !data
@@ -182,7 +189,9 @@ export function YearAheadPage() {
                   />
                   <div
                     className="h-1.5 rounded bg-slate-400 dark:bg-slate-500"
-                    style={{ width: `${((m.billsMinor + m.capsMinor) / biggest) * 100}%` }}
+                    style={{
+                      width: `${((m.billsMinor + m.capsMinor + m.usualMinor) / biggest) * 100}%`,
+                    }}
                   />
                 </div>
                 {m.items.length > 0 && (
@@ -205,7 +214,7 @@ export function YearAheadPage() {
             </span>
             <span>
               <span className="mr-1 inline-block h-1.5 w-3 rounded bg-slate-400" />
-              Bills and spending caps
+              Bills, caps and usual spending
             </span>
           </p>
 

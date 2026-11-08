@@ -37,7 +37,7 @@ const monthName = (month: string): string =>
 export function MonthPlanPage() {
   const thisMonth = today().slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
-  const { data, error, loading } = useApi<MonthPlan>(`/month-plan?month=${month}`);
+  const { data, error, loading } = useApi<MonthPlan>(`/month-plan?month=${month}&today=${today()}`);
   const money = (n: number) => formatMinor(n, data?.currency ?? "USD");
   const left = data ? leftLine(data, money) : null;
   const stepButton =

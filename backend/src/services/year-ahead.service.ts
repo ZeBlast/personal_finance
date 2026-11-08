@@ -6,7 +6,14 @@ import { listOccurrences } from "./calendar.service.js";
 import { listCategories } from "./category.service.js";
 import { debtOverview } from "./debt.service.js";
 import { listGoals } from "./goal.service.js";
-import { activeSeries, planDatesIn } from "./plan-dates.js";
+import {
+  activeSeries,
+  planDatesIn,
+  sameMerchant,
+  topOf,
+  usualByLeaf,
+  usualLines,
+} from "./plan-dates.js";
 import { getSettings } from "./settings.service.js";
 
 /**
@@ -39,6 +46,8 @@ export interface YearMonth {
   /** Recurring and expected payments outside capped categories. */
   billsMinor: number;
   capsMinor: number;
+  /** Usual spending in categories with no cap, less the bills already counted there. */
+  usualMinor: number;
   netMinor: number;
   short: boolean;
   items: YearItem[];
@@ -63,7 +72,10 @@ export function yearAhead(db: AppDb, options: { today?: string | undefined } = {
   const start = firstOfMonth(first);
   const end = lastOfMonth(months[MONTHS - 1]!);
 
-  const parentOf = new Map(listCategories(db, true).map((c) => [c.id, c.parentId]));
+  const categories = listCategories(db, true);
+  const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
+  const nameOf = new Map(categories.map((c) => [c.id, c.name]));
+  const byLeaf = usualByLeaf(db, settings.plaidEnvironment, first);
   const series = activeSeries(db, today);
   const occurrences = listOccurrences(db, start, end, { includeResolved: true }).filter(
     (o) => o.status !== "skipped",
@@ -81,14 +93,27 @@ export function yearAhead(db: AppDb, options: { today?: string | undefined } = {
     const items: YearItem[] = [];
     let incomeMinor = 0;
     let billsMinor = 0;
-    const count = (direction: "in" | "out", amount: number, categoryId: number | null): void => {
+    const billsByTop = new Map<number, number>();
+    const count = (
+      direction: "in" | "out",
+      amount: number,
+      categoryId: number | null,
+      monthly: number,
+    ): void => {
       if (direction === "in") incomeMinor += amount;
-      else if (!isCapped(categoryId)) billsMinor += amount;
+      else if (!isCapped(categoryId)) {
+        billsMinor += amount;
+        const top = topOf(categoryId, parentOf);
+        billsByTop.set(top, (billsByTop.get(top) ?? 0) + monthly);
+      }
     };
+    const expected = occurrences.filter((o) => o.date >= from && o.date <= to);
 
     for (const s of series) {
+      // An expected payment to the same payee this month counts instead.
+      if (expected.some((o) => sameMerchant(o.merchant, s.merchant))) continue;
       const dates = planDatesIn(s, from, to);
-      count(s.direction, s.typicalAmountMinor * dates.length, s.categoryId);
+      count(s.direction, s.typicalAmountMinor * dates.length, s.categoryId, s.perMonthMinor);
       if (s.cadence === "yearly" || s.cadence === "quarterly") {
         for (const date of dates) {
           items.push({
@@ -110,9 +135,8 @@ export function yearAhead(db: AppDb, options: { today?: string | undefined } = {
       }
     }
 
-    for (const o of occurrences) {
-      if (o.date < from || o.date > to) continue;
-      count(o.direction, o.amountMinor, o.categoryId);
+    for (const o of expected) {
+      count(o.direction, o.amountMinor, o.categoryId, o.recurring ? o.amountMinor : 0);
       if (!o.recurring) {
         items.push({
           date: o.date,
@@ -147,10 +171,26 @@ export function yearAhead(db: AppDb, options: { today?: string | undefined } = {
       });
     }
 
-    const capsMinor = caps.budgets.reduce((n, b) => n + b.amountMinor, 0);
-    const netMinor = incomeMinor - billsMinor - capsMinor;
+    // A subcategory's cap under a capped parent is inside the parent's.
+    const capsMinor = caps.budgets
+      .filter((b) => b.parentId === null || !capped.has(b.parentId))
+      .reduce((n, b) => n + b.amountMinor, 0);
+    const usualMinor = usualLines(byLeaf, parentOf, nameOf, isCapped, billsByTop).reduce(
+      (n, u) => n + u.amountMinor,
+      0,
+    );
+    const netMinor = incomeMinor - billsMinor - capsMinor - usualMinor;
     items.sort((a, b) => a.date.localeCompare(b.date));
-    return { month, incomeMinor, billsMinor, capsMinor, netMinor, short: netMinor < 0, items };
+    return {
+      month,
+      incomeMinor,
+      billsMinor,
+      capsMinor,
+      usualMinor,
+      netMinor,
+      short: netMinor < 0,
+      items,
+    };
   });
 
   return { currency: settings.currency, today, months: out };

@@ -53,6 +53,8 @@ export default defineWidget({
         bufferMinor: String(Math.round(Number(config.buffer) * 100)),
       });
       if (date) params.set("date", date);
+      // The computer's own day, so the date picker's earliest day is never "before today".
+      params.set("today", today());
       try {
         setAnswer(await api<AffordAnswer>(`/afford?${params.toString()}`));
       } catch (err) {

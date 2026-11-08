@@ -13,7 +13,14 @@ import { budgetMonth } from "./budget.service.js";
 import { listOccurrences } from "./calendar.service.js";
 import { listCategories } from "./category.service.js";
 import { listGoals } from "./goal.service.js";
-import { activeSeries, planDatesIn } from "./plan-dates.js";
+import {
+  activeSeries,
+  planDatesIn,
+  sameMerchant,
+  topOf,
+  usualByLeaf,
+  usualLines,
+} from "./plan-dates.js";
 import { getSettings } from "./settings.service.js";
 
 /**
@@ -75,21 +82,25 @@ export function monthPlan(
   const from = firstOfMonth(month);
   const to = lastOfMonth(month);
 
-  // Caps cover their category and its subcategories.
-  const caps = budgetMonth(db, month, settings.plaidEnvironment, { today, detail: true });
+  // Caps cover their category and its subcategories; a subcategory's cap under a capped parent
+  // is already inside the parent's, so only the parent counts (as on the Spending caps page).
+  const caps = budgetMonth(db, month, settings.plaidEnvironment, { today });
   const categories = listCategories(db, true);
   const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
+  const nameOf = new Map(categories.map((c) => [c.id, c.name]));
   const capped = new Set(caps.budgets.map((b) => b.categoryId));
   const isCapped = (id: number | null): boolean =>
     id !== null && (capped.has(id) || capped.has(parentOf.get(id) ?? -1));
 
   const lines: PlanLine[] = [];
-  const billsByCategory = new Map<number, number>();
+  /** A month's worth of the bills in each top-level category, to take off its usual spending. */
+  const billsByTop = new Map<number, number>();
   const addMoney = (
     direction: "in" | "out",
     label: string,
     amountMinor: number,
     categoryId: number | null,
+    monthlyMinor: number,
     note?: string,
   ): void => {
     if (amountMinor <= 0) return;
@@ -99,21 +110,14 @@ export function monthPlan(
     }
     if (isCapped(categoryId)) return;
     lines.push({ kind: "bill", label, amountMinor, ...(note ? { note } : {}) });
-    if (categoryId !== null) {
-      const top = parentOf.get(categoryId) ?? categoryId;
-      for (const id of new Set([categoryId, top])) {
-        billsByCategory.set(id, (billsByCategory.get(id) ?? 0) + amountMinor);
-      }
-    }
+    const top = topOf(categoryId, parentOf);
+    billsByTop.set(top, (billsByTop.get(top) ?? 0) + monthlyMinor);
   };
 
-  for (const s of activeSeries(db, today)) {
-    const dates = planDatesIn(s, from, to);
-    if (dates.length === 0) continue;
-    const note = dates.length > 1 ? `${dates.length} times this month` : undefined;
-    addMoney(s.direction, s.merchant, s.typicalAmountMinor * dates.length, s.categoryId, note);
-  }
   // Each expected transaction the user entered, added up over the month.
+  const occurrences = listOccurrences(db, from, to, { includeResolved: true }).filter(
+    (o) => o.status !== "skipped",
+  );
   const planned = new Map<
     number,
     {
@@ -122,32 +126,48 @@ export function monthPlan(
       amount: number;
       category: number | null;
       times: number;
+      recurring: boolean;
     }
   >();
-  for (const o of listOccurrences(db, from, to, { includeResolved: true })) {
-    if (o.status === "skipped") continue;
+  for (const o of occurrences) {
     const p = planned.get(o.plannedId) ?? {
       label: o.merchant,
       direction: o.direction,
       amount: 0,
       category: o.categoryId,
       times: 0,
+      recurring: o.recurring,
     };
     p.amount += o.amountMinor;
     p.times += 1;
     planned.set(o.plannedId, p);
   }
+
+  // A detected series counts unless the user expects a payment to the same payee this month
+  // (that one counts instead, as in the cash forecast).
+  for (const s of activeSeries(db, today)) {
+    if (occurrences.some((o) => sameMerchant(o.merchant, s.merchant))) continue;
+    const dates = planDatesIn(s, from, to);
+    if (dates.length === 0) continue;
+    const note = dates.length > 1 ? `${dates.length} times this month` : undefined;
+    const amount = s.typicalAmountMinor * dates.length;
+    addMoney(s.direction, s.merchant, amount, s.categoryId, s.perMonthMinor, note);
+  }
   for (const p of planned.values()) {
     const note = p.times > 1 ? `${p.times} times this month` : undefined;
-    addMoney(p.direction, p.label, p.amount, p.category, note);
+    // A one-off is not in the usual months, so it takes nothing off them.
+    addMoney(p.direction, p.label, p.amount, p.category, p.recurring ? p.amount : 0, note);
   }
 
   for (const b of caps.budgets) {
+    if (b.parentId !== null && capped.has(b.parentId)) continue;
     lines.push({ kind: "cap", label: b.categoryName, amountMinor: b.amountMinor });
   }
-  for (const u of caps.uncapped ?? []) {
-    const usual = u.averageMinor - (billsByCategory.get(u.categoryId) ?? 0);
-    if (usual > 0) lines.push({ kind: "usual", label: u.label, amountMinor: usual });
+  // A month not yet over goes by the months just before today.
+  const usualBase = month < thisMonth ? month : thisMonth;
+  const byLeaf = usualByLeaf(db, settings.plaidEnvironment, usualBase);
+  for (const u of usualLines(byLeaf, parentOf, nameOf, isCapped, billsByTop)) {
+    lines.push({ kind: "usual", label: u.label, amountMinor: u.amountMinor });
   }
 
   for (const g of listGoals(db, today)) {

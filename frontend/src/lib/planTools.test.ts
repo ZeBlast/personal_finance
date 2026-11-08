@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { Category } from "../types/api";
 import type { AffordAnswer, MonthPlan, SafetyNet, YearAhead } from "../types/planTools";
 import {
   affordSentence,
+  fundChoices,
   fundPlan,
   itemLabel,
   leftLine,
@@ -9,6 +11,33 @@ import {
   shortMonths,
 } from "./planTools";
 import { formatDay } from "./time";
+
+describe("fundChoices", () => {
+  it("offers active spending categories that have no cap this month, by name", () => {
+    const c = (id: number, name: string, extra: object = {}) =>
+      ({
+        id,
+        name,
+        parentId: null,
+        color: null,
+        active: true,
+        incomeTreatment: null,
+        transactionCount: 0,
+        ruleCount: 0,
+        ...extra,
+      }) as Category;
+    const choices = fundChoices(
+      [
+        c(1, "Insurance"),
+        c(2, "Car"),
+        c(3, "Old", { active: false }),
+        c(4, "Pay", { incomeTreatment: "income" }),
+      ],
+      new Set([1]),
+    );
+    expect(choices.map((x) => x.name)).toEqual(["Car"]);
+  });
+});
 
 describe("year ahead words", () => {
   it("names each kind of item", () => {
@@ -23,6 +52,7 @@ describe("year ahead words", () => {
       incomeMinor: 0,
       billsMinor: 0,
       capsMinor: 0,
+      usualMinor: 0,
       netMinor: short ? -1 : 1,
       short,
       items: [],
