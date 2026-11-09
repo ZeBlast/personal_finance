@@ -407,6 +407,13 @@
       "when": 1794154894940,
       "tag": "0057_geocode_method",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1794221241152,
+      "tag": "0058_viewer_devices",
+      "breakpoints": true
     }
   ]
 }

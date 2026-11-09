@@ -119,6 +119,8 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
   const inFlight = new Map<number, Promise<SyncRunSummary>>();
   /** When the automatic interval last tried each connection, for retry spacing (in memory only). */
   const lastIntervalAttempt = new Map<number, number>();
+  /** Told after each sync run ends (the phone viewer writes a fresh snapshot). */
+  const syncedListeners = new Set<() => void>();
   const iso = (): string => now().toISOString();
 
   function requireItem(id: number): ItemRow {
@@ -421,7 +423,16 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
   function syncItem(itemId: number, trigger: SyncTrigger): Promise<SyncRunSummary> {
     const running = inFlight.get(itemId);
     if (running) return running;
-    const promise = runSync(itemId, trigger).finally(() => inFlight.delete(itemId));
+    const promise = runSync(itemId, trigger).finally(() => {
+      inFlight.delete(itemId);
+      for (const listener of syncedListeners) {
+        try {
+          listener();
+        } catch {
+          // A listener never breaks a sync.
+        }
+      }
+    });
     inFlight.set(itemId, promise);
     return promise;
   }
@@ -510,6 +521,12 @@ export function createSyncService({ db, cipher, getGateway, now = () => new Date
     syncItem,
     syncAll,
     nextAllowedAt,
+
+    /** Calls `listener` after each sync run ends, successful or not. Returns a way to stop. */
+    onSynced(listener: () => void): () => void {
+      syncedListeners.add(listener);
+      return () => syncedListeners.delete(listener);
+    },
 
     /** Runs when the app starts. Respects the cooldown, and cleans up after an interrupted run. */
     runLaunchSync(): Promise<SyncAllResult> {

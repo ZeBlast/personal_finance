@@ -44,6 +44,10 @@ own:
 - **Updates:** **Settings > Updates > Check for updates** installs a signed new version and
   restarts. Your data is backed up before the new version first runs.
 - **Browser tab:** while the app is open, **Settings** can open the same app in your browser.
+- **Phone viewer:** **Settings > Data & backups > Phone viewer** pairs an Android phone with a QR
+  code. After each sync the app writes an encrypted, read-only copy into a folder that syncs to the
+  phone (Google Drive, say). No bank connection or Plaid key ever goes to the phone. The phone app
+  itself is not released yet.
 - **Backups and exports:** **Settings > Data & backups**.
 - **Uninstall** from Windows **Settings > Apps**. Your data folder is kept unless you delete it.
 

@@ -400,6 +400,33 @@ that its key is an ordinary file next to its database (`data/dev-encryption.key`
 folder out of any synced or shared location and delete it when you are done. The protection against
 changing the real connection is in this app's code; anyone with the token could still call Plaid directly.
 
+## Phone viewer
+
+**Data and backups > Phone viewer** pairs an Android phone as a read-only viewer (the phone app
+itself comes in a later phase). Pairing makes a random 32-byte key for that phone, keeps it encrypted
+like the Plaid tokens, and shows it **once** as a QR code. After each sync (a few seconds later, so
+several connections write once), a minute after edits settle, at launch, and on **Write now**, the
+backend asks its own API for the views the phone shows (over loopback, with the launch token, exactly
+as the window does) and writes them as one file per phone into the chosen folder, typically one that
+Google Drive for desktop syncs.
+
+The file is `pf-viewer-<phone>-<id>.snap`: a readable header (format, phone ID, time, version) and a
+gzip-compressed JSON body encrypted with AES-256-GCM, the header bound in as associated data
+(`backend/src/services/viewer.service.ts`). The body maps each API path to its response, so the phone
+can reuse the same components with a lookup in place of HTTP. It holds 13 months of transactions and
+monthly reports, a 90-day forecast, the next 60 days of expected items, and the planning, goal, debt
+and investment views. It never holds a Plaid key, access token or the recovery key. Forgetting a phone
+deletes its file and erases its key; the copy already on the phone stays there.
+
+To see what a phone would get, from a development copy that paired it:
+
+```
+npm run dev:viewer -- "G:\My Drive\Personal Finance Viewer\pf-viewer-pixel-ab12cd.snap"
+```
+
+It prints each view and its size; `--out views.json` also writes them decrypted (delete that file
+after), and `--key <key>` opens a snapshot from another install.
+
 ## Plaid and demo mode
 
 The app starts in **Demo** mode: the Connect button offers made-up banks, so everything can be tried

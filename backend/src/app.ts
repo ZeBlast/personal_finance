@@ -3,7 +3,13 @@ import path from "node:path";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import { ZodError } from "zod";
 import type { AppDb } from "./db/client.js";
-import { cors, hostCheck, requireToken, tokenBootstrap } from "./middleware/security.js";
+import {
+  cors,
+  hostCheck,
+  requireToken,
+  tokenBootstrap,
+  TOKEN_HEADER,
+} from "./middleware/security.js";
 import { createGatewayProvider, type GatewayProvider } from "./plaid/provider.js";
 import { accountsRoutes } from "./routes/accounts.routes.js";
 import { analyticsRoutes } from "./routes/analytics.routes.js";
@@ -32,6 +38,14 @@ import { collectionPricesRoutes } from "./routes/collection-prices.routes.js";
 import type { TokenCipher } from "./services/crypto.js";
 import { createPlaidService } from "./services/plaid.service.js";
 import { createSyncService, type SyncService } from "./services/sync.service.js";
+import {
+  createViewerService,
+  EDIT_SETTLE_MS,
+  SYNC_SETTLE_MS,
+  type ApiGet,
+  type ViewerService,
+} from "./services/viewer.service.js";
+import { viewerRoutes } from "./routes/viewer.routes.js";
 import { AppError } from "./utils/errors.js";
 
 export interface AppOptions {
@@ -59,6 +73,21 @@ export interface AppOptions {
   allowDevOrigin?: boolean | undefined;
   /** Looks up street addresses for the Places map (tests pass one with a fake fetch). */
   geocoder?: Geocoder | undefined;
+  /** The phone viewer. The server passes its own so it can also write after the launch sync. */
+  viewer?: ViewerService | undefined;
+  /** How the phone viewer reads the API. Defaults to this app over loopback (tests pass their own). */
+  viewerGet?: ApiGet | undefined;
+}
+
+/** Reads this app's own API over loopback, with the launch token, as the window does. */
+export function loopbackGet(port: number, token: string): ApiGet {
+  return async (p) => {
+    const res = await fetch(`http://127.0.0.1:${port}/api${p}`, {
+      headers: { [TOKEN_HEADER]: token },
+    });
+    if (!res.ok) throw new Error(`${p} answered ${res.status}`);
+    return res.json();
+  };
 }
 
 export function createApp({
@@ -76,6 +105,8 @@ export function createApp({
   migrationsDir,
   cardPriceClient,
   geocoder = createGeocoder(db, { version }),
+  viewerGet = loopbackGet(port, token),
+  viewer = createViewerService({ db, cipher, appVersion: version, get: viewerGet }),
 }: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -88,6 +119,16 @@ export function createApp({
   const plaid = createPlaidService({ db, cipher, getGateway });
 
   app.use("/api", requireToken(token));
+  // Any change made in the app reaches the phone viewer once edits settle; a sync, sooner.
+  app.use("/api", (req, res, next) => {
+    if (req.method !== "GET" && !req.path.startsWith("/viewer/")) {
+      res.on("finish", () => {
+        if (res.statusCode < 400) viewer.scheduleWrite(EDIT_SETTLE_MS);
+      });
+    }
+    next();
+  });
+  sync.onSynced(() => viewer.scheduleWrite(SYNC_SETTLE_MS));
   // File imports (TSP price history since 2003 can be a few megabytes) get a larger limit.
   const importJson = express.json({ limit: "8mb" });
   const json = express.json({ limit: "1mb" });
@@ -118,6 +159,7 @@ export function createApp({
   app.use("/api", sandboxRoutes(db));
   app.use("/api", tspRoutes(db));
   app.use("/api", taxesRoutes(db));
+  app.use("/api", viewerRoutes(viewer));
   if (dataDir) {
     app.use(
       "/api",
