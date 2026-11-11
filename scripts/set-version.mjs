@@ -12,7 +12,13 @@ if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-for (const file of ["package.json", "backend/package.json", "frontend/package.json"]) {
+// mobile/package.json also gives the Android viewer its version (mobile/android/app/build.gradle).
+for (const file of [
+  "package.json",
+  "backend/package.json",
+  "frontend/package.json",
+  "mobile/package.json",
+]) {
   const path = join(root, file);
   const json = JSON.parse(readFileSync(path, "utf8"));
   json.version = version;
@@ -29,6 +35,16 @@ const cargo = join(root, "src-tauri", "Cargo.toml");
 writeFileSync(
   cargo,
   readFileSync(cargo, "utf8").replace(/^version = "[^"]*"/m, `version = "${version}"`),
+);
+
+// The lock file's entry for this package, so it matches without running cargo.
+const lock = join(root, "src-tauri", "Cargo.lock");
+writeFileSync(
+  lock,
+  readFileSync(lock, "utf8").replace(
+    /(name = "personal-finance"\nversion = )"[^"]*"/,
+    `$1"${version}"`,
+  ),
 );
 
 console.log(`Version set to ${version}. Commit, then push the tag v${version} to build a release.`);

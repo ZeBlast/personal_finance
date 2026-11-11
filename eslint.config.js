@@ -15,6 +15,7 @@ export default tseslint.config(
       "src-tauri/resources/**",
       "drizzle/migrations/**",
       "spike/**",
+      "mobile/android/**",
     ],
   },
   js.configs.recommended,
