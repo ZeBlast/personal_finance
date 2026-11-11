@@ -25,12 +25,25 @@ export interface Place {
 const DAY_MS = 86_400_000;
 const dayMs = (date: string): number => Date.parse(`${date}T12:00:00Z`);
 
+/** Which place a purchase belongs to: its shop and spot (to about 100 m). Null when it has no position. */
+export function placeKey(p: PlacePurchase): string | null {
+  if (p.lat === null || p.lon === null) return null;
+  return `${p.merchant.trim().toLowerCase()}@${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+}
+
+/** A place's purchases, newest first. */
+export function purchasesAt(purchases: PlacePurchase[], key: string): PlacePurchase[] {
+  return purchases
+    .filter((p) => placeKey(p) === key)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
+}
+
 /** One place per shop and spot (to about 100 m), biggest spending first. */
 export function groupPlaces(purchases: PlacePurchase[]): Place[] {
   const byKey = new Map<string, Place>();
   for (const p of purchases) {
-    if (p.lat === null || p.lon === null) continue;
-    const key = `${p.merchant.trim().toLowerCase()}@${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+    const key = placeKey(p);
+    if (key === null || p.lat === null || p.lon === null) continue;
     const place = byKey.get(key) ?? {
       key,
       merchant: p.merchant,

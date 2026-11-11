@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { accounts, cardBills } from "../../drizzle/schema.js";
-import { statementPeriods, statements } from "./services/statement.service.js";
+import { combinedStatements, statementPeriods, statements } from "./services/statement.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -280,5 +280,76 @@ describe("a card's closing and due days", () => {
     t.db.run(sql.raw(migration));
     const s = (await t.call("get", `/api/accounts/${card}/statements`).expect(200)).body;
     expect({ closingDay: s.closingDay, dueDay: s.dueDay }).toEqual({ closingDay: 9, dueDay: 3 });
+  });
+});
+
+describe("every card's statements together", () => {
+  it("groups statements by the month they close in and adds them up", async () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    const make = async (name: string) =>
+      (await t.call("post", "/api/accounts/manual").send({ name, kind: "credit_card" }).expect(201))
+        .body.id as number;
+    const early = await make("Closes early");
+    const late = await make("Closes late");
+    const unset = await make("No closing day");
+    await t
+      .call("put", `/api/accounts/${early}/statement-settings`)
+      .send({ closingDay: 5, dueDay: 28 })
+      .expect(200);
+    await t
+      .call("put", `/api/accounts/${late}/statement-settings`)
+      .send({ closingDay: 25, dueDay: 20 })
+      .expect(200);
+    const food = (await t.call("post", "/api/categories").send({ name: "Food" }).expect(201)).body
+      .id as number;
+    const add = (accountId: number, date: string, merchant: string, amountMinor: number) =>
+      t
+        .call("post", "/api/transactions")
+        .send({ accountId, date, merchant, amountMinor, direction: "out", categoryId: food })
+        .expect(201);
+    // Both in statements that close in October: Sep 6 - Oct 5, and Sep 26 - Oct 25.
+    await add(early, "2026-09-20", "Grocer", 3000);
+    await add(late, "2026-10-10", "Grocer", 2000);
+    await add(late, "2026-10-12", "Bookshop", 700);
+    // Early card's November statement (Oct 6 - Nov 5).
+    await add(early, "2026-10-10", "Cafe", 400);
+    await add(unset, "2026-10-10", "Elsewhere", 9999);
+
+    const all = combinedStatements(t.db, 3, "2026-11-11");
+    expect(all.cards.map((c) => c.name)).toEqual(["Closes early", "Closes late"]);
+    expect(all.withoutClosingDay.map((c) => c.name)).toEqual(["No closing day"]);
+    // The early card's open statement closes in December; the late card's, in November.
+    expect(all.months.map((m) => m.month)).toEqual(["2026-12", "2026-11", "2026-10"]);
+    expect(all.months[0]!.cards.map((c) => c.accountId)).toEqual([early]);
+    expect(all.months[0]!.open).toBe(true);
+
+    const october = all.months[2]!;
+    expect(october).toMatchObject({ open: false, chargesMinor: 5700, count: 3 });
+    expect(october.cards).toHaveLength(2);
+    expect(october.cards.find((c) => c.accountId === late)).toMatchObject({
+      start: "2026-09-26",
+      end: "2026-10-25",
+      due: "2026-11-20",
+      chargesMinor: 2700,
+    });
+    expect(october.categories).toEqual([
+      expect.objectContaining({ name: "Food", spendingMinor: 5700 }),
+    ]);
+    expect(october.merchants[0]).toEqual({ name: "Grocer", spendingMinor: 5000, count: 2 });
+    expect(all.months[1]).toMatchObject({ month: "2026-11", open: true, chargesMinor: 400 });
+
+    const viaApi = await t.call("get", "/api/statements/combined?count=3").expect(200);
+    expect(viaApi.body.cards).toHaveLength(2);
+  });
+
+  it("is empty when no card has a closing day", () => {
+    const t = makeTestApp();
+    cleanups.push(t.cleanup);
+    expect(combinedStatements(t.db, 12, "2026-11-11")).toEqual({
+      cards: [],
+      withoutClosingDay: [],
+      months: [],
+    });
   });
 });

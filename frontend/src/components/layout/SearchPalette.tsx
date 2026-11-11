@@ -49,6 +49,17 @@ const PAGE_WORDS: Record<string, string> = {
 const matches = (text: string, q: string): boolean => text.toLowerCase().includes(q);
 
 /**
+ * How well a name answers what was typed, lower first: it starts with it, a word of it does, it
+ * holds it somewhere, or only its extra search words do. Pure.
+ */
+export function nameRank(name: string, q: string): number {
+  const n = name.toLowerCase();
+  if (n.startsWith(q)) return 0;
+  if (n.split(/[^a-z0-9]+/).some((w) => w.startsWith(q))) return 1;
+  return n.includes(q) ? 2 : 3;
+}
+
+/**
  * Searching the whole app (Ctrl+K, or the button in the sidebar): pages, accounts, categories, and
  * transactions (by merchant, note, people, category, or an exact amount). The arrow keys move
  * through the results; Enter opens one.
@@ -147,10 +158,18 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         to: `/transactions?focus=${t.id}&account=${t.accountId}`,
       });
     }
-    // Grouped in a fixed order, a handful of each.
-    return GROUPS.flatMap((g) =>
-      out.filter((r) => r.group === g).slice(0, g === "Transactions" ? 8 : 5),
-    );
+    // Grouped in a fixed order, a handful of each: the best matches by name first ("card st"
+    // is Card statements before Card bills, which only mentions statements). Transactions keep
+    // the order they were found in.
+    return GROUPS.flatMap((g) => {
+      const group = out.filter((r) => r.group === g);
+      if (g === "Transactions") return group.slice(0, 8);
+      return group
+        .map((r, i) => ({ r, i, rank: nameRank(r.title, term) }))
+        .sort((a, b) => a.rank - b.rank || a.i - b.i)
+        .slice(0, 5)
+        .map((x) => x.r);
+    });
   }, [q, accounts, categories, found]);
 
   useEffect(() => setActive(0), [q]);

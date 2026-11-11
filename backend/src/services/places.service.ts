@@ -14,6 +14,7 @@ import { getSettings } from "./settings.service.js";
 
 export interface PlacePurchase {
   id: number;
+  accountId: number;
   date: string;
   /** When the bank reports the time of day, as it sent it. */
   datetime: string | null;
@@ -23,7 +24,7 @@ export interface PlacePurchase {
   category: string | null;
   lat: number | null;
   lon: number | null;
-  /** The position is only the postal code's or the city's, found by an address lookup. */
+  /** The position is only the street's, the postal code's or the city's, found by an address lookup. */
   approx: boolean;
   /** Paid online (the bank's payment channel), as opposed to in a shop. */
   online: boolean;
@@ -45,6 +46,7 @@ const MAX_DAYS = 3 * 366;
 
 interface Row extends LocatedRow {
   id: number;
+  accountId: number;
   date: string;
   datetime: string | null;
   amount: number;
@@ -70,7 +72,7 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
     environment: settings.plaidEnvironment,
   });
   const rows = db.all<Row>(sql`
-    select t.id as id, max(t.date) as date, max(coalesce(t.datetime, t.authorized_datetime)) as datetime,
+    select t.id as id, max(t.account_id) as accountId, max(t.date) as date, max(coalesce(t.datetime, t.authorized_datetime)) as datetime,
       max(${OWN_MERCHANT}) as merchant, sum(t.amount_minor) as amount, max(c.name) as category,
       max(t.location_lat) as lat, max(t.location_lon) as lon, max(t.location_city) as city,
       max(t.location_address) as address, max(t.location_region) as region,
@@ -94,6 +96,7 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
     const found = r.lat !== null && r.lon !== null ? null : (placed.get(r) ?? null);
     return {
       id: r.id,
+      accountId: r.accountId,
       date: r.date,
       datetime: r.datetime,
       merchant: r.merchant ?? "Unknown",

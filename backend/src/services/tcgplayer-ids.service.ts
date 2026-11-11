@@ -74,7 +74,10 @@ export async function findTcgplayerIds(
   const get = async <T>(path: string): Promise<T[]> => {
     let res: Response;
     try {
-      res = await fetchImpl(`${BASE}${path}`, { headers: HEADERS });
+      res = await fetchImpl(`${BASE}${path}`, {
+        headers: HEADERS,
+        signal: AbortSignal.timeout(30_000),
+      });
     } catch {
       throw new AppError(
         502,

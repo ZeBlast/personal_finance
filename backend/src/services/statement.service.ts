@@ -3,6 +3,8 @@ import { accounts, cardBills } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { addDays, addMonths, lastOfMonth } from "../utils/dates.js";
 import { AppError, notFound } from "../utils/errors.js";
+import { listAccounts } from "./account.service.js";
+import { getSettings } from "./settings.service.js";
 
 /**
  * Statement periods of a credit card. The user sets the day of the month the statement closes
@@ -164,6 +166,9 @@ export function setStatementSettings(
 
 const MERCHANT = sql`coalesce(nullif(trim(t.merchant_name_user), ''), t.merchant_name, t.name)`;
 
+/** How many merchants a statement lists. */
+const TOP_MERCHANTS = 8;
+
 /** The card's statement periods with what happened in each (none until a closing day is set). */
 export function statements(
   db: AppDb,
@@ -171,6 +176,15 @@ export function statements(
   count = 12,
   today = new Date().toISOString().slice(0, 10),
 ): Statements {
+  const all = fullStatements(db, accountId, count, today);
+  return {
+    ...all,
+    periods: all.periods.map((p) => ({ ...p, merchants: p.merchants.slice(0, TOP_MERCHANTS) })),
+  };
+}
+
+/** As `statements`, with every merchant of each period (for adding cards together). */
+function fullStatements(db: AppDb, accountId: number, count: number, today: string): Statements {
   const card = requireCard(db, accountId);
   const base = { accountId, closingDay: card.closingDay, dueDay: card.dueDay };
   if (card.closingDay === null) return { ...base, periods: [] };
@@ -249,10 +263,149 @@ export function statements(
         categories: [...byCategory.values()]
           .filter((c) => c.spendingMinor !== 0)
           .sort((a, b) => b.spendingMinor - a.spendingMinor),
-        merchants: [...byMerchant.values()]
-          .sort((a, b) => b.spendingMinor - a.spendingMinor)
-          .slice(0, 8),
+        merchants: [...byMerchant.values()].sort((a, b) => b.spendingMinor - a.spendingMinor),
       };
     }),
+  };
+}
+
+/** One card's statement that closes in a month. */
+export interface CardInMonth extends Period {
+  accountId: number;
+  chargesMinor: number;
+  paymentsMinor: number;
+  creditsMinor: number;
+  newBalanceMinor: number | null;
+  count: number;
+}
+
+/** Every card's statement that closes in one calendar month, added together. */
+export interface CombinedMonth {
+  /** `YYYY-MM`: the month these statements close in. */
+  month: string;
+  /** At least one of them is still open. */
+  open: boolean;
+  chargesMinor: number;
+  paymentsMinor: number;
+  creditsMinor: number;
+  /** The new balances added up, over the cards whose balance is known (null: none is). */
+  newBalanceMinor: number | null;
+  count: number;
+  cards: CardInMonth[];
+  categories: StatementSummary["categories"];
+  merchants: StatementSummary["merchants"];
+}
+
+export interface CombinedStatements {
+  /** Cards with a closing day, whose statements are counted. */
+  cards: Array<{ accountId: number; name: string; color: string | null; currency: string }>;
+  /** Cards left out until their closing day is set. */
+  withoutClosingDay: Array<{ accountId: number; name: string }>;
+  /** Newest first. The newest may hold only the cards whose open statement closes that month. */
+  months: CombinedMonth[];
+}
+
+/**
+ * Every credit card's statements side by side and added together. Cards close on different days,
+ * so statements are grouped by the calendar month they close in: "November" is each card's
+ * statement with a November closing date. Hidden cards and those of another Plaid environment are
+ * left out, as on the rest of the app.
+ */
+export function combinedStatements(
+  db: AppDb,
+  count = 12,
+  today = new Date().toISOString().slice(0, 10),
+): CombinedStatements {
+  const environment = getSettings(db).plaidEnvironment;
+  const all = listAccounts(db).filter(
+    (a) =>
+      a.type === "credit" &&
+      !a.hidden &&
+      (a.itemId === null || a.connectionEnvironment === environment),
+  );
+  const cards = all.filter((a) => a.statementClosingDay !== null);
+  const months = new Map<string, CombinedMonth>();
+  const categories = new Map<string, Map<string, StatementSummary["categories"][number]>>();
+  const merchants = new Map<string, Map<string, StatementSummary["merchants"][number]>>();
+  // One more period than asked for, so the oldest month shown has every card's statement.
+  let oldestWhole = "";
+  for (const card of cards) {
+    const periods = fullStatements(db, card.id, count + 1, today).periods;
+    const oldest = periods.at(-1)!.end.slice(0, 7);
+    if (oldest > oldestWhole) oldestWhole = oldest;
+    for (const p of periods) {
+      const key = p.end.slice(0, 7);
+      const m = months.get(key) ?? {
+        month: key,
+        open: false,
+        chargesMinor: 0,
+        paymentsMinor: 0,
+        creditsMinor: 0,
+        newBalanceMinor: null,
+        count: 0,
+        cards: [],
+        categories: [],
+        merchants: [],
+      };
+      months.set(key, m);
+      m.open ||= p.current;
+      m.chargesMinor += p.chargesMinor;
+      m.paymentsMinor += p.paymentsMinor;
+      m.creditsMinor += p.creditsMinor;
+      if (p.newBalanceMinor !== null)
+        m.newBalanceMinor = (m.newBalanceMinor ?? 0) + p.newBalanceMinor;
+      m.count += p.count;
+      m.cards.push({
+        accountId: card.id,
+        start: p.start,
+        end: p.end,
+        due: p.due,
+        current: p.current,
+        chargesMinor: p.chargesMinor,
+        paymentsMinor: p.paymentsMinor,
+        creditsMinor: p.creditsMinor,
+        newBalanceMinor: p.newBalanceMinor,
+        count: p.count,
+      });
+      const cats = categories.get(key) ?? new Map();
+      categories.set(key, cats);
+      for (const c of p.categories) {
+        const k = String(c.id ?? "none");
+        const sum = cats.get(k) ?? { ...c, spendingMinor: 0 };
+        sum.spendingMinor += c.spendingMinor;
+        cats.set(k, sum);
+      }
+      const shops = merchants.get(key) ?? new Map();
+      merchants.set(key, shops);
+      for (const s of p.merchants) {
+        const sum = shops.get(s.name) ?? { name: s.name, spendingMinor: 0, count: 0 };
+        sum.spendingMinor += s.spendingMinor;
+        sum.count += s.count;
+        shops.set(s.name, sum);
+      }
+    }
+  }
+  for (const m of months.values()) {
+    m.categories = [...categories.get(m.month)!.values()]
+      .filter((c) => c.spendingMinor !== 0)
+      .sort((a, b) => b.spendingMinor - a.spendingMinor);
+    m.merchants = [...merchants.get(m.month)!.values()]
+      .sort((a, b) => b.spendingMinor - a.spendingMinor)
+      .slice(0, TOP_MERCHANTS);
+  }
+  return {
+    cards: cards.map((a) => ({
+      accountId: a.id,
+      name: a.name,
+      color: a.color ?? null,
+      currency: a.currency,
+    })),
+    withoutClosingDay: all
+      .filter((a) => a.statementClosingDay === null)
+      .map((a) => ({ accountId: a.id, name: a.name })),
+    months: [...months.values()]
+      .filter((m) => m.month >= oldestWhole)
+      .sort((a, b) => (a.month < b.month ? 1 : -1))
+      .slice(0, count),
   };
 }
