@@ -3,6 +3,7 @@ import { api, errorMessage } from "../api/client";
 import { Loading } from "../components/common/Loading";
 import { AddressLookups } from "../components/places/AddressLookups";
 import { HabitBarcodes } from "../components/places/HabitBarcodes";
+import { PlaceDetail } from "../components/places/PlaceDetail";
 import { PlacesMap } from "../components/places/PlacesMap";
 import { RhythmGrid } from "../components/places/RhythmGrid";
 import { useApi } from "../hooks/useApi";
@@ -14,6 +15,7 @@ import {
   groupPlaces,
   habits,
   mapStyle,
+  purchasesAt,
   rhythm,
   type Bounds,
 } from "../lib/places";
@@ -87,6 +89,9 @@ export function PlacesPage() {
     [shown, replayEnd],
   );
   const places = useMemo(() => groupPlaces(shown), [shown]);
+  // The place picked on the map, while it is still among those shown (a filter may drop it).
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const picked = places.find((p) => p.key === pickedKey) ?? null;
   const area = inView && bounds ? bounds : undefined;
   const week = useMemo(
     () => rhythm(filterPurchases(purchases, { bounds: area })),
@@ -208,6 +213,18 @@ export function PlacesPage() {
               frameKey={data.withPlace}
               animate={replayEnd !== null}
               beacons={beacons}
+              selectedKey={picked?.key ?? null}
+              onSelect={(place) => setPickedKey(place?.key ?? null)}
+              detail={
+                picked && (
+                  <PlaceDetail
+                    place={picked}
+                    purchases={purchasesAt(shown, picked.key)}
+                    money={money}
+                    onClose={() => setPickedKey(null)}
+                  />
+                )
+              }
             />
             <AddressLookups onFound={reload} />
             <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -262,8 +279,9 @@ export function PlacesPage() {
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Circle size is what you spent there; each thin ring is a month you went; a dashed
-              outline is an approximate position (a postal code or city). Blue is recent, fading to
-              grey for places you have not been to in a while.
+              outline is an approximate position (a street, postal code or city). Click a circle for
+              its purchases. Blue is recent, fading to grey for places you have not been to in a
+              while.
             </p>
           </div>
 

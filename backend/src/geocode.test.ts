@@ -3,12 +3,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { geocodeCache, transactions } from "../../drizzle/schema.js";
 import {
   cityFromDescription,
+  cleanMerchant,
   createGeocoder,
   lookupSteps,
   MIN_INTERVAL_MS,
+  pickHit,
+  sameShop,
   stripUnit,
 } from "./services/geocode.service.js";
 import { placesData } from "./services/places.service.js";
+import type { Step } from "./services/geocode.service.js";
 import { makeTestApp } from "./test-helpers.js";
 
 const cleanups: Array<() => void> = [];
@@ -33,8 +37,36 @@ describe("tidying what is looked up", () => {
       { city: "SAN FRANCISCO", region: "CA" },
       { city: "FRANCISCO", region: "CA" },
     ]);
+    // A ZIP code or "US" after the state, and a three-word city.
+    expect(cityFromDescription("TRADER JOES 552 SALT LAKE CITY UT 84101 US")[0]).toEqual({
+      city: "SALT LAKE CITY",
+      region: "UT",
+    });
+    // The shop's own name is not the city, and a plain last word comes before two.
+    expect(cityFromDescription("BLUE BOTTLE OAKLAND CA", "Blue Bottle")).toEqual([
+      { city: "OAKLAND", region: "CA" },
+    ]);
+    expect(cityFromDescription("JOES DINER OAKLAND CA")[0]).toEqual({
+      city: "OAKLAND",
+      region: "CA",
+    });
+    // A city the bank has named elsewhere wins.
+    expect(
+      cityFromDescription("JOES DINER WALNUT CREEK CA", null, new Set(["walnut creek|ca"]))[0],
+    ).toEqual({ city: "WALNUT CREEK", region: "CA" });
+    // A phone number where the city would be: bought online, no city.
+    expect(cityFromDescription("SPOTIFY 877-778-1161 NY")).toEqual([]);
     expect(cityFromDescription("NETFLIX.COM")).toEqual([]);
     expect(cityFromDescription("PAYMENT THANK YOU XX")).toEqual([]);
+  });
+
+  it("drops what a bank adds around a shop's name", () => {
+    expect(cleanMerchant("SQ *TACO TRUCK")).toBe("TACO TRUCK");
+    expect(cleanMerchant("TST* Corner Cafe")).toBe("Corner Cafe");
+    expect(cleanMerchant("STARBUCKS #1234")).toBe("STARBUCKS");
+    expect(cleanMerchant("MCDONALDS 4471")).toBe("MCDONALDS");
+    expect(cleanMerchant("Corner Cafe")).toBe("Corner Cafe");
+    expect(cleanMerchant("7-Eleven")).toBe("7-Eleven");
   });
 
   it("looks up a purchase with a street address only by that address", () => {
@@ -66,9 +98,10 @@ describe("tidying what is looked up", () => {
     expect(steps[0]!.params).toMatchObject({
       q: "Corner Cafe, Springfield, IL",
       countrycodes: "us",
+      layer: "poi",
     });
-    expect(steps[1]!.params).toEqual({ postalcode: "62701", country: "US" });
-    expect(steps[2]!.params).toEqual({ city: "Springfield", state: "IL", country: "US" });
+    expect(steps[1]!.params).toEqual({ postalcode: "62701", countrycodes: "us" });
+    expect(steps[2]!.params).toEqual({ city: "Springfield", state: "IL", countrycodes: "us" });
     expect(new Set(steps.map((s) => s.key)).size).toBe(3);
   });
 });
@@ -177,7 +210,154 @@ const place = (t: ReturnType<typeof makeTestApp>, merchant: string) =>
 
 const springfield = { city: "Springfield", region: "IL", postal: "62701", country: "US" };
 
+describe("choosing among the server's answers", () => {
+  const addressStep = lookupSteps({
+    merchant: "Corner Cafe",
+    address: "100 Main St",
+    city: "Springfield",
+    region: "IL",
+    postalCode: "62701",
+    country: "US",
+    description: null,
+  })[0]!;
+  const [shopStep, postalStep, cityStep] = lookupSteps({
+    merchant: "MCDONALDS 4471",
+    address: null,
+    city: "Springfield",
+    region: "IL",
+    postalCode: "62701",
+    country: "US",
+    description: null,
+  }) as [Step, Step, Step];
+  const il = { country_code: "us", "ISO3166-2-lvl4": "US-IL" };
+  const hit = (over: Record<string, unknown>) => ({
+    lat: "39.8",
+    lon: "-89.6",
+    display_name: "somewhere",
+    ...over,
+  });
+
+  it("takes a building for an address, and passes over the same address in another state", () => {
+    const mo = hit({
+      lat: "37.2",
+      place_rank: 30,
+      address: { house_number: "100", country_code: "us", "ISO3166-2-lvl4": "US-MO" },
+    });
+    const right = hit({ place_rank: 30, address: { house_number: "100", ...il } });
+    expect(pickHit(addressStep, [mo, right])).toMatchObject({ lat: 39.8, precision: "address" });
+    expect(pickHit(addressStep, [mo])).toBeNull();
+  });
+
+  it("keeps a street alone as approximate, and only when no building fits", () => {
+    const street = hit({ lat: "39.7", place_rank: 26, category: "highway", address: il });
+    const otherNumber = hit({
+      lat: "39.75",
+      place_rank: 30,
+      address: { house_number: "950", ...il },
+    });
+    const building = hit({ place_rank: 30, address: { house_number: "100", ...il } });
+    expect(pickHit(addressStep, [street])).toMatchObject({ lat: 39.7, precision: "street" });
+    expect(pickHit(addressStep, [otherNumber])).toMatchObject({ precision: "street" });
+    expect(pickHit(addressStep, [street, building])).toMatchObject({
+      lat: 39.8,
+      precision: "address",
+    });
+  });
+
+  it("does not take the city or postal code for an address", () => {
+    expect(
+      pickHit(addressStep, [hit({ place_rank: 16, category: "boundary", address: il })]),
+    ).toBeNull();
+    expect(
+      pickHit(addressStep, [hit({ place_rank: 21, category: "place", address: il })]),
+    ).toBeNull();
+  });
+
+  it("takes for a shop only a place of business with a matching name", () => {
+    const road = hit({ place_rank: 26, category: "highway", name: "McDonald Road", address: il });
+    const other = hit({ place_rank: 30, category: "amenity", name: "Burger Barn", address: il });
+    const real = hit({
+      lat: "39.9",
+      place_rank: 30,
+      category: "amenity",
+      name: "McDonald's",
+      address: il,
+    });
+    expect(pickHit(shopStep, [road, other, real])).toMatchObject({ lat: 39.9, precision: "shop" });
+    expect(pickHit(shopStep, [road, other])).toBeNull();
+    expect(sameShop("Wal-Mart", "Walmart Supercenter")).toBe(true);
+    expect(sameShop("7-Eleven", "7 Eleven")).toBe(true);
+    expect(sameShop("Corner Cafe", "Hardware Barn")).toBe(false);
+  });
+
+  it("checks a postal code and a city are what was asked for", () => {
+    expect(pickHit(postalStep, [hit({ address: { postcode: "90210", ...il } })])).toBeNull();
+    expect(pickHit(postalStep, [hit({ address: { postcode: "62701", ...il } })])).toMatchObject({
+      precision: "postcode",
+    });
+    expect(
+      pickHit(cityStep, [hit({ place_rank: 26, category: "highway", address: il })]),
+    ).toBeNull();
+    expect(pickHit(cityStep, [hit({ place_rank: 16, address: il })])).toMatchObject({
+      precision: "city",
+    });
+    expect(
+      pickHit(cityStep, [hit({ place_rank: 16, address: { country_code: "ca" } })]),
+    ).toBeNull();
+  });
+
+  it("takes a server that sends no details at its word, and ignores what is not a position", () => {
+    expect(pickHit(addressStep, [{ lat: "39.8", lon: "-89.6" }])).toMatchObject({
+      precision: "address",
+    });
+    expect(pickHit(addressStep, [{ lat: "x", lon: "-89.6" }, null, "nope"])).toBeNull();
+    expect(pickHit(addressStep, { error: "no" })).toBeNull();
+  });
+});
+
 describe("the geocoder", () => {
+  it("shows an address matched only to its street as approximate", async () => {
+    const t = await withPurchases([
+      { merchant: "Corner Cafe", address: "100 Main St", ...springfield },
+    ]);
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify([{ lat: "39.7", lon: "-89.6", place_rank: 26, category: "highway" }]),
+      )) as typeof fetch;
+    const { g } = geocoderFor(t, fetchImpl);
+    await g.start();
+    await g.idle();
+    expect(place(t, "Corner Cafe")).toMatchObject({ lat: 39.7, approx: true });
+  });
+
+  it("places a shop at its only known branch in the city, without asking", async () => {
+    const t = await withPurchases([
+      { merchant: "Corner Cafe", ...springfield, at: [39.81, -89.65] },
+      { merchant: "Corner Cafe", ...springfield, at: [39.8101, -89.6501], date: "2026-10-03" },
+      {
+        merchant: "Corner Cafe",
+        description: "SQ *CORNER CAFE SPRINGFIELD IL",
+        date: "2026-10-05",
+      },
+      // Two branches of this one: no telling which, so it is looked up.
+      { merchant: "Burger Barn", ...springfield, at: [39.7, -89.6] },
+      { merchant: "Burger Barn", ...springfield, at: [39.9, -89.7], date: "2026-10-03" },
+      { merchant: "Burger Barn", city: "Springfield", region: "IL", date: "2026-10-05" },
+    ]);
+    const fake = fakeNominatim({});
+    const { g } = geocoderFor(t, fake.fetchImpl);
+    await g.start();
+    await g.idle();
+    expect(fake.calls.map((c) => c.params["q"] ?? c.params["city"])).toEqual([
+      "Burger Barn, Springfield, IL",
+      "Springfield",
+    ]);
+    const cafes = placesData(t.db, { from: "2026-09-01", to: "2026-10-31" }).purchases.filter(
+      (p) => p.merchant === "Corner Cafe",
+    );
+    expect(cafes.map((p) => p.lat)).toEqual([39.81, 39.8101, 39.81]);
+  });
+
   it("does nothing while lookups are turned off", async () => {
     const t = await withPurchases([
       { merchant: "Corner Cafe", address: "100 Main St", ...springfield },
@@ -207,7 +387,11 @@ describe("the geocoder", () => {
       /^PersonalFinance\/9\.9\.9 \(\+https:\/\/github\.com\/ZeBlast\/personal_finance; install [0-9a-f]{8}\)$/,
     );
     expect(fake.calls[0]!.href).toMatch(/^https:\/\/nominatim\.openstreetmap\.org\/search\?/);
-    expect(fake.calls[0]!.params).toMatchObject({ format: "jsonv2", limit: "1" });
+    expect(fake.calls[0]!.params).toMatchObject({
+      format: "jsonv2",
+      limit: "5",
+      addressdetails: "1",
+    });
     expect(place(t, "Corner Cafe")).toMatchObject({ lat: 39.8, lon: -89.64, approx: false });
 
     await g.start();
@@ -299,7 +483,7 @@ describe("the geocoder", () => {
     const { g } = geocoderFor(t, fake.fetchImpl);
     await g.start();
     await g.idle();
-    t.db.update(geocodeCache).set({ method: 1 }).run();
+    t.db.update(geocodeCache).set({ method: 2 }).run();
     expect(g.status().pending).toBe(1);
     await g.start();
     await g.idle();

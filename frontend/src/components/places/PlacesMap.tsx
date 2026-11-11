@@ -1,6 +1,12 @@
-import maplibregl, { type Map as MapLibreMap, type StyleSpecification } from "maplibre-gl";
+import {
+  Map as MapLibreMap,
+  NavigationControl,
+  setWorkerUrl,
+  type StyleSpecification,
+} from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useRef, useState } from "react";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { recency, type Bounds, type Place } from "../../lib/places";
 import type { PlacePurchase } from "../../types/places";
 
@@ -17,6 +23,10 @@ import type { PlacePurchase } from "../../types/places";
  * The map images come from OpenFreeMap (OpenStreetMap data) only when the user allows it, in its
  * light or dark style; otherwise the places are drawn on a plain background, and nothing is fetched.
  */
+
+// The map library looks for its worker file beside its own code, which a bundle does not keep
+// there: this is where the build put it. (It stays on this origin, as the app's CSP requires.)
+setWorkerUrl(workerUrl);
 
 function plainStyle(dark: boolean): StyleSpecification {
   return {
@@ -52,6 +62,9 @@ export function PlacesMap({
   frameKey,
   animate = false,
   beacons = [],
+  selectedKey = null,
+  onSelect,
+  detail,
 }: {
   places: Place[];
   today: string;
@@ -65,6 +78,11 @@ export function PlacesMap({
   animate?: boolean;
   /** Purchases to send a beacon from, where they happened. */
   beacons?: PlacePurchase[];
+  /** The place picked by a click (its dot is ringed), and what a click on a dot or off them does. */
+  selectedKey?: string | null;
+  onSelect?: (place: Place | null) => void;
+  /** Shown over the map's right side while a place is picked: its purchases. */
+  detail?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -78,6 +96,8 @@ export function PlacesMap({
   boundsRef.current = onBounds;
   const placesRef = useRef(places);
   placesRef.current = places;
+  const selectRef = useRef(onSelect);
+  selectRef.current = onSelect;
 
   /** Frames the places once, after the map has loaded (a style applies its own view as it loads). */
   const frame = (m: MapLibreMap): void => {
@@ -97,14 +117,14 @@ export function PlacesMap({
 
   useEffect(() => {
     if (!box.current) return;
-    const m = new maplibregl.Map({
+    const m = new MapLibreMap({
       container: box.current,
       style: look.url ?? plainStyle(look.dark),
       center: [-95, 39],
       zoom: 3,
       attributionControl: look.online ? { compact: true } : false,
     });
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    m.addControl(new NavigationControl({ showCompass: false }), "top-right");
     const moved = () => {
       setTick((n) => n + 1);
       const b = m.getBounds();
@@ -116,6 +136,8 @@ export function PlacesMap({
       });
     };
     m.on("move", moved);
+    // A click on the map itself (the dots sit above it and take their own) puts the place away.
+    m.on("click", () => selectRef.current?.(null));
     m.on("load", () => {
       frame(m);
       moved();
@@ -168,6 +190,7 @@ export function PlacesMap({
       <g
         key={`${out ? "out" : "in"}-${p.key}`}
         className={`${out ? "pf-place-out" : "pf-place-in pointer-events-auto cursor-pointer"}`}
+        onClick={out ? undefined : () => onSelect?.(p.key === selectedKey ? null : p)}
         onMouseEnter={out ? undefined : () => setHover(p)}
         onMouseLeave={out ? undefined : () => setHover((h) => (h?.key === p.key ? null : h))}
       >
@@ -194,12 +217,30 @@ export function PlacesMap({
           strokeWidth={1.5}
           strokeDasharray={dash}
         />
+        {!out && p.key === selectedKey && (
+          <circle
+            data-testid="selected-place"
+            cx={at.x}
+            cy={at.y}
+            r={r + 4}
+            fill="none"
+            stroke={look.dark ? "#fbbf24" : "#b45309"}
+            strokeWidth={2.5}
+          />
+        )}
       </g>
     );
   };
 
+  /** Frames every place again, after moving around. */
+  const showAll = (): void => {
+    if (!m) return;
+    fitted.current = false;
+    frame(m);
+  };
+
   return (
-    <div className="relative h-[28rem] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+    <div className="relative h-[max(28rem,min(60vh,44rem))] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
       {/* MapLibre makes this element position: relative, so it is sized by height, not inset. */}
       <div ref={box} className="h-full w-full" />
       {m && (
@@ -224,6 +265,20 @@ export function PlacesMap({
           })}
         </svg>
       )}
+      {places.length > 0 && (
+        <button
+          type="button"
+          onClick={showAll}
+          className="absolute bottom-2 left-2 rounded-md border border-slate-300 bg-white/95 px-2 py-1 text-xs shadow-sm hover:bg-white dark:border-slate-600 dark:bg-slate-800/95 dark:hover:bg-slate-800"
+        >
+          Show all places
+        </button>
+      )}
+      {detail && (
+        <div className="absolute inset-y-2 right-12 flex w-80 max-w-[calc(100%-4rem)] flex-col overflow-hidden rounded-md border border-slate-200 bg-white/95 text-sm shadow-lg dark:border-slate-600 dark:bg-slate-800/95">
+          {detail}
+        </div>
+      )}
       {hover && (
         <div className="pointer-events-none absolute top-2 left-2 max-w-64 rounded-md bg-white/95 p-2 text-xs shadow dark:bg-slate-800/95">
           <div className="font-semibold">{hover.merchant}</div>
@@ -235,9 +290,12 @@ export function PlacesMap({
             Last on {hover.lastDate}
             {hover.city ? `, ${hover.city}` : ""}
           </div>
+          {hover.key !== selectedKey && onSelect && (
+            <div className="text-slate-500 dark:text-slate-400">Click for its purchases</div>
+          )}
           {hover.approx && (
             <div className="text-amber-700 dark:text-amber-300">
-              Approximate position (postal code or city)
+              Approximate position (street, postal code or city)
             </div>
           )}
         </div>

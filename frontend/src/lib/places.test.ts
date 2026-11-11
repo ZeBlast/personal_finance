@@ -11,6 +11,8 @@ import {
   mapStyle,
   paceText,
   recency,
+  placeKey,
+  purchasesAt,
   rhythm,
   weekdayOf,
 } from "./places";
@@ -31,6 +33,7 @@ describe("mapStyle", () => {
 describe("after review of the map's second version", () => {
   const p = (over: Partial<PlacePurchase>): PlacePurchase => ({
     id: Math.floor(Math.random() * 1e9),
+    accountId: 1,
     date: "2026-10-05",
     datetime: null,
     merchant: "Cafe",
@@ -72,6 +75,7 @@ describe("after review of the map's second version", () => {
 let nextId = 1;
 const buy = (over: Partial<PlacePurchase>): PlacePurchase => ({
   id: nextId++,
+  accountId: 1,
   date: "2026-10-05",
   datetime: null,
   merchant: "Cafe",
@@ -176,5 +180,22 @@ describe("filterPurchases", () => {
     const bounds = { west: -90, south: 39, east: -88, north: 41 };
     expect(filterPurchases([a, b, c], { cells, bounds }).map((p) => p.id)).toEqual([a.id]);
     expect(filterPurchases([a, b, c], {})).toHaveLength(3);
+  });
+});
+
+describe("a place's purchases", () => {
+  it("are those at its shop and spot, newest first", () => {
+    const here = { merchant: "Corner Cafe", lat: 39.8001, lon: -89.6501 };
+    const all = [
+      buy({ ...here, date: "2026-10-01" }),
+      buy({ ...here, date: "2026-10-09", lat: 39.8003 }), // the same spot, to about 100 m
+      buy({ merchant: "Corner Cafe", lat: 40.2, lon: -89.65, date: "2026-10-08" }), // another branch
+      buy({ merchant: "Hardware Barn", lat: 39.8001, lon: -89.6501 }),
+      buy({ merchant: "Corner Cafe", lat: null, lon: null }),
+    ];
+    const key = placeKey(all[0]!)!;
+    expect(groupPlaces(all).find((p) => p.key === key)?.visits).toBe(2);
+    expect(purchasesAt(all, key).map((p) => p.date)).toEqual(["2026-10-09", "2026-10-01"]);
+    expect(placeKey(all[4]!)).toBeNull();
   });
 });

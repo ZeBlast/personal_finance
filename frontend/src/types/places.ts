@@ -2,6 +2,7 @@
 
 export interface PlacePurchase {
   id: number;
+  accountId: number;
   date: string;
   /** When the bank reports the time of day. */
   datetime: string | null;

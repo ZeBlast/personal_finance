@@ -147,10 +147,12 @@ export function AddressLookups({ onFound }: { onFound: () => void }) {
       <p className="text-xs text-slate-500 dark:text-slate-400">
         Some purchases come without a map position. Turned on, the app looks them up when you press
         Start. One with a street address is looked up by that address only; one without, by the
-        shop&apos;s name and city, then by the postal code or city (those show as approximate, with
-        a dashed outline). It sends what is known about the shop and where it is (never amounts,
-        dates or anything about you), one lookup every 2 seconds, and keeps every answer so nothing
-        is asked twice. Follows the <Outside href={POLICY_URL}>Nominatim usage policy</Outside>.
+        shop&apos;s name and city, then by the postal code or city. An answer is kept only when it
+        fits what was asked (the right state, a shop of that name); one that is only the street,
+        postal code or city shows as approximate, with a dashed outline. It sends what is known
+        about the shop and where it is (never amounts, dates or anything about you), one lookup
+        every 2 seconds, and keeps every answer so nothing is asked twice. Follows the{" "}
+        <Outside href={POLICY_URL}>Nominatim usage policy</Outside>.
       </p>
       {data.enabled && resetNote(data) && (
         <p className="text-xs text-slate-500 dark:text-slate-400">

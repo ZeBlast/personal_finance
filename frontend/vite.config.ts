@@ -24,5 +24,7 @@ export default defineConfig({
       },
     },
   },
+  // The map's worker is a module that imports its shared half (see PlacesMap).
+  worker: { format: "es" },
   build: { target: "es2022", outDir: "dist", emptyOutDir: true },
 });
