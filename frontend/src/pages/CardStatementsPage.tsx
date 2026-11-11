@@ -1,7 +1,13 @@
-import { AlertTriangle, Check, CircleDot, Clock, Minus } from "lucide-react";
+import { AlertTriangle, Check, CircleDot, Clock, Layers, Minus } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+import {
+  type Combined,
+  CombinedStatements,
+  combinedTotals,
+} from "../components/accounts/CombinedStatements";
 import { StatementsPanel } from "../components/accounts/StatementsDialog";
 import { Loading } from "../components/common/Loading";
+import { CountAllBills } from "../components/planning/CountAllBills";
 import { useApi } from "../hooks/useApi";
 import { formatMinor } from "../lib/money";
 import { formatDay } from "../lib/time";
@@ -153,8 +159,9 @@ function CardRow({
 }
 
 /**
- * Every credit card's latest statement side by side, and one card's statements in full below: each
- * period's charges, payments and credits, spending by category and merchant, and its transactions.
+ * Every credit card's latest statement side by side, and below it either all cards' statements
+ * together month by month (with two or more cards) or one card's statements in full: each period's
+ * charges, payments and credits, spending by category and merchant, and its transactions.
  */
 export function CardStatementsPage() {
   const accounts = useApi<Account[]>("/accounts");
@@ -162,11 +169,17 @@ export function CardStatementsPage() {
   const [params, setParams] = useSearchParams();
 
   const cards = (accounts.data ?? []).filter((a) => a.type === "credit" && !a.hidden);
-  const chosen = chosenCard(cards, params.get("card"));
+  // With two or more cards that have statements, the page opens on all of them together.
+  const several = cards.filter((c) => c.statementClosingDay).length >= 2;
+  const combined = useApi<Combined>(several ? "/statements/combined?count=12" : null);
+  const asked = params.get("card");
+  const together = several && (asked === null || asked === "all");
+  const chosen = together ? null : chosenCard(cards, asked);
+  const sums = combined.data ? combinedTotals(combined.data) : null;
   const billOf = (id: number) => bills.data?.find((b) => b.accountId === id) ?? null;
   const totals = statementTotals(cards.map((c) => billOf(c.id)).filter((b) => b !== null));
   const money = (minor: number) => formatMinor(minor, cards[0]?.currency || "USD");
-  const error = accounts.error ?? bills.error;
+  const error = accounts.error ?? bills.error ?? combined.error;
   const anyTracked = cards.some((c) => billOf(c.id)?.statement);
 
   return (
@@ -177,7 +190,9 @@ export function CardStatementsPage() {
           {cards.length === 0
             ? "Each credit card's statements, once you have a card."
             : !anyTracked
-              ? "Each card's latest statement, and any card's statements in full below."
+              ? several
+                ? "Each card's latest statement, with all cards together or any one card in full below."
+                : "Each card's latest statement, and any card's statements in full below."
               : totals.remainingMinor > 0
                 ? `${money(totals.remainingMinor)} left to pay on closed statements, next due ${formatDay(totals.nextDue!)}.${totals.overdue > 0 ? ` ${totals.overdue} overdue.` : ""}`
                 : "Nothing left to pay on closed statements."}
@@ -189,6 +204,7 @@ export function CardStatementsPage() {
         </p>
       )}
       {!accounts.data && accounts.loading && <Loading lines={6} />}
+      {bills.data && <CountAllBills bills={bills.data} onDone={bills.reload} />}
 
       {accounts.data && cards.length === 0 && (
         <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -225,6 +241,44 @@ export function CardStatementsPage() {
                 />
               ))}
             </tbody>
+            {several && (
+              <tfoot>
+                <tr
+                  onClick={(e) => {
+                    if (!(e.target as HTMLElement).closest("a, button")) {
+                      setParams({ card: "all" }, { replace: true });
+                    }
+                  }}
+                  className={`cursor-pointer border-t border-slate-300 dark:border-slate-600 ${together ? "bg-blue-50 dark:bg-blue-950/40" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"}`}
+                >
+                  <td className="py-1.5 pr-3 pl-2">
+                    <button
+                      type="button"
+                      aria-pressed={together}
+                      onClick={() => setParams({ card: "all" }, { replace: true })}
+                      className={`flex items-center gap-2 text-left hover:underline ${together ? "font-semibold" : "font-medium"}`}
+                    >
+                      <Layers aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      All cards together
+                    </button>
+                  </td>
+                  <td />
+                  <td className="py-1.5 pr-3 text-right font-medium tabular-nums">
+                    {sums?.closedMinor == null ? "" : money(sums.closedMinor)}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right font-medium tabular-nums">
+                    {anyTracked ? money(totals.remainingMinor) : ""}
+                  </td>
+                  <td className="py-1.5 pr-3 whitespace-nowrap">
+                    {anyTracked && totals.nextDue ? formatDay(totals.nextDue) : ""}
+                  </td>
+                  <td />
+                  <td className="py-1.5 pr-2 text-right font-medium tabular-nums">
+                    {sums ? money(sums.openMinor) : ""}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
@@ -233,7 +287,26 @@ export function CardStatementsPage() {
         <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
           <h2 className="mb-3 text-lg font-semibold">{chosen.name}</h2>
           {/* Keyed by card, so one card's chosen period does not carry over to the next. */}
-          <StatementsPanel key={chosen.id} account={chosen} />
+          <StatementsPanel
+            key={`${chosen.id}:${params.get("period") ?? ""}`}
+            account={chosen}
+            initialEnd={params.get("period")}
+          />
+        </div>
+      )}
+
+      {together && (
+        <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+          <h2 className="mb-3 text-lg font-semibold">All cards together</h2>
+          {!combined.data && combined.loading && <Loading lines={6} />}
+          {combined.data && (
+            <CombinedStatements
+              data={combined.data}
+              onOpenCard={(accountId, end) =>
+                setParams({ card: String(accountId), period: end }, { replace: true })
+              }
+            />
+          )}
         </div>
       )}
     </section>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errorMessage } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
@@ -55,9 +55,17 @@ const ordinal = dayOfMonth;
  * A credit card's statements: set the day its statement closes (and payment is due), then see each
  * statement period, the open one first, with what was charged, paid and credited, spending by
  * category and merchant, and every transaction posted in it. `onLeave` runs before going to another
- * page, for a window to close.
+ * page, for a window to close. `initialEnd` opens on the period with that closing date.
  */
-export function StatementsPanel({ account, onLeave }: { account: Account; onLeave?: () => void }) {
+export function StatementsPanel({
+  account,
+  onLeave,
+  initialEnd,
+}: {
+  account: Account;
+  onLeave?: () => void;
+  initialEnd?: string | null;
+}) {
   const navigate = useNavigate();
   const data = useApi<Statements>(`/accounts/${account.id}/statements?count=12`);
   const [closing, setClosing] = useState("");
@@ -66,6 +74,15 @@ export function StatementsPanel({ account, onLeave }: { account: Account; onLeav
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const money = (minor: number) => formatMinor(minor, account.currency || "USD");
+
+  // Once, when the periods first arrive: later refreshes keep the period the user is on.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!data.data || opened.current) return;
+    opened.current = true;
+    const at = initialEnd ? data.data.periods.findIndex((p) => p.end === initialEnd) : -1;
+    if (at >= 0) setSelected(at);
+  }, [data.data, initialEnd]);
 
   useEffect(() => {
     if (!data.data) return;

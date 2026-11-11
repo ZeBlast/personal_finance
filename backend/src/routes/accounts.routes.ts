@@ -45,7 +45,11 @@ import {
 } from "../services/reconcile.service.js";
 import { getSettings } from "../services/settings.service.js";
 import { importBankCsv } from "../services/bank-csv-import.service.js";
-import { setStatementSettings, statements } from "../services/statement.service.js";
+import {
+  combinedStatements,
+  setStatementSettings,
+  statements,
+} from "../services/statement.service.js";
 import { notFound } from "../utils/errors.js";
 
 const idParam = z.coerce.number().int().positive();
@@ -280,6 +284,12 @@ export function accountsRoutes(db: AppDb, catalogFetch?: Fetch): Router {
   router.delete("/reconciliations/:id", (req, res) => {
     deleteReconciliation(db, idParam.parse(req.params["id"]));
     res.status(204).end();
+  });
+
+  /** Every card's statements, grouped by the month they close in and added together. */
+  router.get("/statements/combined", (req, res) => {
+    const count = z.coerce.number().int().min(1).max(36).default(12).parse(req.query["count"]);
+    res.json(combinedStatements(db, count));
   });
 
   router.get("/accounts/:id/statements", (req, res) => {

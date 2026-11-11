@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeBackend } from "../test/fakeBackend";
 import type { Account } from "../types/api";
 import type { CardBill } from "../types/planning";
+import { combinedTotals } from "../components/accounts/CombinedStatements";
 import { CardStatementsPage, chosenCard, statementTotals } from "./CardStatementsPage";
 
 afterEach(() => {
@@ -149,6 +150,73 @@ describe("the page", () => {
     // Nothing to pay can only be claimed about cards whose payments are tracked.
     expect(screen.queryByText(/Nothing left to pay/)).toBeNull();
     expect(screen.queryByText(/Set the closing day/)).toBeNull();
+  });
+
+  it("opens on all cards together when several have statements, and from there on one", async () => {
+    const inMonth = (accountId: number, end: string, chargesMinor: number, current = false) => ({
+      accountId,
+      start: "2026-09-06",
+      end,
+      due: "2026-10-28",
+      current,
+      chargesMinor,
+      paymentsMinor: 0,
+      creditsMinor: 0,
+      newBalanceMinor: chargesMinor,
+      count: 1,
+    });
+    const month = (name: string, open: boolean, cards: ReturnType<typeof inMonth>[]) => ({
+      month: name,
+      open,
+      chargesMinor: cards.reduce((n, c) => n + c.chargesMinor, 0),
+      paymentsMinor: 0,
+      creditsMinor: 0,
+      newBalanceMinor: cards.reduce((n, c) => n + c.chargesMinor, 0),
+      count: cards.length,
+      cards,
+      categories: [{ id: 1, name: "Food", color: null, spendingMinor: 4200 }],
+      merchants: [{ name: "Grocer", spendingMinor: 4200, count: 2 }],
+    });
+    const combined = {
+      cards: [
+        { accountId: 1, name: "Blue card", color: null, currency: "USD" },
+        { accountId: 2, name: "Red card", color: null, currency: "USD" },
+      ],
+      withoutClosingDay: [],
+      months: [
+        month("2026-11", true, [
+          inMonth(1, "2026-11-05", 1100, true),
+          inMonth(2, "2026-11-25", 900, true),
+        ]),
+        month("2026-10", false, [inMonth(1, "2026-10-05", 3000), inMonth(2, "2026-10-25", 1234)]),
+      ],
+    };
+    expect(combinedTotals(combined)).toEqual({ closedMinor: 4234, openMinor: 2000 });
+    const calls = fakeBackend({
+      "/accounts": [
+        card(1, "Blue card", { statementClosingDay: 5 }),
+        card(2, "Red card", { statementClosingDay: 25 }),
+      ],
+      "/bills": [bill(1, 12345, "2026-11-20"), bill(2, 6789, "2026-11-22")],
+      "/accounts/1/statements?count=2": statements(5),
+      "/accounts/2/statements?count=2": statements(25),
+      "/accounts/1/statements?count=12": statements(5),
+      "/accounts/2/statements?count=12": statements(25),
+      "/statements/combined?count=12": combined,
+    });
+    show();
+    await screen.findByRole("heading", { name: "All cards together" });
+    // The newest month whose statements have all closed is the one shown.
+    await screen.findByRole("heading", { name: /Statements closing in October 2026/ });
+    screen.getByText("Spending by category, all cards");
+    expect(screen.getAllByText("$42.34").length).toBeGreaterThan(0);
+    // A card's row in the month opens that card's statements.
+    const open = screen.getAllByRole("button", { name: "Red card" }).at(-1)!;
+    await userEvent.click(open);
+    await screen.findByRole("heading", { name: "Red card" });
+    expect(calls.some((c) => c.path === "/accounts/2/statements?count=12")).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "All cards together" }));
+    await screen.findByRole("heading", { name: "All cards together" });
   });
 
   it("says what to do with no cards", async () => {
