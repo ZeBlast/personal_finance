@@ -182,9 +182,31 @@ export interface Bounds {
   north: number;
 }
 
+/** What a purchase without a category is filed under, here as in the reports. */
+export const UNCATEGORIZED = "Uncategorized";
+const categoryOf = (p: PlacePurchase): string => p.category ?? UNCATEGORIZED;
+
 /**
- * Purchases in the chosen weekday-and-hour cells (any, when none are chosen) and inside the map's
- * view (any, without bounds; a purchase with no location is outside every view).
+ * The categories of the purchases that have a place on the map, with how many each has, the most
+ * first (then by name): what the map can be narrowed to.
+ */
+export function placedCategories(
+  purchases: PlacePurchase[],
+): Array<{ name: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const p of purchases) {
+    if (p.lat === null || p.lon === null) continue;
+    counts.set(categoryOf(p), (counts.get(categoryOf(p)) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/**
+ * Purchases in the chosen weekday-and-hour cells (any, when none are chosen), of the chosen
+ * categories (any, when none are), and inside the map's view (any, without bounds; a purchase with no
+ * location is outside every view).
  */
 export function filterPurchases(
   purchases: PlacePurchase[],
@@ -193,10 +215,13 @@ export function filterPurchases(
     bounds?: Bounds | undefined;
     /** false leaves out purchases paid online. */
     online?: boolean | undefined;
+    /** Only these categories' (by name; UNCATEGORIZED for those with none). Empty means all. */
+    categories?: ReadonlySet<string> | undefined;
   },
 ): PlacePurchase[] {
   return purchases.filter((p) => {
     if (f.online === false && p.online) return false;
+    if (f.categories && f.categories.size > 0 && !f.categories.has(categoryOf(p))) return false;
     if (f.cells && f.cells.size > 0) {
       if (p.datetime === null) return false;
       const key = cellKey(weekdayOf(localDate(p.datetime)), localHour(p.datetime));

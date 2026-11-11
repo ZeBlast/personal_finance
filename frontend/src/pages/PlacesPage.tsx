@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import { Loading } from "../components/common/Loading";
 import { AddressLookups } from "../components/places/AddressLookups";
+import { CategoryPicker } from "../components/places/CategoryPicker";
 import { HabitBarcodes } from "../components/places/HabitBarcodes";
 import { PlaceDetail } from "../components/places/PlaceDetail";
 import { PlacesMap } from "../components/places/PlacesMap";
@@ -15,6 +16,7 @@ import {
   groupPlaces,
   habits,
   mapStyle,
+  placedCategories,
   purchasesAt,
   rhythm,
   type Bounds,
@@ -77,12 +79,23 @@ export function PlacesPage() {
   }, [playing, from, now]);
 
   const purchases = useMemo(() => data?.purchases ?? [], [data]);
+  // The categories the map can be narrowed to: those of the purchases it could show. Any that are
+  // no longer among them (another period, or online purchases turned off) stops applying.
+  const [pickedCategories, setPickedCategories] = useState<Set<string>>(new Set());
+  const categories = useMemo(
+    () => placedCategories(filterPurchases(purchases, { online: showOnline })),
+    [purchases, showOnline],
+  );
+  const chosen = useMemo(() => {
+    const offered = new Set(categories.map((c) => c.name));
+    return new Set([...pickedCategories].filter((name) => offered.has(name)));
+  }, [categories, pickedCategories]);
   const shown = useMemo(() => {
-    const timed = filterPurchases(purchases, { cells, online: showOnline });
+    const timed = filterPurchases(purchases, { cells, online: showOnline, categories: chosen });
     if (replayEnd === null) return timed;
     const start = addDays(replayEnd, -REPLAY_DAYS);
     return timed.filter((p) => p.date > start && p.date <= replayEnd);
-  }, [purchases, cells, replayEnd, showOnline]);
+  }, [purchases, cells, replayEnd, showOnline, chosen]);
   // During a replay, the purchases of its latest week send out a beacon.
   const beacons = useMemo(
     () => (replayEnd === null ? [] : beaconsAt(shown, replayEnd, 7)),
@@ -172,6 +185,11 @@ export function PlacesPage() {
                   />
                   Online purchases
                 </label>
+                <CategoryPicker
+                  categories={categories}
+                  picked={chosen}
+                  onChange={setPickedCategories}
+                />
                 <label className="flex items-center gap-2">
                   Map colours
                   <select

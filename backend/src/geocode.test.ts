@@ -541,4 +541,29 @@ describe("the geocoder", () => {
     expect(place(t, "Web Store").online).toBe(true);
     expect(place(t, "Shop").online).toBe(false);
   });
+
+  it("takes the user's word over the bank's for what was bought online", async () => {
+    const t = await withPurchases([
+      { merchant: "Shop", ...springfield, at: [39.8, -89.6] },
+      { merchant: "Web Store", online: true },
+    ]);
+    const idOf = (merchant: string) => place(t, merchant).id;
+    // The bank said in store; the user says it was online. And the other way round.
+    await t
+      .call("patch", `/api/transactions/${idOf("Shop")}`)
+      .send({ online: true })
+      .expect(200);
+    await t
+      .call("patch", `/api/transactions/${idOf("Web Store")}`)
+      .send({ online: false })
+      .expect(200);
+    expect(place(t, "Shop").online).toBe(true);
+    expect(place(t, "Web Store").online).toBe(false);
+    // Back to the bank's.
+    await t
+      .call("patch", `/api/transactions/${idOf("Shop")}`)
+      .send({ online: null })
+      .expect(200);
+    expect(place(t, "Shop").online).toBe(false);
+  });
 });

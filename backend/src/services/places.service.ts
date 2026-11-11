@@ -26,7 +26,7 @@ export interface PlacePurchase {
   lon: number | null;
   /** The position is only the street's, the postal code's or the city's, found by an address lookup. */
   approx: boolean;
-  /** Paid online (the bank's payment channel), as opposed to in a shop. */
+  /** Paid online, as opposed to in a shop: the user's call if they made one, else the bank's. */
   online: boolean;
   city: string | null;
 }
@@ -54,6 +54,8 @@ interface Row extends LocatedRow {
   lat: number | null;
   lon: number | null;
   channel: string | null;
+  /** The user's own call on whether it was bought online (1 or 0), or null when they made none. */
+  onlineUser: number | null;
 }
 
 export function placesData(db: AppDb, q: { from: string; to: string }): Places {
@@ -78,7 +80,7 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
       max(t.location_address) as address, max(t.location_region) as region,
       max(t.location_postal_code) as postalCode, max(t.location_country) as country,
       max(t.location_store_number) as store, max(t.original_description) as description,
-      max(t.payment_channel) as channel
+      max(t.payment_channel) as channel, max(t.online_user) as onlineUser
     ${fromTransactions}
     -- IS_INCOME is null (unknown) for a purchase with no bank category; null counts as not income.
     where ${where} and t.refund_of_id is null and coalesce(${IS_INCOME}, 0) = 0
@@ -105,7 +107,8 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
       lat: r.lat ?? found?.lat ?? null,
       lon: r.lon ?? found?.lon ?? null,
       approx: found?.approx ?? false,
-      online: r.channel === "online",
+      // The user's call if they made one, else the bank's (as everywhere: see isOnline).
+      online: r.onlineUser !== null ? r.onlineUser === 1 : r.channel === "online",
       city: r.city,
     };
   });

@@ -11,9 +11,11 @@ import {
   mapStyle,
   paceText,
   recency,
+  placedCategories,
   placeKey,
   purchasesAt,
   rhythm,
+  UNCATEGORIZED,
   weekdayOf,
 } from "./places";
 
@@ -197,5 +199,33 @@ describe("a place's purchases", () => {
     expect(groupPlaces(all).find((p) => p.key === key)?.visits).toBe(2);
     expect(purchasesAt(all, key).map((p) => p.date)).toEqual(["2026-10-09", "2026-10-01"]);
     expect(placeKey(all[4]!)).toBeNull();
+  });
+});
+
+describe("narrowing the map to a category", () => {
+  const all = [
+    buy({ merchant: "Grocer", category: "Groceries", lat: 39.8, lon: -89.6 }),
+    buy({ merchant: "Grocer", category: "Groceries", lat: 39.8, lon: -89.6 }),
+    buy({ merchant: "Cafe", category: "Dining", lat: 39.81, lon: -89.61 }),
+    buy({ merchant: "Stall", category: null, lat: 39.82, lon: -89.62 }),
+    buy({ merchant: "Web Store", category: "Shopping", lat: null, lon: null }),
+  ];
+
+  it("offers the categories of purchases that have a place, the most first", () => {
+    expect(placedCategories(all)).toEqual([
+      { name: "Groceries", count: 2 },
+      { name: "Dining", count: 1 },
+      { name: UNCATEGORIZED, count: 1 },
+    ]);
+  });
+
+  it("keeps only the chosen categories, or everything when none is chosen", () => {
+    const names = (...picked: string[]) =>
+      filterPurchases(all, { categories: new Set(picked) }).map((p) => p.merchant);
+    expect(names("Groceries")).toEqual(["Grocer", "Grocer"]);
+    expect(names(UNCATEGORIZED)).toEqual(["Stall"]);
+    expect(names("Dining", UNCATEGORIZED)).toEqual(["Cafe", "Stall"]);
+    expect(names()).toHaveLength(5);
+    expect(filterPurchases(all, {})).toHaveLength(5);
   });
 });
