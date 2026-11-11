@@ -31,7 +31,7 @@ export function ReportsPage() {
     <section className="@container max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Month report</h1>
+          <h1 className="text-2xl font-semibold">Monthly summary</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Income, spending, and what changed. Moves between your own accounts and card payments
             are left out.

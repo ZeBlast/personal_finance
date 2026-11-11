@@ -39,6 +39,27 @@ export function popoverPosition(
 const POPOVER = { width: 256, height: 290 };
 
 /**
+ * The money range the chart spans. It reaches zero whenever the balance comes near it (the question
+ * a forecast answers is whether the money runs out), but a balance that stays well above zero is
+ * not squeezed into the top of the chart: then the range starts below the lowest point, at a round
+ * figure, and the axis says so. Pure.
+ */
+export function plotDomain(values: number[]): { top: number; bottom: number } {
+  const max = Math.max(0, ...values);
+  const min = Math.min(0, ...values);
+  const lowest = Math.min(...values);
+  if (values.length === 0 || lowest <= max * 0.5) return { top: max, bottom: min };
+  // Room under the line for its label: half as much again as the line itself moves.
+  const under = Math.max((max - lowest) * 0.5, max * 0.05);
+  const raw = Math.max(0, lowest - under);
+  // Down to a round figure: a 1, 2 or 5 about a quarter of the range.
+  const rough = Math.max(100, (max - raw) / 4);
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const step = power * (rough / power >= 5 ? 5 : rough / power >= 2 ? 2 : 1);
+  return { top: max, bottom: Math.floor(raw / step) * step };
+}
+
+/**
  * The days ahead: cash as steps, the lowest point named, and a mark on each day money moves. Hover a
  * day for its figures. With `whatIf`, a slider tries out a one-off purchase and draws the result.
  * With `onAddWhatIf`, a click on a later day asks for an amount and hands back a one-off for it;
@@ -97,8 +118,7 @@ export function AnnotatedForecast({
     ...(tried ?? []).map((d) => d.balanceMinor),
     ...(other?.days ?? []).map((d) => d.balanceMinor),
   ];
-  const top = Math.max(0, ...values);
-  const bottom = Math.min(0, ...values);
+  const { top, bottom } = plotDomain(values);
   const span = top - bottom || 1;
   const plotWidth = Math.max(1, width - PAD.left - PAD.right);
   const x = (i: number) => PAD.left + (i / Math.max(1, days.length - 1)) * plotWidth;
@@ -109,15 +129,25 @@ export function AnnotatedForecast({
   const lowName = low.afterToday ? "Lowest after today" : "Lowest";
   const lowAt = days.findIndex((d) => d.date === low.date);
   const lowOnRight = lowAt >= 0 && x(lowAt) > width - 200;
-  // Above whichever line is higher at that day (the scenario's dashed one may be), 8px clear of
-  // it, and never off the top of the chart.
+  // Under the lowest point, where the line itself never is, clear of whichever line is lower that
+  // day (the scenario's dashed one may be). Without room there (the low is at the chart's floor),
+  // above the higher line instead, and never off the top of the chart.
   const scenarioAtLow = lowAt >= 0 ? other?.days[lowAt]?.balanceMinor : undefined;
-  const lowLabelY = Math.max(
-    12,
-    y(Math.max(low.balanceMinor, scenarioAtLow ?? low.balanceMinor)) - 8,
-  );
-  // Top and zero, then the bottom or the middle, whichever has room for its label.
-  const ticks = [...new Set([top, 0, Math.abs(y(bottom) - y(0)) > 16 ? bottom : top / 2])];
+  const under = y(Math.min(low.balanceMinor, scenarioAtLow ?? low.balanceMinor)) + 18;
+  const lowLabelY =
+    under <= height - PAD.bottom - 4
+      ? under
+      : Math.max(12, y(Math.max(low.balanceMinor, scenarioAtLow ?? low.balanceMinor)) - 8);
+  // Top and the floor (zero, unless the balance stays well above it), then the lowest value or
+  // the middle, whichever has room for its label.
+  const floor = bottom > 0 ? bottom : 0;
+  const ticks = [
+    ...new Set([
+      top,
+      floor,
+      bottom < 0 && Math.abs(y(bottom) - y(0)) > 16 ? bottom : (top + floor) / 2,
+    ]),
+  ];
   const shown = hover === null || asking ? null : days[hover]!;
   // A sensible range for the slider: up to what is in the bank, at least $500.
   const sliderMax = Math.max(50_000, Math.ceil(forecast.startBalanceMinor / 10_000) * 10_000);
@@ -159,7 +189,7 @@ export function AnnotatedForecast({
                 y1={y(v)}
                 y2={y(v)}
                 className={
-                  v === 0
+                  v === floor
                     ? "stroke-slate-400 dark:stroke-slate-500"
                     : "stroke-slate-200 dark:stroke-slate-700"
                 }

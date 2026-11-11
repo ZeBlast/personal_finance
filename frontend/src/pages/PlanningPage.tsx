@@ -4,6 +4,13 @@ import { api, errorMessage } from "../api/client";
 import { AccountName } from "../components/common/AccountName";
 import { Modal } from "../components/common/Modal";
 import { buttonClass, inputClass, primaryClass } from "../components/common/styles";
+import { CountAllBills } from "../components/planning/CountAllBills";
+import {
+  BiggestAhead,
+  ByKind,
+  UpcomingTable,
+  WeekByWeek,
+} from "../components/planning/ForecastPanels";
 import { AnnotatedForecast } from "../components/views/AnnotatedForecast";
 import { ScenarioDialog, useScenarioPickers } from "../components/views/ScenarioDialog";
 import { AddWhatIfDialog, SaveWhatIfsDialog, WhatIfChips } from "../components/views/WhatIfDraft";
@@ -22,7 +29,8 @@ import {
 } from "../lib/scenarios";
 import { announceDataChanged, useSyncFinishedCount } from "../lib/syncEvents";
 import { formatDay } from "../lib/time";
-import { forecastStatus, holdBackLine, holdBackSummary, lowestTile } from "../lib/views";
+import { forecastStatus, lowestTile } from "../lib/views";
+import { forecastTotals, NO_FILTER, type EventFilter } from "../lib/forecastSummary";
 import { CADENCE_LABEL } from "../lib/insights";
 import type {
   BillStatus,
@@ -86,7 +94,8 @@ export function PlanningPage() {
   const moved = legacyPlanningPath(params.get("view"));
   if (moved) return <Navigate to={moved} replace />;
   return (
-    <section className="max-w-5xl space-y-4">
+    // As wide as the window: the chart and the list beside it both gain from the room.
+    <section className="w-full space-y-4">
       {/* The forecast's own status line takes the subtitle's place, right under the title. */}
       <h1 className="text-2xl font-semibold">Cash forecast</h1>
       <ForecastView />
@@ -124,19 +133,6 @@ export function PaychecksPage() {
 
 // ---- Forecast ----------------------------------------------------------------------------------
 
-const SOURCE_LABEL = {
-  expected: "Expected",
-  recurring: "Recurring",
-  card_bill: "Card bill",
-  pending: "Pending",
-  debt_plan: "Debt plan",
-  interest: "Interest (from the APY)",
-  goal: "Set aside for a goal",
-  cap_holdback: "Spending caps (held back)",
-  instalment: "Instalment payment",
-  scenario: "What-if",
-};
-
 /** Where the held-back caps reach: the rest of the month, or only as far as the forecast does. */
 function holdRange(f: Forecast): string {
   const [y, m] = f.today.split("-").map(Number) as [number, number];
@@ -147,10 +143,25 @@ function holdRange(f: Forecast): string {
   return `spread over the rest of ${month}`;
 }
 
+/** The chart's height: taller in a tall window, between 300 and 460 pixels. */
+function useChartHeight(): number {
+  const measure = (): number =>
+    typeof window === "undefined" ? 300 : Math.max(300, Math.min(460, window.innerHeight - 480));
+  const [height, setHeight] = useState(measure);
+  useEffect(() => {
+    const onResize = (): void => setHeight(measure());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return height;
+}
+
 function ForecastView() {
   const [days, setDays] = useState(60);
   const { data, error, loading, reload } = useApi<Forecast>(`/forecast?days=${days}`);
   const [holdError, setHoldError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<EventFilter>(NO_FILTER);
+  const chartHeight = useChartHeight();
   const scenarios = useApi<Scenario[]>("/forecast/scenarios");
   const [chosen, setChosen] = usePersistentState("pf.forecast.compare", "");
   const [managing, setManaging] = useState(false);
@@ -243,11 +254,7 @@ function ForecastView() {
     );
   if (!data) return loading ? <Loading lines={5} /> : null;
   const money = (n: number) => formatMinor(n, data.currency);
-  // The daily cap hold-back would fill the table, so it gets one summary row below the rest.
-  const upcoming = data.days
-    .map((d) => ({ ...d, events: d.events.filter((e) => e.source !== "cap_holdback") }))
-    .filter((d) => d.events.length > 0);
-  const held = holdBackSummary(data.days);
+  const totals = forecastTotals(data.days, data.today);
   const low = lowestTile(data);
   const altLow = compared ? lowestTile(compared.alt) : null;
   // What the tiles and sentence say the figures are "with": the saved scenario, or the what-ifs.
@@ -264,8 +271,8 @@ function ForecastView() {
           />
         )}
       </div>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <dl className="grid grid-cols-3 gap-3 text-sm">
+      <div className="space-y-3">
+        <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
           <Stat label="In the bank today" value={money(data.startBalanceMinor)} />
           <Stat
             label={`${low.afterToday ? "Lowest after today" : "Lowest"} (${formatDay(low.date)})`}
@@ -294,6 +301,36 @@ function ForecastView() {
                     compared.alt.endBalanceMinor,
                   )
                 : undefined
+            }
+          />
+          <Stat
+            label={`Coming in, ${days} days`}
+            value={`+${money(totals.inMinor)}`}
+            note={`${totals.netMinor >= 0 ? "+" : ""}${money(totals.netMinor)} after what goes out`}
+          />
+          <Stat
+            label={`Going out, ${days} days`}
+            value={money(totals.outMinor)}
+            note={
+              data.capHoldBack.included && data.capHoldBack.totalMinor > 0
+                ? `${money(data.capHoldBack.totalMinor)} of it held back for spending caps`
+                : undefined
+            }
+          />
+          <Stat
+            label="Below zero"
+            value={
+              totals.firstBelowZero === null
+                ? "Never"
+                : totals.daysUntilBelowZero === 0
+                  ? "Today"
+                  : `In ${totals.daysUntilBelowZero} day${totals.daysUntilBelowZero === 1 ? "" : "s"}`
+            }
+            warn={totals.firstBelowZero !== null}
+            note={
+              totals.firstBelowZero === null
+                ? `in the next ${days} days`
+                : `on ${formatDay(totals.firstBelowZero)}`
             }
           />
         </dl>
@@ -408,138 +445,109 @@ function ForecastView() {
           onClose={() => setManaging(false)}
         />
       )}
-      <AnnotatedForecast
-        forecast={data}
-        compare={compared ? { label: compared.scenario.name, days: compared.alt.days } : null}
-        onAddWhatIf={draft.length < limit ? (a) => setDraft((d) => [...d, a]) : undefined}
-        drafted={draft.map((a) => a.date)}
-        stale={drafting && !fresh}
-      />
-      {drafting && (
-        <WhatIfChips
-          draft={draft}
-          currency={data.currency}
-          onRemove={(i) => setDraft((d) => d.filter((_, at) => at !== i))}
-          onClear={() => setDraft([])}
-          onSave={() => setSaving(true)}
-        />
-      )}
-      {draft.length >= limit && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {selected
-            ? `You can add up to ${limit} what-ifs on top of this scenario.`
-            : `You can add up to ${limit} what-ifs at once.`}{" "}
-          {drafting ? "Remove one, or save them as a scenario." : ""}
-        </p>
-      )}
-      {compared && (
-        <div className="space-y-1 text-sm">
-          <p className="text-violet-700 dark:text-violet-300">
-            {comparisonSentence(compared, data.currency, !drafting)}
-          </p>
-          {compared.scenario.skipped > 0 && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              Some of this scenario&apos;s saved changes couldn&apos;t be read, so they aren&apos;t
-              counted.
-            </p>
-          )}
-          {compared.unmatched.map((i) => (
-            <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
-              {describeAdjustment(compared.scenario.adjustments[i]!, data.currency, pickers.names)}:{" "}
-              {unmatchedNote(compared.scenario.adjustments[i]!, data.today, days)}
-            </p>
-          ))}
-        </div>
-      )}
-      <div className="text-sm">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={data.capHoldBack.included}
-            onChange={(e) => void holdCaps(e.target.checked)}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div className="min-w-0 space-y-4">
+          <AnnotatedForecast
+            forecast={data}
+            height={chartHeight}
+            compare={compared ? { label: compared.scenario.name, days: compared.alt.days } : null}
+            onAddWhatIf={draft.length < limit ? (a) => setDraft((d) => [...d, a]) : undefined}
+            drafted={draft.map((a) => a.date)}
+            stale={drafting && !fresh}
           />
-          Hold back the rest of this month&apos;s spending caps
-        </label>
-        {data.capHoldBack.included && (
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {data.capHoldBack.caps.length === 0
-              ? "Nothing to hold back: no cap has money left that is not already forecast."
-              : `${money(data.capHoldBack.totalMinor)} held back across ${data.capHoldBack.caps.length} cap${data.capHoldBack.caps.length === 1 ? "" : "s"}, ${holdRange(data)}.`}
+          {drafting && (
+            <WhatIfChips
+              draft={draft}
+              currency={data.currency}
+              onRemove={(i) => setDraft((d) => d.filter((_, at) => at !== i))}
+              onClear={() => setDraft([])}
+              onSave={() => setSaving(true)}
+            />
+          )}
+          {draft.length >= limit && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {selected
+                ? `You can add up to ${limit} what-ifs on top of this scenario.`
+                : `You can add up to ${limit} what-ifs at once.`}{" "}
+              {drafting ? "Remove one, or save them as a scenario." : ""}
+            </p>
+          )}
+          {compared && (
+            <div className="space-y-1 text-sm">
+              <p className="text-violet-700 dark:text-violet-300">
+                {comparisonSentence(compared, data.currency, !drafting)}
+              </p>
+              {compared.scenario.skipped > 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Some of this scenario&apos;s saved changes couldn&apos;t be read, so they
+                  aren&apos;t counted.
+                </p>
+              )}
+              {compared.unmatched.map((i) => (
+                <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
+                  {describeAdjustment(
+                    compared.scenario.adjustments[i]!,
+                    data.currency,
+                    pickers.names,
+                  )}
+                  : {unmatchedNote(compared.scenario.adjustments[i]!, data.today, days)}
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={data.capHoldBack.included}
+                onChange={(e) => void holdCaps(e.target.checked)}
+              />
+              Hold back the rest of this month&apos;s spending caps
+            </label>
+            {data.capHoldBack.included && (
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {data.capHoldBack.caps.length === 0
+                  ? "Nothing to hold back: no cap has money left that is not already forecast."
+                  : `${money(data.capHoldBack.totalMinor)} held back across ${data.capHoldBack.caps.length} cap${data.capHoldBack.caps.length === 1 ? "" : "s"}, ${holdRange(data)}.`}
+              </p>
+            )}
+            {holdError && (
+              <p role="alert" className="mt-1 text-xs text-red-600">
+                {holdError}
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-slate-500">
+            From the balances of {data.accountsCounted} bank account
+            {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,
+            recurring money in and out, and card bills (for cards with their bill dates set).
+            Upcoming charges to such a card, subscriptions among them, count on the day their bill
+            is due. Interest counts at the end of each month for bank accounts with an APY set
+            (under &quot;More...&quot; on the account). An estimate.
           </p>
-        )}
-        {holdError && (
-          <p role="alert" className="mt-1 text-xs text-red-600">
-            {holdError}
-          </p>
-        )}
+        </div>
+        <div className="space-y-4">
+          <WeekByWeek
+            forecast={data}
+            money={money}
+            picked={filter.range ?? null}
+            onPick={(week) =>
+              setFilter((f) => ({
+                ...f,
+                range: week ? { start: week.start, end: week.end } : null,
+              }))
+            }
+          />
+          <ByKind
+            forecast={data}
+            money={money}
+            picked={filter.source}
+            onPick={(source) => setFilter((f) => ({ ...f, source }))}
+          />
+          <BiggestAhead forecast={data} money={money} />
+        </div>
       </div>
-      <p className="text-xs text-slate-500">
-        From the balances of {data.accountsCounted} bank account
-        {data.accountsCounted === 1 ? "" : "s"}, plus expected transactions from the calendar,
-        recurring money in and out, and card bills (for cards with their bill dates set). Upcoming
-        charges to such a card, subscriptions among them, count on the day their bill is due.
-        Interest counts at the end of each month for bank accounts with an APY set (under
-        &quot;More...&quot; on the account). An estimate.
-      </p>
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-slate-500">
-          <tr>
-            <th className="py-1 font-medium">Date</th>
-            <th className="py-1 font-medium">What</th>
-            <th className="py-1 text-right font-medium">Amount</th>
-            <th className="py-1 text-right font-medium">Balance after</th>
-          </tr>
-        </thead>
-        <tbody>
-          {upcoming.flatMap((d) =>
-            d.events.map((e, i) => (
-              <tr
-                key={`${d.date}-${i}`}
-                className="border-t border-slate-100 dark:border-slate-800"
-              >
-                <td className="py-1 whitespace-nowrap">{i === 0 ? formatDay(d.date) : ""}</td>
-                <td className="py-1">
-                  {e.label}{" "}
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {SOURCE_LABEL[e.source]}
-                    {e.card !== undefined && e.chargedOn !== undefined
-                      ? ` · charged to ${e.card} ${formatDay(e.chargedOn)}, paid with its bill`
-                      : ""}
-                  </span>
-                </td>
-                <td
-                  className={`py-1 text-right tabular-nums ${e.amountMinor > 0 ? "text-green-700 dark:text-green-400" : ""}`}
-                >
-                  {e.amountMinor > 0 ? "+" : ""}
-                  {money(e.amountMinor)}
-                </td>
-                <td
-                  className={`py-1 text-right tabular-nums ${d.balanceMinor < 0 ? "text-red-600" : "text-slate-500"}`}
-                >
-                  {i === d.events.length - 1 ? money(d.balanceMinor) : ""}
-                </td>
-              </tr>
-            )),
-          )}
-          {held && (
-            <tr className="border-t border-slate-100 dark:border-slate-800">
-              <td colSpan={2} className="py-1 text-slate-600 dark:text-slate-300">
-                {holdBackLine(held, money)}
-              </td>
-              <td className="py-1 text-right tabular-nums">{money(-held.totalMinor)}</td>
-              <td />
-            </tr>
-          )}
-          {upcoming.length === 0 && !held && (
-            <tr>
-              <td colSpan={4} className="py-3 text-slate-500">
-                Nothing expected yet. Add expected transactions on the calendar, or set your card
-                bill dates.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <UpcomingTable forecast={data} money={money} filter={filter} onFilter={setFilter} />
     </div>
   );
 }
@@ -549,10 +557,13 @@ function Stat({
   value,
   warn,
   change,
+  note,
 }: {
   label: string;
   value: string;
   warn?: boolean;
+  /** A plain line under the value. */
+  note?: string | undefined;
   /** How a compared scenario differs, shown under the value. */
   change?: string | undefined;
 }) {
@@ -562,6 +573,7 @@ function Stat({
       <dd className={`text-lg font-semibold tabular-nums ${warn ? "text-red-600" : ""}`}>
         {value}
       </dd>
+      {note && <dd className="text-xs text-slate-500 dark:text-slate-400">{note}</dd>}
       {change && <dd className="text-xs text-violet-700 dark:text-violet-300">{change}</dd>}
     </div>
   );
@@ -609,6 +621,7 @@ function BillsView() {
         balance is worked out from the card&apos;s balance and the purchases since it closed, so it
         can differ a little from the bank&apos;s (interest, fees, pending charges).
       </p>
+      <CountAllBills bills={bills.data} onDone={bills.reload} />
       {bills.data.map((b) => {
         const money = (n: number) => formatMinor(n, b.currency);
         const s = b.statement;

@@ -3,7 +3,12 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Forecast } from "../../types/planning";
-import { AnnotatedForecast, nearestDayIndex, popoverPosition } from "./AnnotatedForecast";
+import {
+  AnnotatedForecast,
+  nearestDayIndex,
+  plotDomain,
+  popoverPosition,
+} from "./AnnotatedForecast";
 
 afterEach(cleanup);
 
@@ -30,13 +35,41 @@ describe("annotated forecast", () => {
     expect(screen.queryByTestId("scenario-line")).toBeNull();
   });
 
-  it("keeps the Lowest label above a scenario line that runs higher", () => {
+  it("keeps the Lowest label clear of both lines: under the lower one where there is room", () => {
     const higher = days.map((d) => ({ ...d, balanceMinor: d.balanceMinor + 30_000 }));
-    render(<AnnotatedForecast forecast={forecast} compare={{ label: "Raise", days: higher }} />);
-    const label = screen.getByText(/^Lowest \$/);
-    const path = screen.getByTestId("scenario-line").getAttribute("d")!;
-    const scenarioY = Number([...path.matchAll(/V([\d.]+)/g)].at(-1)![1]);
-    expect(Number(label.getAttribute("y"))).toBeLessThanOrEqual(scenarioY - 8);
+    const { container } = render(
+      <AnnotatedForecast forecast={forecast} compare={{ label: "Raise", days: higher }} />,
+    );
+    const label = Number(screen.getByText(/^Lowest \$/).getAttribute("y"));
+    const lastY = (d: string) => Number([...d.matchAll(/V([\d.]+)/g)].at(-1)![1]);
+    const ownY = lastY(container.querySelector("path.pf-draw")!.getAttribute("d")!);
+    const scenarioY = lastY(screen.getByTestId("scenario-line").getAttribute("d")!);
+    expect(label).toBeGreaterThanOrEqual(Math.max(ownY, scenarioY) + 8);
+  });
+
+  it("puts the Lowest label above the line when the low is at the chart's floor", () => {
+    const toZero = days.map((d, i) => ({ ...d, balanceMinor: i === 2 ? 0 : 100_000 }));
+    const { container } = render(
+      <AnnotatedForecast
+        forecast={{ ...forecast, days: toZero, lowest: { date: "2026-11-03", balanceMinor: 0 } }}
+      />,
+    );
+    const label = Number(screen.getByText(/^Lowest \$/).getAttribute("y"));
+    const d = container.querySelector("path.pf-draw")!.getAttribute("d")!;
+    expect(label).toBeLessThanOrEqual(Number([...d.matchAll(/V([\d.]+)/g)].at(-1)![1]) - 8);
+  });
+
+  it("spans down to zero only when the balance comes near it", () => {
+    // Near zero, or below it: zero is on the chart.
+    expect(plotDomain([100_000, 40_000])).toEqual({ top: 100_000, bottom: 0 });
+    expect(plotDomain([100_000, -20_000])).toEqual({ top: 100_000, bottom: -20_000 });
+    // Well above zero all along: the floor is a round figure under the lowest point.
+    const high = plotDomain([3_530_000, 2_550_000]);
+    expect(high.top).toBe(3_530_000);
+    expect(high.bottom).toBeGreaterThan(0);
+    expect(high.bottom).toBeLessThan(2_550_000);
+    expect(high.bottom).toBe(2_000_000); // $20,000: a round figure under $25,500
+    expect(plotDomain([])).toEqual({ top: 0, bottom: 0 });
   });
 
   it("marks only the days something real happens, not the daily cap hold-back", () => {
