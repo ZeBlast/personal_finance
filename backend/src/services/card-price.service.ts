@@ -29,6 +29,7 @@ import { findTcgplayerIds } from "./tcgplayer-ids.service.js";
 const API_KEY = "justtcg.api_key";
 const USAGE_KEY = "justtcg_usage";
 const BASE = "https://api.justtcg.com/v1";
+const REQUEST_TIMEOUT_MS = 20_000;
 const GAME = "pokemon";
 /** Free plan: at most 20 cards per batch request. */
 export const BATCH_SIZE = 20;
@@ -247,6 +248,8 @@ export function createJustTcgClient(db: AppDb, apiKey: string, options: ClientOp
         res = await fetchImpl(`${BASE}${path}`, {
           ...init,
           headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+          // A server that stops answering must not hold the price run open for good.
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
       } catch {
         throw new AppError(
