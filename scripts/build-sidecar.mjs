@@ -26,6 +26,16 @@ if (triple !== "x86_64-pc-windows-msvc") {
   throw new Error(`Only x86_64-pc-windows-msvc is wired up so far (found ${triple})`);
 }
 
+// The Node running this script is the one copied into the app (step 3), so it has to be the
+// project's version (.nvmrc): the one the tests ran on.
+const wanted = readFileSync(join(root, ".nvmrc"), "utf8").trim().replace(/^v/, "").split(".")[0];
+const running = process.versions.node.split(".")[0];
+if (running !== wanted) {
+  throw new Error(
+    `This build embeds the Node it runs on, and the project uses Node ${wanted} (.nvmrc); this is Node ${process.versions.node}. Switch to Node ${wanted} and build again.`,
+  );
+}
+
 rmSync(buildDir, { recursive: true, force: true });
 mkdirSync(buildDir, { recursive: true });
 mkdirSync(binariesDir, { recursive: true });
@@ -38,7 +48,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "cjs",
-  target: "node22",
+  target: `node${wanted}`,
   logLevel: "warning",
 });
 

@@ -1225,24 +1225,16 @@ export const geocodeCache = sqliteTable("geocode_cache", {
 });
 
 /**
- * A phone paired as a read-only viewer. After each sync (and once edits settle) the app writes an
- * encrypted snapshot for each phone that is not revoked, into the folder chosen for it (a Google
- * Drive folder, say). The phone got its key once, from a QR code; the key is kept here encrypted
- * like the Plaid tokens, so a copy of the folder is useless without the phone.
+ * The user's own call on a looked-up position: right, wrong, or moved by hand. Kept apart from
+ * `geocode_cache` because that is cleared when everything is looked up again, and these must last.
  */
-export const viewerDevices = sqliteTable("viewer_devices", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  /** Random identifier, written in each snapshot's header so the phone knows the file is its own. */
-  deviceId: text("device_id").notNull().unique(),
-  name: text("name").notNull(),
-  /** AES-256-GCM encrypted 32-byte snapshot key (context: the device ID). Never returned by the API. */
-  keyEncrypted: text("key_encrypted").notNull(),
-  /** The folder the snapshot file is written into. */
-  folder: text("folder").notNull(),
-  pairedAt: text("paired_at").notNull(),
-  /** Set when the phone is forgotten: nothing new is written for it again. */
-  revokedAt: text("revoked_at"),
-  lastWrittenAt: text("last_written_at"),
-  /** Why the last write failed (a short safe message), or null after a success. */
-  lastError: text("last_error"),
+export const geocodeReviews = sqliteTable("geocode_reviews", {
+  /** The lookup's key without its method version (see reviewKey), so it outlives a new method. */
+  queryKey: text("query_key").primaryKey(),
+  /** `right`, `wrong` or `moved`. */
+  verdict: text("verdict").notNull(),
+  /** The position judged (right, wrong) or chosen (moved). */
+  lat: real("lat").notNull(),
+  lon: real("lon").notNull(),
+  reviewedAt: text("reviewed_at").notNull(),
 });

@@ -567,3 +567,151 @@ describe("the geocoder", () => {
     expect(place(t, "Shop").online).toBe(false);
   });
 });
+
+interface Listed {
+  key: string;
+  shop: string | null;
+  asked: string;
+  found: string | null;
+  precision: string;
+  lat: number | null;
+  purchases: number;
+  verdict: string | null;
+  canMove: boolean;
+}
+
+describe("reviewing lookups", () => {
+  /** Two purchases at one address and a shop without one, all looked up. */
+  async function lookedUp(answers: Record<string, [number, number]>, buys?: Buy[]) {
+    const t = await withPurchases(
+      buys ?? [
+        { merchant: "Corner Cafe", address: "100 Main St", ...springfield },
+        { merchant: "Corner Cafe", address: "100 Main St", ...springfield, date: "2026-10-02" },
+        { merchant: "Taco Truck", ...springfield },
+      ],
+    );
+    const fake = fakeNominatim(answers);
+    const { g } = geocoderFor(t, fake.fetchImpl);
+    await g.start();
+    await g.idle();
+    const list = async () =>
+      (await t.call("get", "/api/geocode/lookups").expect(200)).body.lookups as Listed[];
+    const review = (body: object) => t.call("put", "/api/geocode/lookups/review").send(body);
+    return { t, g, fake, list, review };
+  }
+  const answers: Record<string, [number, number]> = {
+    "street:100 Main St": [39.8, -89.64],
+    "postal:62701": [39.79, -89.65],
+  };
+
+  it("lists what was asked, what was found and how many purchases each places", async () => {
+    const { list, g } = await lookedUp(answers);
+    const lookups = await list();
+    expect(lookups.map((l) => [l.asked, l.found, l.precision, l.purchases, l.canMove])).toEqual([
+      ["100 Main St, Springfield, IL 62701", "street:100 Main St", "address", 2, true],
+      // The shop was not found, so its position can be set by hand; its postal code places it.
+      ["Postal code 62701", "postal:62701", "postcode", 1, false],
+      ["Taco Truck, Springfield, IL", null, "shop", 1, true],
+    ]);
+    expect(lookups[0]!.shop).toBe("Corner Cafe");
+    expect(lookups.every((l) => l.verdict === null)).toBe(true);
+    expect(g.status()).toMatchObject({ lookups: 2, unchecked: 2 });
+  });
+
+  it("says which lookup placed a purchase", async () => {
+    const { t, list } = await lookedUp(answers);
+    const [address, postcode, shop] = await list();
+    expect(place(t, "Corner Cafe")).toMatchObject({
+      lookupKey: address!.key,
+      moveKey: address!.key,
+    });
+    expect(place(t, "Taco Truck")).toMatchObject({ lookupKey: postcode!.key, moveKey: shop!.key });
+  });
+
+  it("keeps a right answer where it is and counts it as checked", async () => {
+    const { t, g, list, review } = await lookedUp(answers);
+    const key = (await list())[0]!.key;
+    await review({ key, verdict: "right" }).expect(200);
+    expect((await list())[0]!.verdict).toBe("right");
+    expect(place(t, "Corner Cafe")).toMatchObject({ lat: 39.8, approx: false });
+    expect(g.status()).toMatchObject({ lookups: 2, unchecked: 1 });
+  });
+
+  it("takes a wrong address off the map, and never by another way", async () => {
+    const { t, g, list, review } = await lookedUp(answers);
+    const key = (await list())[0]!.key;
+    await review({ key, verdict: "wrong" }).expect(200);
+    expect(place(t, "Corner Cafe")).toMatchObject({ lat: null, lon: null, lookupKey: null });
+    expect((await list()).find((l) => l.key === key)).toMatchObject({
+      verdict: "wrong",
+      found: "street:100 Main St",
+      purchases: 2,
+    });
+    expect(g.status()).toMatchObject({ pending: 0, lookups: 1, unchecked: 1 });
+    // Taken back, the answer stands again.
+    await t.call("delete", "/api/geocode/lookups/review").send({ key }).expect(200);
+    expect(place(t, "Corner Cafe")).toMatchObject({ lat: 39.8 });
+  });
+
+  it("moves a wrong shop on to its postal code", async () => {
+    const { t, list, review } = await lookedUp({
+      "q:Taco Truck, Springfield, IL": [39.7, -89.6],
+      "postal:62701": [39.79, -89.65],
+    });
+    expect(place(t, "Taco Truck")).toMatchObject({ lat: 39.7, approx: false });
+    const key = (await list()).find((l) => l.precision === "shop")!.key;
+    await review({ key, verdict: "wrong" }).expect(200);
+    // The postal code had not been asked: the shop had been found.
+    expect(place(t, "Taco Truck")).toMatchObject({ lat: null });
+  });
+
+  it("puts purchases where the user says, also when nothing was found", async () => {
+    const { t, g, fake, list, review } = await lookedUp(answers);
+    const shop = (await list()).find((l) => l.precision === "shop")!;
+    await review({ key: shop.key, verdict: "moved", lat: 39.801, lon: -89.644 }).expect(200);
+    expect(place(t, "Taco Truck")).toMatchObject({
+      lat: 39.801,
+      lon: -89.644,
+      approx: false,
+      lookupKey: shop.key,
+    });
+    expect((await list()).find((l) => l.key === shop.key)).toMatchObject({
+      verdict: "moved",
+      lat: 39.801,
+    });
+    // The postal code no longer places anything, so it leaves the list.
+    expect((await list()).some((l) => l.precision === "postcode")).toBe(false);
+
+    // Looking everything up again keeps it, and does not ask about it.
+    const before = fake.calls.length;
+    g.reset();
+    expect(g.status()).toMatchObject({ pending: 1 });
+    await g.start();
+    await g.idle();
+    expect(fake.calls.slice(before).map((c) => c.params["street"])).toEqual(["100 Main St"]);
+    expect(place(t, "Taco Truck")).toMatchObject({ lat: 39.801 });
+  });
+
+  it("refuses to move a postal code, to judge nothing, and a position off the globe", async () => {
+    const { list, review } = await lookedUp(answers);
+    const lookups = await list();
+    const postcode = lookups.find((l) => l.precision === "postcode")!;
+    const shop = lookups.find((l) => l.precision === "shop")!;
+    await review({ key: postcode.key, verdict: "moved", lat: 39.8, lon: -89.6 }).expect(400);
+    await review({ key: shop.key, verdict: "right" }).expect(409);
+    await review({ key: shop.key, verdict: "moved" }).expect(400);
+    await review({ key: shop.key, verdict: "moved", lat: 139.8, lon: -89.6 }).expect(400);
+    await review({ key: "street=nowhere", verdict: "right" }).expect(404);
+  });
+
+  it("asks for a fresh look when the server later answers something else", async () => {
+    const { t, list, review } = await lookedUp(answers);
+    const key = (await list())[0]!.key;
+    await review({ key, verdict: "wrong" }).expect(200);
+    expect(place(t, "Corner Cafe").lat).toBeNull();
+    // A new answer for the same question, some way off: the old call was not about this one.
+    t.db.update(geocodeCache).set({ lat: 39.9 }).where(eq(geocodeCache.lat, 39.8)).run();
+    expect((await list()).find((l) => l.key === key)!.verdict).toBeNull();
+    expect(place(t, "Corner Cafe")).toMatchObject({ lat: 39.9 });
+  });
+});

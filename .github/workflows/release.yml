@@ -28,7 +28,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # The version in .nvmrc: the release embeds this Node in the app, so CI, releases and
+          # development all use the same one.
+          node-version-file: .nvmrc
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -54,20 +56,3 @@ jobs:
           releaseDraft: true
           tauriScript: npx tauri
           args: --config {"bundle":{"createUpdaterArtifacts":true}}
-
-  # The Android phone viewer, attached to the same draft release.
-  version:
-    runs-on: ubuntu-24.04
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: version
-        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-  android:
-    needs: [windows, version]
-    uses: ./.github/workflows/android.yml
-    with:
-      release-tag: ${{ needs.version.outputs.tag }}
-    secrets: inherit

@@ -414,6 +414,20 @@
       "when": 1794221241152,
       "tag": "0058_viewer_devices",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1794460881504,
+      "tag": "0059_geocode_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1794610307767,
+      "tag": "0060_drop_viewer_devices",
+      "breakpoints": true
     }
   ]
 }

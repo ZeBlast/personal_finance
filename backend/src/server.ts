@@ -24,8 +24,7 @@ import {
 import { getSettings } from "./services/settings.service.js";
 import { createPlaidService } from "./services/plaid.service.js";
 import { createSyncService } from "./services/sync.service.js";
-import { createViewerService } from "./services/viewer.service.js";
-import { createApp, loopbackGet } from "./app.js";
+import { createApp } from "./app.js";
 import { repairManualBalanceHistories } from "./services/manual-transaction.service.js";
 
 async function main(): Promise<void> {
@@ -119,13 +118,6 @@ async function main(): Promise<void> {
 
   const getGateway = createGatewayProvider(db, cipher);
   const sync = createSyncService({ db, cipher, getGateway });
-  // Paired phones get an encrypted read-only snapshot, read from this app's own API over loopback.
-  const viewer = createViewerService({
-    db,
-    cipher,
-    appVersion: env.PF_VERSION,
-    get: loopbackGet(env.PF_PORT, env.PF_TOKEN),
-  });
 
   const app = createApp({
     db,
@@ -136,7 +128,6 @@ async function main(): Promise<void> {
     recoveryKey: masterKey,
     getGateway,
     sync,
-    viewer,
     staticDir: env.PF_STATIC_DIR,
     allowDevOrigin: env.PF_ALLOW_DEV_ORIGIN,
     dataDir: env.dataDir,
@@ -195,8 +186,6 @@ async function main(): Promise<void> {
       .then(() => sync.runLaunchSync())
       .then((result) => {
         console.log(`launch sync: ${result.runs.length} run(s), ${result.skipped.length} skipped`);
-        // Paired phones get a fresh snapshot each launch, synced or not (TSP prices, say).
-        viewer.scheduleWrite(10_000);
       })
       .catch((error: unknown) =>
         console.error(

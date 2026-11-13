@@ -12,13 +12,7 @@ if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
 }
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// mobile/package.json also gives the Android viewer its version (mobile/android/app/build.gradle).
-for (const file of [
-  "package.json",
-  "backend/package.json",
-  "frontend/package.json",
-  "mobile/package.json",
-]) {
+for (const file of ["package.json", "backend/package.json", "frontend/package.json"]) {
   const path = join(root, file);
   const json = JSON.parse(readFileSync(path, "utf8"));
   json.version = version;

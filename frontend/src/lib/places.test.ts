@@ -46,6 +46,8 @@ describe("after review of the map's second version", () => {
     approx: false,
     online: false,
     city: null,
+    lookupKey: null,
+    moveKey: null,
     ...over,
   });
 
@@ -88,6 +90,8 @@ const buy = (over: Partial<PlacePurchase>): PlacePurchase => ({
   approx: false,
   online: false,
   city: "Springfield",
+  lookupKey: null,
+  moveKey: null,
   ...over,
 });
 
