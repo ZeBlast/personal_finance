@@ -6,7 +6,12 @@ import { MAX_FORECAST_DAYS } from "../services/forecast.service.js";
 import { monthPlan } from "../services/month-plan.service.js";
 import { outlookInputs } from "../services/outlook.service.js";
 import { placesData } from "../services/places.service.js";
-import type { Geocoder } from "../services/geocode.service.js";
+import {
+  clearReview,
+  listLookups,
+  reviewLookup,
+  type Geocoder,
+} from "../services/geocode.service.js";
 import { safetyNet } from "../services/safety-net.service.js";
 import { yearAhead } from "../services/year-ahead.service.js";
 
@@ -15,6 +20,7 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 /**
  * The planning tools that read across the others: the safety net, can I afford it, the month
  * plan, the year ahead and the long-range outlook. Each only reads; nothing here changes data.
+ * The Places map's address lookups are here too: those save the answers and the user's reviews.
  */
 export function planToolsRoutes(db: AppDb, geocoder: Geocoder): Router {
   const router = Router();
@@ -86,6 +92,36 @@ export function planToolsRoutes(db: AppDb, geocoder: Geocoder): Router {
   router.post("/geocode/reset", (_req, res) => {
     geocoder.reset();
     res.json(geocoder.status());
+  });
+
+  /** The lookups made so far, for the user to check. */
+  router.get("/geocode/lookups", (_req, res) => {
+    res.json({ lookups: listLookups(db) });
+  });
+
+  /** The user's call on a lookup: right, wrong, or a position set by hand. */
+  router.put("/geocode/lookups/review", (req, res) => {
+    const body = z
+      .object({
+        key: z.string().min(1).max(500),
+        verdict: z.enum(["right", "wrong", "moved"]),
+        lat: z.number().min(-90).max(90).optional(),
+        lon: z.number().min(-180).max(180).optional(),
+      })
+      .parse(req.body);
+    const position =
+      body.lat !== undefined && body.lon !== undefined
+        ? { lat: body.lat, lon: body.lon }
+        : undefined;
+    reviewLookup(db, body.key, body.verdict, position);
+    res.json({ lookups: listLookups(db) });
+  });
+
+  /** Takes a call back, so the server's answer stands again. */
+  router.delete("/geocode/lookups/review", (req, res) => {
+    const body = z.object({ key: z.string().min(1).max(500) }).parse(req.body);
+    clearReview(db, body.key);
+    res.json({ lookups: listLookups(db) });
   });
 
   /** Stops the lookups after the one in flight. */

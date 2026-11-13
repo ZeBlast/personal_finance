@@ -22,6 +22,8 @@ const status = (over: Partial<GeocodeStatus>): GeocodeStatus => ({
   notFound: 0,
   pending: 0,
   unplaced: 0,
+  lookups: 0,
+  unchecked: 0,
   stopped: null,
   message: null,
   resetAvailableAt: null,
@@ -55,9 +57,7 @@ describe("address lookups", () => {
     render(<AddressLookups onFound={() => {}} />);
     const bar = await screen.findByRole("progressbar", { name: "Address lookups" });
     expect(bar.getAttribute("aria-valuenow")).toBe("40");
-    expect(screen.getByText(/Made 4 of 10 lookups/).textContent).toMatch(
-      /About 12 seconds left/,
-    );
+    expect(screen.getByText(/Made 4 of 10 lookups/).textContent).toMatch(/About 12 seconds left/);
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   });
 
@@ -98,5 +98,21 @@ describe("address lookups", () => {
     const button = await screen.findByRole("button", { name: "Look up all again" });
     expect(button).toHaveProperty("disabled", true);
     expect(screen.getByText(/Available again on/)).toBeTruthy();
+  });
+
+  it("leads to the review once positions have been found", async () => {
+    fakeBackend({ "/geocode/status": status({ lookups: 41, unchecked: 12 }) });
+    const onReview = vi.fn();
+    render(<AddressLookups onFound={() => {}} onReview={onReview} />);
+    expect(await screen.findByText(/41 looked-up positions, 12 not checked yet\./)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(onReview).toHaveBeenCalled();
+  });
+
+  it("offers no review before any lookup has found a position", async () => {
+    fakeBackend({ "/geocode/status": status({ pending: 3 }) });
+    render(<AddressLookups onFound={() => {}} onReview={() => {}} />);
+    await screen.findByRole("button", { name: "Start lookups" });
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
   });
 });

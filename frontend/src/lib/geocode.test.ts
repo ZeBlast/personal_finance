@@ -12,6 +12,8 @@ const status = (over: Partial<GeocodeStatus>): GeocodeStatus => ({
   notFound: 0,
   pending: 0,
   unplaced: 0,
+  lookups: 0,
+  unchecked: 0,
   stopped: null,
   message: null,
   resetAvailableAt: null,

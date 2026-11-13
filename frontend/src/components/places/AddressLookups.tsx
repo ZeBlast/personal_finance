@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, errorMessage, insideTauri } from "../../api/client";
 import { useApi } from "../../hooks/useApi";
 import { lookupProgress, resetNote } from "../../lib/geocode";
+import { reviewSummary } from "../../lib/lookupReview";
 import { askConfirm } from "../common/ConfirmHost";
 import { toast } from "../../lib/toast";
 import type { GeocodeStatus } from "../../types/places";
@@ -35,13 +36,26 @@ function Outside({ href, children }: { href: string; children: ReactNode }) {
  * the street address, the shop and its city, the postal code or the city. Off until turned on;
  * runs only when started here, one lookup every two seconds, with a progress bar while it goes.
  * The backend keeps every answer, so nothing is asked twice; "look up all again" clears them, at
- * most once a week.
+ * most once a week. Once some positions have been found, it leads to the list for checking them.
  */
-export function AddressLookups({ onFound }: { onFound: () => void }) {
+export function AddressLookups({
+  onFound,
+  onReview,
+  refreshKey = 0,
+}: {
+  onFound: () => void;
+  /** Opens the list of looked-up positions. */
+  onReview?: (() => void) | undefined;
+  /** Changes when the counts here may have (a position was checked or moved). */
+  refreshKey?: number;
+}) {
   const { data, error, reload } = useApi<GeocodeStatus>("/geocode/status");
   const [busy, setBusy] = useState(false);
   const [server, setServer] = useState<string | null>(null);
   const wasRunning = useRef(false);
+  useEffect(() => {
+    if (refreshKey > 0) reload();
+  }, [refreshKey, reload]);
 
   // Follow a run once a second; when it ends, show the places it found.
   useEffect(() => {
@@ -187,6 +201,17 @@ export function AddressLookups({ onFound }: { onFound: () => void }) {
             {progress.text} {progress.eta}
           </p>
         </div>
+      )}
+
+      {reviewSummary(data) && (
+        <p className="flex flex-wrap items-center gap-2">
+          {reviewSummary(data)}
+          {onReview && (
+            <button type="button" className={button} onClick={onReview}>
+              Review
+            </button>
+          )}
+        </p>
       )}
 
       <details className="text-xs text-slate-500 dark:text-slate-400">

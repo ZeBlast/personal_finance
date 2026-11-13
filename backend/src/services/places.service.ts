@@ -3,7 +3,7 @@ import type { AppDb } from "../db/client.js";
 import { isRealDate } from "../utils/dates.js";
 import { AppError } from "../utils/errors.js";
 import { fromTransactions, IS_INCOME, OWN_MERCHANT, whereClauses } from "./analytics.service.js";
-import { resolveRows, type LocatedRow } from "./geocode.service.js";
+import { resolveRows, reviewKey, type LocatedRow } from "./geocode.service.js";
 import { getSettings } from "./settings.service.js";
 
 /**
@@ -29,6 +29,10 @@ export interface PlacePurchase {
   /** Paid online, as opposed to in a shop: the user's call if they made one, else the bank's. */
   online: boolean;
   city: string | null;
+  /** The address lookup that placed it (see Lookup.key), or null when its position is the bank's or the same store's. */
+  lookupKey: string | null;
+  /** The lookup that names its own shop or building, where a position set by hand is kept; null when it has none. */
+  moveKey: string | null;
 }
 
 export interface Places {
@@ -90,10 +94,12 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
   `);
   // Purchases that came without coordinates: placed by the same store's known position, or by
   // the address lookups made so far.
-  const { placed } = resolveRows(
+  const { placed, via, own } = resolveRows(
     db,
     rows.filter((r) => r.lat === null || r.lon === null),
   );
+  const keyOf = (step: { key: string } | undefined): string | null =>
+    step ? reviewKey(step.key) : null;
   const purchases: PlacePurchase[] = rows.map((r) => {
     const found = r.lat !== null && r.lon !== null ? null : (placed.get(r) ?? null);
     return {
@@ -110,6 +116,8 @@ export function placesData(db: AppDb, q: { from: string; to: string }): Places {
       // The user's call if they made one, else the bank's (as everywhere: see isOnline).
       online: r.onlineUser !== null ? r.onlineUser === 1 : r.channel === "online",
       city: r.city,
+      lookupKey: keyOf(via.get(r)),
+      moveKey: keyOf(own.get(r)),
     };
   });
   return {

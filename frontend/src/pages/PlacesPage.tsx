@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import { Loading } from "../components/common/Loading";
 import { AddressLookups } from "../components/places/AddressLookups";
 import { CategoryPicker } from "../components/places/CategoryPicker";
+import { LookupReview, type LookupHandlers } from "../components/places/LookupReview";
 import { HabitBarcodes } from "../components/places/HabitBarcodes";
 import { PlaceDetail } from "../components/places/PlaceDetail";
 import { PlacesMap } from "../components/places/PlacesMap";
@@ -25,7 +26,7 @@ import { usePersistentState } from "../hooks/usePersistentState";
 import { formatDay } from "../lib/time";
 import { toast } from "../lib/toast";
 import type { Settings } from "../types/api";
-import type { Places } from "../types/places";
+import type { Lookup, Lookups, Places } from "../types/places";
 
 const SPANS = [
   { months: 3, label: "Last 3 months" },
@@ -114,6 +115,74 @@ export function PlacesPage() {
     () => habits(filterPurchases(purchases, { cells, bounds: area })),
     [purchases, cells, area],
   );
+
+  // Checking looked-up positions: the list, the spot marked on the map, and a position being
+  // chosen by hand (for the lookup `key`; `at` once the map has been clicked).
+  const lookups = useApi<Lookups>("/geocode/lookups");
+  const [reviewing, setReviewing] = useState(false);
+  const [shownLookup, setShownLookup] = useState<Lookup | null>(null);
+  const [moving, setMoving] = useState<{
+    key: string;
+    label: string;
+    at: { lat: number; lon: number } | null;
+  } | null>(null);
+  const [deciding, setDeciding] = useState(false);
+  // The list sits under the map: showing or moving a position brings the map back into view.
+  const mapBox = useRef<HTMLDivElement>(null);
+  const toMap = (): void =>
+    mapBox.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  const [checked, setChecked] = useState(0);
+  const reloadLookups = lookups.reload;
+  const afterLookups = useMemo(
+    () => () => {
+      reload();
+      reloadLookups();
+    },
+    [reload, reloadLookups],
+  );
+
+  async function decide(init: RequestInit): Promise<boolean> {
+    setDeciding(true);
+    try {
+      await api("/geocode/lookups/review", init);
+      setShownLookup(null);
+      afterLookups();
+      setChecked((n) => n + 1);
+      return true;
+    } catch (e) {
+      toast(errorMessage(e), { kind: "error" });
+      return false;
+    } finally {
+      setDeciding(false);
+    }
+  }
+  const review: LookupHandlers = {
+    busy: deciding || moving !== null,
+    onVerdict: (l, verdict) =>
+      void decide({ method: "PUT", body: JSON.stringify({ key: l.key, verdict }) }),
+    onMove: (key, label) => {
+      setPickedKey(null);
+      setShownLookup(null);
+      setMoving({ key, label, at: null });
+      toMap();
+    },
+    onUndo: (l) => void decide({ method: "DELETE", body: JSON.stringify({ key: l.key }) }),
+  };
+  async function saveMove(): Promise<void> {
+    if (!moving?.at) return;
+    const body = { key: moving.key, verdict: "moved", ...moving.at };
+    if (await decide({ method: "PUT", body: JSON.stringify(body) })) setMoving(null);
+  }
+  const pickedPurchases = picked ? purchasesAt(shown, picked.key) : [];
+  const pickedLookupKey = pickedPurchases.find((p) => p.lookupKey !== null)?.lookupKey ?? null;
+  const pickedLookup =
+    lookups.data?.lookups.find((l) => l.key === pickedLookupKey && pickedLookupKey !== null) ??
+    null;
+  const marker = moving
+    ? moving.at && { ...moving.at, go: false }
+    : shownLookup && shownLookup.lat !== null && shownLookup.lon !== null
+      ? { lat: shownLookup.lat, lon: shownLookup.lon, go: true }
+      : null;
 
   async function saveSetting(patch: Partial<Settings>): Promise<void> {
     try {
@@ -222,29 +291,84 @@ export function PlacesPage() {
                 map host sees which areas you look at, never your transactions.
               </p>
             )}
-            <PlacesMap
-              places={places}
-              today={now}
-              look={look}
-              money={money}
-              onBounds={setBounds}
-              frameKey={data.withPlace}
-              animate={replayEnd !== null}
-              beacons={beacons}
-              selectedKey={picked?.key ?? null}
-              onSelect={(place) => setPickedKey(place?.key ?? null)}
-              detail={
-                picked && (
-                  <PlaceDetail
-                    place={picked}
-                    purchases={purchasesAt(shown, picked.key)}
-                    money={money}
-                    onClose={() => setPickedKey(null)}
-                  />
-                )
-              }
+            <div ref={mapBox}>
+              <PlacesMap
+                places={places}
+                today={now}
+                look={look}
+                money={money}
+                onBounds={setBounds}
+                frameKey={data.withPlace}
+                animate={replayEnd !== null}
+                beacons={beacons}
+                selectedKey={picked?.key ?? null}
+                onSelect={(place) => setPickedKey(place?.key ?? null)}
+                marker={marker}
+                onPick={moving ? (at) => setMoving({ ...moving, at }) : undefined}
+                notice={
+                  moving && (
+                    <>
+                      <span>
+                        {moving.at
+                          ? `Put ${moving.label} here?`
+                          : `Click the map where ${moving.label} is.`}
+                        {!online && " Map images are off, so there are no streets to go by."}
+                      </span>
+                      {moving.at && (
+                        <button
+                          type="button"
+                          disabled={deciding}
+                          onClick={() => void saveMove()}
+                          className="rounded-md bg-blue-600 px-2 py-0.5 text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          Save position
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setMoving(null)}
+                        className="rounded-md border border-slate-300 px-2 py-0.5 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )
+                }
+                detail={
+                  picked &&
+                  !moving && (
+                    <PlaceDetail
+                      place={picked}
+                      purchases={pickedPurchases}
+                      money={money}
+                      onClose={() => setPickedKey(null)}
+                      lookup={pickedLookup}
+                      review={review}
+                    />
+                  )
+                }
+              />
+            </div>
+            <AddressLookups
+              onFound={afterLookups}
+              onReview={() => setReviewing(true)}
+              refreshKey={checked}
             />
-            <AddressLookups onFound={reload} />
+            {reviewing && lookups.data && (
+              <LookupReview
+                lookups={lookups.data.lookups}
+                shownKey={shownLookup?.key ?? null}
+                onShow={(l) => {
+                  setShownLookup(l);
+                  toMap();
+                }}
+                onClose={() => {
+                  setReviewing(false);
+                  setShownLookup(null);
+                }}
+                {...review}
+              />
+            )}
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <button
                 type="button"

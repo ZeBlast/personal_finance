@@ -1225,6 +1225,21 @@ export const geocodeCache = sqliteTable("geocode_cache", {
 });
 
 /**
+ * The user's own call on a looked-up position: right, wrong, or moved by hand. Kept apart from
+ * `geocode_cache` because that is cleared when everything is looked up again, and these must last.
+ */
+export const geocodeReviews = sqliteTable("geocode_reviews", {
+  /** The lookup's key without its method version (see reviewKey), so it outlives a new method. */
+  queryKey: text("query_key").primaryKey(),
+  /** `right`, `wrong` or `moved`. */
+  verdict: text("verdict").notNull(),
+  /** The position judged (right, wrong) or chosen (moved). */
+  lat: real("lat").notNull(),
+  lon: real("lon").notNull(),
+  reviewedAt: text("reviewed_at").notNull(),
+});
+
+/**
  * A phone paired as a read-only viewer. After each sync (and once edits settle) the app writes an
  * encrypted snapshot for each phone that is not revoked, into the folder chosen for it (a Google
  * Drive folder, say). The phone got its key once, from a QR code; the key is kept here encrypted

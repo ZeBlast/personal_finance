@@ -65,6 +65,9 @@ export function PlacesMap({
   selectedKey = null,
   onSelect,
   detail,
+  marker = null,
+  onPick,
+  notice,
 }: {
   places: Place[];
   today: string;
@@ -83,6 +86,12 @@ export function PlacesMap({
   onSelect?: (place: Place | null) => void;
   /** Shown over the map's right side while a place is picked: its purchases. */
   detail?: ReactNode;
+  /** A spot to mark with a pin (a looked-up position being checked); the map goes to it when `go` is set. */
+  marker?: { lat: number; lon: number; go: boolean } | null;
+  /** While given, a click on the map chooses a position (and the places cannot be clicked). */
+  onPick?: ((at: { lat: number; lon: number }) => void) | undefined;
+  /** Shown across the top of the map: what a click will do, with its buttons. */
+  notice?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -98,6 +107,9 @@ export function PlacesMap({
   placesRef.current = places;
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
+  const picking = onPick !== undefined;
 
   /** Frames the places once, after the map has loaded (a style applies its own view as it loads). */
   const frame = (m: MapLibreMap): void => {
@@ -137,7 +149,11 @@ export function PlacesMap({
     };
     m.on("move", moved);
     // A click on the map itself (the dots sit above it and take their own) puts the place away.
-    m.on("click", () => selectRef.current?.(null));
+    // While a position is being chosen, the click chooses it instead.
+    m.on("click", (e) => {
+      if (pickRef.current) pickRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+      else selectRef.current?.(null);
+    });
     m.on("load", () => {
       frame(m);
       moved();
@@ -150,6 +166,23 @@ export function PlacesMap({
     };
     // Rebuilt only when the look changes; `frame` reads the latest places through a ref.
   }, [look.online, look.url, look.dark]);
+
+  // Go to the marked spot, close enough to tell one building from the next.
+  const markLat = marker?.lat ?? null;
+  const markLon = marker?.lon ?? null;
+  const markGo = marker?.go ?? false;
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !markGo || markLat === null || markLon === null) return;
+    fitted.current = true; // do not jump back to framing every place
+    m.easeTo({ center: [markLon, markLat], zoom: Math.max(m.getZoom(), 15) });
+  }, [markLat, markLon, markGo]);
+
+  // A crosshair while choosing a position.
+  useEffect(() => {
+    const canvas = map.current?.getCanvas();
+    if (canvas) canvas.style.cursor = picking ? "crosshair" : "";
+  }, [picking, look.online, look.url, look.dark]);
 
   // Frame them again when told to.
   useEffect(() => {
@@ -189,7 +222,13 @@ export function PlacesMap({
     return (
       <g
         key={`${out ? "out" : "in"}-${p.key}`}
-        className={`${out ? "pf-place-out" : "pf-place-in pointer-events-auto cursor-pointer"}`}
+        className={
+          out
+            ? "pf-place-out"
+            : picking
+              ? "pf-place-in"
+              : "pf-place-in pointer-events-auto cursor-pointer"
+        }
         onClick={out ? undefined : () => onSelect?.(p.key === selectedKey ? null : p)}
         onMouseEnter={out ? undefined : () => setHover(p)}
         onMouseLeave={out ? undefined : () => setHover((h) => (h?.key === p.key ? null : h))}
@@ -263,7 +302,27 @@ export function PlacesMap({
               />
             );
           })}
+          {marker &&
+            (() => {
+              const at = m.project([marker.lon, marker.lat]);
+              const colour = look.dark ? "#fbbf24" : "#b45309";
+              return (
+                <g data-testid="map-marker" stroke={colour} strokeWidth={2.5} fill="none">
+                  <circle cx={at.x} cy={at.y} r={11} />
+                  <line x1={at.x - 17} y1={at.y} x2={at.x - 5} y2={at.y} />
+                  <line x1={at.x + 5} y1={at.y} x2={at.x + 17} y2={at.y} />
+                  <line x1={at.x} y1={at.y - 17} x2={at.x} y2={at.y - 5} />
+                  <line x1={at.x} y1={at.y + 5} x2={at.x} y2={at.y + 17} />
+                  <circle cx={at.x} cy={at.y} r={1.5} fill={colour} />
+                </g>
+              );
+            })()}
         </svg>
+      )}
+      {notice && (
+        <div className="absolute inset-x-12 top-2 mx-auto flex w-fit max-w-[calc(100%-6rem)] flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50/95 px-3 py-1.5 text-sm shadow dark:border-amber-600 dark:bg-slate-800/95">
+          {notice}
+        </div>
       )}
       {places.length > 0 && (
         <button
@@ -279,7 +338,7 @@ export function PlacesMap({
           {detail}
         </div>
       )}
-      {hover && (
+      {hover && !picking && (
         <div className="pointer-events-none absolute top-2 left-2 max-w-64 rounded-md bg-white/95 p-2 text-xs shadow dark:bg-slate-800/95">
           <div className="font-semibold">{hover.merchant}</div>
           <div>

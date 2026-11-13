@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { inArray, lt, sql } from "drizzle-orm";
-import { geocodeCache } from "../../../drizzle/schema.js";
+import { eq, inArray, lt, sql } from "drizzle-orm";
+import { geocodeCache, geocodeReviews } from "../../../drizzle/schema.js";
 import type { AppDb } from "../db/client.js";
 import { AppError } from "../utils/errors.js";
 import { getSettings, updateSettings } from "./settings.service.js";
@@ -460,22 +460,86 @@ function savedAnswers(db: AppDb, keys: string[]): Map<string, Answer> {
   return out;
 }
 
+/** The user's call on a looked-up position. */
+export type Verdict = "right" | "wrong" | "moved";
+const VERDICTS: ReadonlySet<string> = new Set(["right", "wrong", "moved"]);
+type Review = { verdict: Verdict; lat: number; lon: number };
+
+/** A lookup's key without the version of the lookup method, so a review outlives a new method. */
+export const reviewKey = (stepKey: string): string => stepKey.replace(/^v\d+\|/, "");
+
+/** A lookup that names one shop or building, so its position can be set by hand. */
+const pinpoints = (step: Step): boolean =>
+  step.precision === "address" || step.precision === "shop";
+
+const sameSpot = (a: { lat: number; lon: number }, b: { lat: number; lon: number }): boolean =>
+  Math.abs(a.lat - b.lat) <= SAME_SPOT && Math.abs(a.lon - b.lon) <= SAME_SPOT;
+
+/** The user's reviews by review key. */
+function savedReviews(db: AppDb, keys: string[]): Map<string, Review> {
+  const out = new Map<string, Review>();
+  for (let i = 0; i < keys.length; i += 500) {
+    const rows = db
+      .select()
+      .from(geocodeReviews)
+      .where(inArray(geocodeReviews.queryKey, keys.slice(i, i + 500)))
+      .all();
+    for (const r of rows) {
+      if (VERDICTS.has(r.verdict)) out.set(r.queryKey, { ...r, verdict: r.verdict as Verdict });
+    }
+  }
+  return out;
+}
+
+/**
+ * The review that applies to a lookup now. A hand-set position always does. A "right" or "wrong"
+ * was said about one answer: when the server has since answered something else (after looking
+ * everything up again), it no longer applies and the lookup is to be checked again.
+ */
+function standing(review: Review | undefined, answer: Answer | undefined): Review | null {
+  if (!review) return null;
+  if (review.verdict === "moved") return review;
+  if (!answer || answer.lat === null || answer.lon === null) return null;
+  return sameSpot(review, { lat: answer.lat, lon: answer.lon }) ? review : null;
+}
+
 /**
  * Where each of these purchases goes on the map (null: nowhere yet), which are waiting for a
  * lookup, and the lookups that would place them: for each, its next step not yet asked.
+ *
+ * The user's reviews come first: a lookup whose position they set by hand places its purchases
+ * there (and is never asked), and an answer they called wrong counts as finding nothing.
+ *
+ * Also, for the review list: the lookup that placed each purchase (`via`), the lookups that did
+ * not (`missed`: found nothing, or called wrong), and every step by key.
  */
 export function resolveRows<R extends LocatedRow>(
   db: AppDb,
   rows: R[],
-): { placed: Map<R, Resolved | null>; waiting: Set<R>; next: Map<string, Step> } {
+): {
+  placed: Map<R, Resolved | null>;
+  waiting: Set<R>;
+  next: Map<string, Step>;
+  via: Map<R, Step>;
+  missed: Map<R, Step[]>;
+  /** The first lookup that names the purchase's own shop or building: where a hand-set position goes. */
+  own: Map<R, Step>;
+  answers: Map<string, Answer>;
+  reviews: Map<string, Review>;
+} {
   const environment = getSettings(db).plaidEnvironment;
   const known = knownPositions(db, environment);
   const stepsOf = new Map<R, Step[]>();
   for (const r of rows) stepsOf.set(r, lookupSteps(r, known.cities));
-  const answers = savedAnswers(db, [...new Set([...stepsOf.values()].flat().map((s) => s.key))]);
+  const keys = [...new Set([...stepsOf.values()].flat().map((s) => s.key))];
+  const answers = savedAnswers(db, keys);
+  const reviews = savedReviews(db, [...new Set(keys.map(reviewKey))]);
   const placed = new Map<R, Resolved | null>();
   const waiting = new Set<R>();
   const next = new Map<string, Step>();
+  const via = new Map<R, Step>();
+  const missed = new Map<R, Step[]>();
+  const own = new Map<R, Step>();
   for (const r of rows) {
     let reuse =
       known.byStore.get(storeKey(r) ?? "") ?? known.byStreet.get(streetKey(r) ?? "") ?? null;
@@ -491,26 +555,189 @@ export function resolveRows<R extends LocatedRow>(
       continue;
     }
     let at: Resolved | null = null;
-    for (const step of stepsOf.get(r)!) {
+    const misses: Step[] = [];
+    const steps = stepsOf.get(r)!;
+    const first = steps.find(pinpoints);
+    if (first) own.set(r, first);
+    for (const step of steps) {
       const answer = answers.get(step.key);
+      const review = standing(reviews.get(reviewKey(step.key)), answer);
+      if (review?.verdict === "moved") {
+        at = { lat: review.lat, lon: review.lon, approx: false };
+        via.set(r, step);
+        break;
+      }
       if (!answer) {
         waiting.add(r);
         next.set(step.key, step);
         break;
       }
-      if (answer.lat !== null && answer.lon !== null) {
+      if (answer.lat !== null && answer.lon !== null && review?.verdict !== "wrong") {
         // How close the answer turned out (an address may have matched only its street).
         const precision =
           answer.precision !== null && PRECISIONS.has(answer.precision)
             ? (answer.precision as Precision)
             : step.precision;
         at = { lat: answer.lat, lon: answer.lon, approx: APPROXIMATE.has(precision) };
+        via.set(r, step);
         break;
       }
+      misses.push(step);
     }
     placed.set(r, at);
+    missed.set(r, misses);
   }
-  return { placed, waiting, next };
+  return { placed, waiting, next, via, missed, own, answers, reviews };
+}
+
+/** One lookup in the review list. */
+export interface Lookup {
+  /** Names the lookup in a review (its key without the method version). */
+  key: string;
+  /** The shop it was first asked for, when there is one. */
+  shop: string | null;
+  /** What was asked, in words. */
+  asked: string;
+  /** The server's own name for what it matched, or null when it found nothing. */
+  found: string | null;
+  precision: Precision;
+  /** The server's answer, or the hand-set position; null when there is neither. */
+  lat: number | null;
+  lon: number | null;
+  lookedUpAt: string | null;
+  /** Purchases this lookup was made for. */
+  purchases: number;
+  verdict: Verdict | null;
+  /** It names one shop or building, so its position can be set by hand. */
+  canMove: boolean;
+}
+
+/** What a lookup asked, in words. */
+function askedText(step: Step): string {
+  const p = step.params;
+  if (p["q"]) return p["q"];
+  if (p["street"]) {
+    return [p["street"], p["city"], [p["state"], p["postalcode"]].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", ");
+  }
+  if (p["city"]) return [p["city"], p["state"]].filter(Boolean).join(", ");
+  return `Postal code ${p["postalcode"] ?? ""}`.trim();
+}
+
+/**
+ * Everything about address lookups in one pass over the purchases without coordinates: the
+ * lookups still to make, how many purchases they could place, and the lookups made, for review.
+ * A lookup is listed when it places purchases, when it has a review, or when it found nothing
+ * for a shop or building (whose position can then be set by hand).
+ */
+function survey(db: AppDb): { next: Map<string, Step>; unplaced: number; lookups: Lookup[] } {
+  const rows = unplacedRows(db);
+  const { waiting, next, via, missed, answers, reviews } = resolveRows(db, rows);
+  let unplaced = 0;
+  for (const r of waiting) unplaced += r.n;
+
+  const counts = new Map<string, { step: Step; purchases: number }>();
+  const count = (step: Step, n: number): void => {
+    const seen = counts.get(step.key);
+    if (seen) seen.purchases += n;
+    else counts.set(step.key, { step, purchases: n });
+  };
+  for (const r of rows) {
+    const placedBy = via.get(r);
+    if (placedBy) count(placedBy, r.n);
+    for (const step of missed.get(r) ?? []) count(step, r.n);
+  }
+  const savedAt = new Map<string, { matched: string | null; lookedUpAt: string }>();
+  const keys = [...counts.keys()];
+  for (let i = 0; i < keys.length; i += 500) {
+    const saved = db
+      .select()
+      .from(geocodeCache)
+      .where(inArray(geocodeCache.addressKey, keys.slice(i, i + 500)))
+      .all();
+    for (const s of saved) savedAt.set(s.addressKey, s);
+  }
+
+  const lookups: Lookup[] = [];
+  for (const [key, { step, purchases }] of counts) {
+    const answer = answers.get(key);
+    const review = standing(reviews.get(reviewKey(key)), answer);
+    const hit = answer && answer.lat !== null && answer.lon !== null ? answer : null;
+    const canMove = pinpoints(step);
+    if (!hit && !review && !canMove) continue;
+    const at = review?.verdict === "moved" ? review : hit;
+    lookups.push({
+      key: reviewKey(key),
+      shop: pinpoints(step) ? step.expect.merchant : null,
+      asked: askedText(step),
+      found: hit ? (savedAt.get(key)?.matched ?? null) : null,
+      precision:
+        hit && hit.precision !== null && PRECISIONS.has(hit.precision)
+          ? (hit.precision as Precision)
+          : step.precision,
+      lat: at?.lat ?? null,
+      lon: at?.lon ?? null,
+      lookedUpAt: savedAt.get(key)?.lookedUpAt ?? null,
+      purchases,
+      verdict: review?.verdict ?? null,
+      canMove,
+    });
+  }
+  lookups.sort((a, b) => b.purchases - a.purchases || a.asked.localeCompare(b.asked));
+  return { next, unplaced, lookups };
+}
+
+/** The lookups made so far, for the user to check: most purchases first. */
+export function listLookups(db: AppDb): Lookup[] {
+  return survey(db).lookups;
+}
+
+/**
+ * Records the user's call on a lookup. "Right" and "wrong" are about the server's present answer,
+ * so there has to be one; "moved" needs the position chosen, and a lookup that names one shop or
+ * building (a postal code's or a city's position is shared by everything in it).
+ */
+export function reviewLookup(
+  db: AppDb,
+  key: string,
+  verdict: Verdict,
+  position?: { lat: number; lon: number },
+): void {
+  const lookup = listLookups(db).find((l) => l.key === key);
+  if (!lookup) throw new AppError(404, "lookup_not_found", "That lookup is no longer in use.");
+  let at: { lat: number; lon: number };
+  if (verdict === "moved") {
+    if (!lookup.canMove) {
+      throw new AppError(
+        400,
+        "cannot_move",
+        "A postal code's or a city's position is shared by every purchase there. Move the shop's own lookup instead.",
+      );
+    }
+    if (!position) throw new AppError(400, "position_needed", "Choose the position on the map.");
+    at = position;
+  } else {
+    const answer = db
+      .select()
+      .from(geocodeCache)
+      .where(eq(geocodeCache.addressKey, `v${GEOCODE_METHOD}|${key}`))
+      .get();
+    if (!answer || answer.lat === null || answer.lon === null) {
+      throw new AppError(409, "nothing_found", "This lookup found nothing to judge.");
+    }
+    at = { lat: answer.lat, lon: answer.lon };
+  }
+  const row = { verdict, lat: at.lat, lon: at.lon, reviewedAt: new Date().toISOString() };
+  db.insert(geocodeReviews)
+    .values({ queryKey: key, ...row })
+    .onConflictDoUpdate({ target: geocodeReviews.queryKey, set: row })
+    .run();
+}
+
+/** Takes back the user's call on a lookup, so the server's answer stands again. */
+export function clearReview(db: AppDb, key: string): void {
+  db.delete(geocodeReviews).where(eq(geocodeReviews.queryKey, key)).run();
 }
 
 /** Purchases without coordinates, grouped by their location details, with how many share each. */
@@ -545,6 +772,9 @@ export interface GeocodeStatus {
   pending: number;
   /** Purchases that a lookup could still place. */
   unplaced: number;
+  /** Lookups that gave a position (or have one set by hand), and how many the user has not checked. */
+  lookups: number;
+  unchecked: number;
   /** Why the last run ended early, or null when it finished (or none has run). */
   stopped: Stop | null;
   message: string | null;
@@ -602,11 +832,20 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
     state.message = message;
   };
 
+  type Counts = { pending: number; unplaced: number; lookups: number; unchecked: number };
+  // Counting reads every purchase without coordinates. During a run the window asks for the
+  // status every second, so the counts are taken once a round and kept until the next.
+  let counted: Counts | null = null;
   const waitingNow = () => {
-    const { waiting, next } = resolveRows(db, unplacedRows(db));
-    let unplaced = 0;
-    for (const r of waiting) unplaced += r.n;
-    return { next, unplaced };
+    const { next, unplaced, lookups } = survey(db);
+    const placed = lookups.filter((l) => l.lat !== null && l.verdict !== "wrong");
+    const counts: Counts = {
+      pending: next.size,
+      unplaced,
+      lookups: placed.length,
+      unchecked: placed.filter((l) => l.verdict === null).length,
+    };
+    return { next, counts };
   };
 
   async function lookUp(server: string, agent: string, step: Step): Promise<"ok" | "stop"> {
@@ -665,6 +904,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
       .onConflictDoUpdate({ target: geocodeCache.addressKey, set: answer })
       .run();
     state.done += 1;
+    if (counted && counted.pending > 0) counted.pending -= 1;
     if (ok) state.found += 1;
     else state.notFound += 1;
     return "ok";
@@ -673,7 +913,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
   return {
     status() {
       const settings = getSettings(db);
-      const { next, unplaced } = waitingNow();
+      const counts = run !== null && counted !== null ? counted : waitingNow().counts;
       const resetAt = settings.geocodeResetAt ? Date.parse(settings.geocodeResetAt) : null;
       const available =
         resetAt !== null && resetAt + RESET_EVERY_MS > Date.now()
@@ -684,8 +924,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
         server: settings.geocodeServer,
         running: run !== null,
         ...state,
-        pending: next.size,
-        unplaced,
+        ...counts,
         resetAvailableAt: available,
       };
     },
@@ -712,7 +951,9 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
         // Each round asks the next step for every purchase still waiting; one that finds nothing
         // brings its next step into the following round.
         for (;;) {
-          const next = [...waitingNow().next.values()].filter((s) => !asked.has(s.key));
+          const now = waitingNow();
+          counted = now.counts;
+          const next = [...now.next.values()].filter((s) => !asked.has(s.key));
           if (next.length === 0) return;
           state.total = state.done + next.length;
           for (const step of next) {
@@ -727,6 +968,7 @@ export function createGeocoder(db: AppDb, options: GeocoderOptions): Geocoder {
       })()
         .catch(() => end("failed", "Address lookups stopped after an unexpected problem."))
         .finally(() => {
+          counted = null;
           run = null;
         });
     },
