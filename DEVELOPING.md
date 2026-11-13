@@ -29,7 +29,8 @@ React UI (frontend/)             shown in the Tauri window, or in a browser tab
 
 ## Requirements (Windows)
 
-Node 22+, Rust (stable), Visual Studio C++ Build Tools, and WebView2 (already part of Windows 11).
+Node 26 (the version in `.nvmrc`; the build embeds the Node it runs on in the app, so it refuses
+any other), Rust (stable), Visual Studio C++ Build Tools, and WebView2 (already part of Windows 11).
 
 ## Everyday commands
 
