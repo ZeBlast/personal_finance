@@ -54,20 +54,3 @@ jobs:
           releaseDraft: true
           tauriScript: npx tauri
           args: --config {"bundle":{"createUpdaterArtifacts":true}}
-
-  # The Android phone viewer, attached to the same draft release.
-  version:
-    runs-on: ubuntu-24.04
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: version
-        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-  android:
-    needs: [windows, version]
-    uses: ./.github/workflows/android.yml
-    with:
-      release-tag: ${{ needs.version.outputs.tag }}
-    secrets: inherit

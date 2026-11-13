@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, errorMessage, insideTauri } from "../api/client";
 import { ConfirmDialog } from "../components/common/Modal";
-import { PhoneViewerPanel } from "../components/data/PhoneViewerPanel";
 import { RecoveryKeyDialog, SecurityPanel } from "../components/data/SecurityPanel";
 import { buttonClass, primaryClass } from "../components/investments/styles";
 import { useApi } from "../hooks/useApi";
@@ -645,7 +644,6 @@ export function DataPage() {
       </div>
       <BackupsPanel onNotice={show} />
       <ExportPanel onNotice={show} />
-      <PhoneViewerPanel />
       <DiagnosticsPanel onNotice={show} />
     </section>
   );
